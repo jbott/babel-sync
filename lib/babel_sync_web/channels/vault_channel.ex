@@ -36,6 +36,7 @@ defmodule BabelSyncWeb.VaultChannel do
 
       reply = %{
         seq: vault.seq,
+        count: Vaults.count_entries(vault_id),
         complete: complete,
         name: vault.name,
         writable: Scope.authorize(scope, vault_id, :write) == :ok,

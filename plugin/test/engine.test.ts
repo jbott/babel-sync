@@ -28,7 +28,7 @@ async function boot(
   name: string,
   vaultId: string,
   previous?: Pick<Device, "fs" | "store">,
-  options: { maxBlobBytes?: number; sessionIdleMs?: number } = {},
+  options: { maxBlobBytes?: number; sessionIdleMs?: number; retryMs?: number } = {},
 ): Promise<Device> {
   const fs = previous?.fs ?? new MemoryFs();
   const store = previous?.store ?? new MemoryStore();
@@ -66,6 +66,19 @@ async function eventually(check: () => boolean | Promise<boolean>, what: string 
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${typeof what === "string" ? what : await what()}`);
     await new Promise((resolve) => setTimeout(resolve, 15));
   }
+}
+
+async function savedPlace(device: Device): Promise<number> {
+  let seen = -1;
+  let since = Date.now();
+  await eventually(() => {
+    if (device.store.seq !== seen) {
+      seen = device.store.seq;
+      since = Date.now();
+    }
+    return seen > 0 && Date.now() - since > 250;
+  }, `${device.name} to save its place in the feed`);
+  return seen;
 }
 
 async function text(device: Device, path: string): Promise<string | null> {
@@ -402,6 +415,73 @@ test("a note the server deleted without this device hearing of it is cleared awa
     async () => (await text(laptop, "kept.md")) === "draft, with more written offline\n",
     "the note edited offline to come back as a new note",
   );
+  assert.deepEqual(back.errors, []);
+});
+
+test("the saved place in the feed never passes a change that is still waiting to be applied", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "first.md", "one\n");
+  await eventually(async () => (await text(phone, "first.md")) === "one\n", "the first note");
+  const before = await savedPlace(phone);
+
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const write = phone.fs.writeText.bind(phone.fs);
+  phone.fs.writeText = async (path, content) => {
+    await held;
+    return write(path, content);
+  };
+
+  for (let n = 0; n < 5; n++) await edit(laptop, `burst ${n}.md`, `note ${n}\n`);
+  await laptop.engine.idle();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(phone.store.seq, before);
+
+  release();
+  await eventually(async () => (await text(phone, "burst 4.md")) === "note 4\n", "the burst to land");
+  await eventually(() => phone.store.seq > before, "the phone to save its new place");
+});
+
+test("a change that fails to apply is asked for again instead of being skipped", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault, undefined, { retryMs: 100 });
+
+  let failures = 1;
+  const write = phone.fs.writeText.bind(phone.fs);
+  phone.fs.writeText = async (path, content) => {
+    if (path === "fragile.md" && failures-- > 0) throw new Error("disk hiccup");
+    return write(path, content);
+  };
+
+  await edit(laptop, "fragile.md", "first try fails\n");
+  await edit(laptop, "sturdy.md", "fine\n");
+
+  await eventually(async () => (await text(phone, "sturdy.md")) === "fine\n", "the note after the failed one");
+  await eventually(async () => (await text(phone, "fragile.md")) === "first try fails\n", "the failed note to be fetched again");
+  await eventually(() => phone.engine.status === "synced", "the phone to report synced again");
+  assert.deepEqual(phone.errors, ["disk hiccup"]);
+});
+
+test("a device that skipped changes in the past notices the count is off and fetches what it lacks", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "a.md", "a\n");
+  await edit(laptop, "b.md", "b\n");
+  await eventually(async () => (await text(phone, "b.md")) === "b\n", "both notes on the phone");
+  await savedPlace(phone);
+
+  await shutdown(phone);
+  const lost = [...phone.store.entries.values()].find((entry) => entry.path === "b.md")!;
+  phone.store.entries.delete(lost.id);
+  phone.fs.files.delete("b.md");
+
+  const back = await boot("phone", vault, phone);
+  await eventually(async () => (await text(back, "b.md")) === "b\n", "the skipped note to arrive");
+  assert.equal(await text(laptop, "b.md"), "b\n");
   assert.deepEqual(back.errors, []);
 });
 

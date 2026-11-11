@@ -23,6 +23,7 @@ export type EngineOptions = {
   maxBlobBytes?: number;
   ignore?: (path: string) => boolean;
   sessionIdleMs?: number;
+  retryMs?: number;
   now?: () => Date;
 };
 
@@ -42,6 +43,8 @@ type Live = {
 
 const DISK = Symbol("disk");
 const MAX_RESTING_SESSIONS = 16;
+const FIRST_RETRY_MS = 20_000;
+const LONGEST_RETRY_MS = 300_000;
 
 export type Progress = { direction: "receiving" | "sending"; done: number; total: number };
 
@@ -59,6 +62,11 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private queue: Promise<void> = Promise.resolve();
   private pending = 0;
   private stopped = false;
+  private applied = 0;
+  private behind = false;
+  private counted = false;
+  private retry: ReturnType<typeof setTimeout> | null = null;
+  private retryMs = 0;
 
   constructor(options: EngineOptions) {
     super();
@@ -69,19 +77,81 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const { seq, entries } = await this.options.store.load();
     for (const entry of entries) this.remember(entry);
 
-    const vault = this.options.client.vault(this.options.vaultId, seq);
+    this.applied = seq;
+    this.retryMs = this.firstRetryMs;
+    this.attach(seq);
+  }
+
+  private attach(since: number): void {
+    this.vault?.close();
+    const vault = this.options.client.vault(this.options.vaultId, since);
+    const current = () => this.vault === vault;
+    let caughtUp = false;
     this.vault = vault;
-    vault.on("joined", ({ entries: changes, complete }) => this.run(() => this.reconcile(changes, complete)));
-    vault.on("entry", (entry) => this.run(() => this.applyRemote(entry)));
-    vault.on("left", () => this.setStatus("offline"));
+
+    vault.on("joined", ({ entries: changes, complete, seq, count }) =>
+      this.run(async () => {
+        if (!current()) return;
+        if (!caughtUp) this.behind = false;
+        caughtUp = true;
+
+        await this.reconcile(changes, complete, count);
+        if (!current() || this.behind) return;
+        await this.advance(seq);
+        this.retryMs = this.firstRetryMs;
+      }),
+    );
+    vault.on("entry", (entry) => this.run(async () => void (current() && (await this.receive(entry)))));
+    vault.on("left", () => void (current() && this.setStatus("offline")));
     vault.on("error", (reason) => {
+      if (!current()) return;
       this.emit("error", reason);
       this.setStatus("error");
     });
   }
 
+  private get firstRetryMs(): number {
+    return this.options.retryMs ?? FIRST_RETRY_MS;
+  }
+
+  private recount(count: number): void {
+    this.counted = true;
+    this.emit("log", `the server has ${count} entries and this device knows ${this.byId.size}; asking for the whole list`);
+    this.attach(0);
+  }
+
+  private async receive(remote: Entry): Promise<void> {
+    try {
+      await this.applyRemote(remote);
+      await this.advance(remote.seq);
+    } catch (error) {
+      this.emit("log", `could not apply ${remote.path}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+      this.emit("error", error instanceof Error ? error.message : String(error));
+      this.fallBehind();
+    }
+  }
+
+  private async advance(seq: number): Promise<void> {
+    if (this.behind || seq <= this.applied) return;
+    this.applied = seq;
+    await this.options.store.setSeq(seq);
+  }
+
+  private fallBehind(): void {
+    this.behind = true;
+    if (this.retry || this.stopped) return;
+
+    this.retry = setTimeout(() => {
+      this.retry = null;
+      if (!this.stopped) this.attach(this.applied);
+    }, this.retryMs);
+    this.retryMs = Math.min(this.retryMs * 2, LONGEST_RETRY_MS);
+  }
+
   async stop(): Promise<void> {
     this.stopped = true;
+    if (this.retry) clearTimeout(this.retry);
+    this.retry = null;
     await this.idle();
     for (const live of this.live.values()) {
       if (live.timer) clearTimeout(live.timer);
@@ -185,7 +255,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private finished(failed = false): void {
     this.pending -= 1;
     if (failed) this.setStatus("error");
-    else if (this.pending === 0) this.setStatus(this.online ? "synced" : "offline");
+    else if (this.pending === 0) this.setStatus(!this.online ? "offline" : this.behind ? "error" : "synced");
   }
 
   get fileCount(): number {
@@ -206,7 +276,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     this.emit("status", status);
   }
 
-  private async reconcile(changes: Entry[], complete = false): Promise<void> {
+  private async reconcile(changes: Entry[], complete = false, count?: number): Promise<void> {
     this.emit("log", `reconcile: ${changes.length} changes${complete ? ", complete listing" : ""}, ${this.byId.size} known`);
     if (complete) {
       const alive = new Set(changes.map((change) => change.id));
@@ -218,8 +288,10 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const incoming = [...changes].sort((a, b) => a.seq - b.seq);
     for (const [done, change] of incoming.entries()) {
       this.report("receiving", done, incoming.length);
-      await this.applyRemote(change);
+      await this.receive(change);
     }
+
+    if (count !== undefined && count !== this.byId.size && !this.counted && !this.behind) return this.recount(count);
 
     const files = (await this.options.fs.list()).filter((file) => !this.ignored(file.path));
     const present = new Set(files.map((file) => file.path));
@@ -249,7 +321,6 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     }
 
     await this.tidyFolders();
-    await this.options.store.setSeq(this.vault!.seq);
   }
 
   private async applyRemote(remote: Entry): Promise<void> {
@@ -264,8 +335,6 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     } else {
       await this.update(local, remote);
     }
-
-    if (this.vault) await this.options.store.setSeq(this.vault.seq);
   }
 
   private async removeLocally(local: LocalEntry): Promise<void> {

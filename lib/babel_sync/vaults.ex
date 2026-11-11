@@ -47,6 +47,14 @@ defmodule BabelSync.Vaults do
     )
   end
 
+  @spec count_entries(Ecto.UUID.t()) :: non_neg_integer()
+  def count_entries(vault_id) do
+    Repo.aggregate(
+      from(e in Entry, where: e.vault_id == ^vault_id and is_nil(e.deleted_at)),
+      :count
+    )
+  end
+
   @spec get_vault(Ecto.UUID.t()) :: Vault.t() | nil
   def get_vault(id), do: Repo.get(Vault, id)
 

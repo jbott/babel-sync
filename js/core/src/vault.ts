@@ -15,11 +15,11 @@ export type Entry = {
   updated_at: string;
 };
 
-type JoinReply = { seq: number; name: string; writable: boolean; complete: boolean; entries: Entry[] };
+type JoinReply = { seq: number; count?: number; name: string; writable: boolean; complete: boolean; entries: Entry[] };
 
 type VaultEvents = {
   entry: Entry;
-  joined: { entries: Entry[]; seq: number; complete: boolean };
+  joined: { entries: Entry[]; seq: number; complete: boolean; count?: number };
   left: undefined;
   error: string;
 };
@@ -64,7 +64,7 @@ export class VaultSession extends Emitter<VaultEvents> {
         if (reply.complete) this.entries.clear();
         for (const entry of reply.entries) this.apply(entry, false);
         this.seq = Math.max(this.seq, reply.seq);
-        this.emit("joined", { entries: reply.entries, seq: this.seq, complete: reply.complete });
+        this.emit("joined", { entries: reply.entries, seq: reply.seq, complete: reply.complete, count: reply.count });
       })
       .receive("error", (reply: { reason?: string }) => this.emit("error", reply.reason ?? "error"));
   }
