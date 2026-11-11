@@ -16,6 +16,10 @@ defmodule BabelSyncWeb.AuthLive.Account do
      socket
      |> assign(:page_title, "Settings")
      |> assign(:back, back(vaults, params["from"]))
+     |> assign(
+       :connect_vault,
+       Enum.find(vaults, &(&1.id == params["from"])) || List.first(vaults)
+     )
      |> assign(:no_vaults?, vaults == [])
      |> assign(:multi?, multi?)
      |> assign(:passkeys?, Auth.enabled?(:passkey))
@@ -324,8 +328,10 @@ defmodule BabelSyncWeb.AuthLive.Account do
                 <div :if={@grants == []} class="px-4 py-4 text-sm text-muted">
                   <p class="font-medium text-ink">Nothing is connected</p>
                   <p class="mt-0.5 max-w-prose">
-                    Sign in from the BabelSync plugin in Obsidian to sync a device, or add this
-                    server to an agent as an MCP server at <code class="rounded border border-line bg-sunken px-1 py-px font-mono text-xs text-ink">/mcp</code>.
+                    {if(@connect_vault,
+                      do: "Connect a device below to sync a vault with Obsidian,",
+                      else: "Create a vault to sync it with Obsidian,"
+                    )} or add this server to an agent as an MCP server at <code class="rounded border border-line bg-sunken px-1 py-px font-mono text-xs text-ink">/mcp</code>.
                   </p>
                 </div>
                 <ul :if={@grants != []} class="divide-y divide-line">
@@ -358,6 +364,21 @@ defmodule BabelSyncWeb.AuthLive.Account do
                     </.button>
                   </li>
                 </ul>
+                <.link
+                  :if={@connect_vault}
+                  id="connect-device"
+                  navigate={Paths.connect(@connect_vault.id)}
+                  class="flex min-h-12 items-center gap-3 bg-canvas/60 py-2 pl-4 pr-2.5 transition-colors duration-150 hover:bg-canvas"
+                >
+                  <.icon name="hero-plus-mini" class="size-5 shrink-0 text-muted" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-base font-medium text-ink">Connect a device</span>
+                    <span class="block truncate text-xs text-faint">
+                      Set up Obsidian with {@connect_vault.name}
+                    </span>
+                  </span>
+                  <.icon name="hero-chevron-right-mini" class="mr-1.5 size-4 shrink-0 text-faint" />
+                </.link>
               </.group>
             </.panel>
           </div>

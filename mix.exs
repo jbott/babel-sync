@@ -92,11 +92,17 @@ defmodule BabelSync.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind babel_sync", "esbuild babel_sync"],
+      "assets.build": ["compile", "tailwind babel_sync", "esbuild babel_sync", "plugin.build"],
       "assets.deploy": [
         "tailwind babel_sync --minify",
         "esbuild babel_sync --minify",
+        "plugin.build",
         "phx.digest"
+      ],
+      "plugin.build": [
+        "cmd --cd plugin node esbuild.config.mjs production",
+        "cmd mkdir -p priv/plugin",
+        "cmd cp plugin/main.js plugin/manifest.json priv/plugin/"
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]

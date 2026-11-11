@@ -85,11 +85,14 @@ Sign-in:
 
 ## Obsidian plugin
 
-```sh
-cd plugin && npm run build
-```
+The server hands out its own copy of the plugin, so a device is set up from the server it will sync with. Open a vault in the web app and choose **Connect Obsidian**:
 
-Copy `main.js` and `manifest.json` into `<vault>/.obsidian/plugins/babelsync/`, enable the plugin, then in its settings enter the server address, sign in, and pick a vault. Signing in opens the server's consent page in a browser and returns to Obsidian.
+1. **Get the plugin onto the device, once.** Download the vault folder (the plugin is inside, switched on and already pointed at the vault) and open it in Obsidian, or download the plugin alone and unzip it into an existing vault's `.obsidian/plugins/` folder, then enable it under Community plugins. Obsidian can install a plugin from a link only when it is in the community directory, and BabelSync is not there yet. A device that already syncs keeps its plugin up to date through the sync itself.
+2. **Tap Open in Obsidian.** The link (`obsidian://babelsync-connect?server=…&id=…`) opens Obsidian, which asks whether to sync the open vault with that server vault, then sends you to the server's consent page to approve the device. Nothing is typed and nothing is picked from a list.
+
+The same can be done by hand in Settings › BabelSync, which shows the next step at the top: enter the server address, sign in, choose a vault.
+
+A release built with Nix or `mix assets.deploy` includes the plugin. In development, `mix plugin.build` (part of `mix assets.build`) builds it into `priv/plugin`.
 
 Notes sync as you type. Themes, snippets, hotkeys and plugins under `.obsidian` sync too (this can be turned off); window layout stays per device. On mobile, attachments over 50 MiB are left on the server by default.
 

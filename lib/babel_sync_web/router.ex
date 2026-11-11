@@ -65,6 +65,8 @@ defmodule BabelSyncWeb.Router do
     pipe_through :browser
 
     get "/v/:vault_id/raw/*path", FileController, :raw
+    get "/obsidian/plugin.zip", ObsidianController, :plugin
+    get "/v/:vault_id/obsidian/vault.zip", ObsidianController, :starter
 
     get "/oauth/authorize", OAuthController, :authorize
     post "/oauth/authorize", OAuthController, :decide
@@ -86,6 +88,7 @@ defmodule BabelSyncWeb.Router do
       live "/v/:vault_id", VaultLive.Show
       live "/v/:vault_id/settings", VaultLive.Settings
       live "/v/:vault_id/trash", VaultLive.Trash
+      live "/v/:vault_id/connect", VaultLive.Connect
       live "/v/:vault_id/f/*path", VaultLive.Show
     end
   end

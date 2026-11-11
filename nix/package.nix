@@ -99,6 +99,10 @@ beamPackages.mixRelease {
       ../assets
       ../js/core/src
       ../js/core/tsconfig.json
+      ../plugin/src
+      ../plugin/esbuild.config.mjs
+      ../plugin/manifest.json
+      ../plugin/tsconfig.json
     ]
   );
 

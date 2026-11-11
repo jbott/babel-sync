@@ -91,6 +91,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end)
   end
 
+  def handle_event("switch_vault", %{"vault" => "connect"}, socket) do
+    {:noreply, push_navigate(socket, to: Paths.connect(socket.assigns.vault.id))}
+  end
+
   def handle_event("switch_vault", %{"vault" => "manage"}, socket) do
     {:noreply, push_navigate(socket, to: ~p"/account")}
   end
@@ -441,6 +445,13 @@ defmodule BabelSyncWeb.VaultLive.Show do
             <div :if={@tree == []} class="px-3 py-10 text-center">
               <.icon name="hero-document-plus" class="size-7 text-faint" />
               <p class="mt-2 text-muted">This vault is empty.</p>
+              <.link
+                id="tree-connect"
+                navigate={Paths.connect(@vault.id)}
+                class="mt-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 font-medium text-accent transition-colors duration-150 hover:text-ink"
+              >
+                Connect Obsidian <.icon name="hero-arrow-right-mini" class="size-4" />
+              </.link>
             </div>
             <.tree nodes={@tree} selected={@entry && @entry.path} vault_id={@vault.id} />
           </nav>
@@ -462,6 +473,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
                   {vault.name}
                 </option>
                 <hr />
+                <option value="connect">Connect Obsidian…</option>
                 <option value="manage">Manage vaults…</option>
               </select>
               <.icon
@@ -502,8 +514,19 @@ defmodule BabelSyncWeb.VaultLive.Show do
               {@vault.name}
             </h2>
             <p class="mt-2 text-muted">
-              Select a note, or connect Obsidian to this vault to start syncing.
+              {if(@entries == [],
+                do: "Nothing here yet. Connect Obsidian to bring your notes in, or create one.",
+                else: "Select a note, or connect Obsidian on another device to keep it in sync."
+              )}
             </p>
+            <.button
+              id="connect-obsidian"
+              navigate={Paths.connect(@vault.id)}
+              variant={if(@entries == [], do: "primary", else: "secondary")}
+              class="mt-5"
+            >
+              <.icon name="hero-device-phone-mobile-mini" class="size-4" /> Connect Obsidian
+            </.button>
           </div>
 
           <div
