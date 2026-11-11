@@ -122,3 +122,7 @@
 .markdown th, .markdown td { border: 1px solid var(--color-base-300); padding: 0.35rem 0.75rem; }
 .markdown img { max-width: 100%; border-radius: 0.5rem; }
 .markdown hr { border-color: var(--color-base-300); margin: 1.5rem 0; }
+
+@media (pointer: coarse) {
+  .input, .select, .textarea { font-size: 1rem; }
+}

@@ -36,6 +36,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
        |> assign(:blob_versions, nil)
        |> assign(:preview_timer, nil)
        |> assign(:new_form, to_form(%{"path" => ""}, as: :note))
+       |> assign(:notes_created, 0)
        |> assign(:rename_form, nil)
        |> track(Vaults.list_entries(vault_id))}
     else
@@ -82,8 +83,8 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
     write(socket, fn ->
       case Vaults.create_entry(socket.assigns.vault.id, %{path: path}) do
-        {:ok, entry} -> {:noreply, push_patch(socket, to: Paths.entry(entry))}
-        {:error, {:exists, entry}} -> {:noreply, push_patch(socket, to: Paths.entry(entry))}
+        {:ok, entry} -> {:noreply, open_created(socket, entry)}
+        {:error, {:exists, entry}} -> {:noreply, open_created(socket, entry)}
         {:error, _changeset} -> {:noreply, put_flash(socket, :error, "That is not a valid path.")}
       end
     end)
@@ -250,6 +251,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end
   end
 
+  defp open_created(socket, entry) do
+    socket |> update(:notes_created, &(&1 + 1)) |> push_patch(to: Paths.entry(entry))
+  end
+
   defp write(socket, fun) do
     if socket.assigns.writable,
       do: fun.(),
@@ -348,7 +353,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
       <div id="vault" class="flex h-[calc(100dvh-3.5rem)]">
         <aside
           id="sidebar"
-          class="w-72 shrink-0 border-r border-base-300 flex flex-col bg-base-200/40"
+          class={[
+            "flex-col bg-base-200/40 border-base-300 md:flex md:w-72 md:shrink-0 md:border-r",
+            if(@entry, do: "hidden", else: "flex w-full")
+          ]}
         >
           <div class="flex items-center justify-between gap-2 px-4 py-3">
             <.link patch={Paths.vault(@vault.id)} class="font-semibold truncate">{@vault.name}</.link>
@@ -377,6 +385,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
             <.form for={@new_form} id="new-note" phx-submit="create_note" class="join w-full">
               <input
                 type="text"
+                id={"new-note-path-#{@notes_created}"}
                 name={@new_form[:path].name}
                 value=""
                 placeholder="New note path"
@@ -416,7 +425,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
           </nav>
         </aside>
 
-        <section class="flex-1 min-w-0 flex flex-col">
+        <section class={["flex-1 min-w-0 flex-col md:flex", if(@entry, do: "flex", else: "hidden")]}>
           <div
             :if={is_nil(@entry)}
             id="empty"
@@ -429,8 +438,16 @@ defmodule BabelSyncWeb.VaultLive.Show do
           <div
             :if={@entry}
             id="toolbar"
-            class="flex items-center gap-2 border-b border-base-300 px-4 h-12 shrink-0"
+            class="flex items-center gap-1 md:gap-2 border-b border-base-300 px-2 md:px-4 h-12 shrink-0"
           >
+            <.link
+              patch={Paths.vault(@vault.id)}
+              id="back-to-files"
+              class="btn btn-ghost btn-sm btn-circle md:hidden"
+              title="All files"
+            >
+              <.icon name="hero-chevron-left" class="size-5" />
+            </.link>
             <span id="entry-path" class="font-medium truncate flex-1">{@entry.path}</span>
             <div :if={@entry.kind == :doc} class="join">
               <button
@@ -480,13 +497,13 @@ defmodule BabelSyncWeb.VaultLive.Show do
             for={@rename_form}
             id="rename-form"
             phx-submit="rename"
-            class="flex items-center gap-2 border-b border-base-300 px-4 py-2"
+            class="flex items-center gap-2 border-b border-base-300 px-2 md:px-4 py-2"
           >
             <input
               type="text"
               name={@rename_form[:path].name}
               value={@rename_form[:path].value}
-              class="input input-sm flex-1"
+              class="input input-sm flex-1 min-w-0"
               required
             />
             <button class="btn btn-sm btn-primary">Move</button>
@@ -511,7 +528,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
           <article
             :if={@entry && @entry.kind == :doc && @mode == :read}
             id="preview"
-            class="flex-1 overflow-y-auto px-8 py-6"
+            class="flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6"
           >
             <div class="markdown mx-auto max-w-3xl">{raw(@preview)}</div>
           </article>
@@ -519,7 +536,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
           <div
             :if={@entry && @entry.kind == :blob}
             id="attachment"
-            class="flex-1 overflow-auto p-8 space-y-4"
+            class="flex-1 overflow-auto p-4 md:p-8 space-y-4"
           >
             <img
               :if={media(@entry) == :image}
@@ -546,7 +563,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         <aside
           :if={@versions}
           id="history"
-          class="w-96 shrink-0 border-l border-base-300 flex flex-col"
+          class="fixed inset-x-0 bottom-0 top-14 z-20 bg-base-100 flex flex-col border-base-300 md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
         >
           <div class="flex items-center justify-between px-4 h-12 border-b border-base-300">
             <span class="font-medium">History</span>
@@ -585,7 +602,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         <aside
           :if={@blob_versions}
           id="blob-history"
-          class="w-96 shrink-0 border-l border-base-300 flex flex-col"
+          class="fixed inset-x-0 bottom-0 top-14 z-20 bg-base-100 flex flex-col border-base-300 md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
         >
           <div class="flex items-center justify-between px-4 h-12 border-b border-base-300">
             <span class="font-medium">History</span>
@@ -621,6 +638,11 @@ defmodule BabelSyncWeb.VaultLive.Show do
     """
   end
 
+  defp unfolded?(node, selected) do
+    not String.starts_with?(node.name, ".") or
+      (is_binary(selected) and String.starts_with?(selected, node.path <> "/"))
+  end
+
   attr :nodes, :list, required: true
   attr :selected, :string, default: nil
   attr :vault_id, :string, required: true
@@ -629,7 +651,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
     ~H"""
     <ul class="space-y-0.5">
       <li :for={node <- @nodes}>
-        <details :if={Tree.folder?(node)} open>
+        <details :if={Tree.folder?(node)} open={unfolded?(node, @selected)}>
           <summary class="flex items-center gap-1.5 rounded px-2 py-1 cursor-pointer hover:bg-base-300/60">
             <.icon name="hero-folder" class="size-4 shrink-0 text-base-content/60" />
             <span class="truncate">{node.name}</span>
