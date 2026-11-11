@@ -336,6 +336,14 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       await this.options.store.put(local);
     }
 
+    if (remote.kind === "doc" && local.kind === "blob") {
+      const disk = await this.diskHash(local);
+      if (disk !== null && disk !== local.hash) await this.pushLocal(await this.setAside(local.path));
+      local.kind = "doc";
+      local.hash = null;
+      await this.options.store.put(local);
+    }
+
     if (remote.kind === "doc") {
       const missing = (await fs.stat(local.path)) === null;
       if (missing || (remote.content_hash !== null && remote.content_hash !== local.hash)) {
@@ -361,7 +369,9 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const id = this.byPath.get(path);
     const entry = id ? this.byId.get(id) : undefined;
 
-    if (kindFor(path) === "doc") await this.pushText(path, entry);
+    const kind = entry && entry.kind !== "folder" ? entry.kind : kindFor(path);
+
+    if (kind === "doc") await this.pushText(path, entry);
     else if (!this.tooLarge(file.size)) await this.pushBlob(path, entry);
   }
 

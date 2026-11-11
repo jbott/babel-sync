@@ -99,6 +99,7 @@ defmodule BabelSyncWeb.VaultChannel do
          {:ok, entry} <- Vaults.update_entry(entry, attrs) do
       {:ok, %{entry: EntryJSON.entry(entry)}}
     else
+      {:ok, %Entry{kind: :doc} = note} -> {:error, {:conflict, note}}
       {:ok, %Entry{}} -> {:error, :not_a_blob}
       error -> error
     end

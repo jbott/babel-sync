@@ -371,6 +371,11 @@ async function run() {
   const leftovers = await (await fetch(`${server}/api/vaults/${vaultId}/entries`)).json().catch(() => null);
   if (leftovers?.entries) check("the server keeps nothing of the deleted folder", !leftovers.entries.some((entry) => !entry.deleted && entry.path.startsWith("Crate/")));
 
+  await desk.page.evaluate(() => app.vault.create("Food.base", "views:\n  - type: table\n    name: Table\n"));
+  await eventually("a base file reaches the other Obsidian", async () => (await read(laptop, "Food.base")) === "views:\n  - type: table\n    name: Table\n");
+  await laptop.page.evaluate(() => app.vault.modify(app.vault.getAbstractFileByPath("Food.base"), "views:\n  - type: table\n    name: Renamed\n"));
+  await eventually("an edit to a base file is merged into the other Obsidian", async () => (await read(desk, "Food.base")) === "views:\n  - type: table\n    name: Renamed\n");
+
   await laptop.page.evaluate(() => app.vault.setConfig("readableLineLength", false));
   await laptop.page.evaluate(() => app.plugins.plugins.babelsync.engine.rescan());
   await eventually(

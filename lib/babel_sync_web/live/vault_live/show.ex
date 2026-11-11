@@ -12,6 +12,8 @@ defmodule BabelSyncWeb.VaultLive.Show do
   @video ~w(.mp4 .webm .mov .mkv)
   @preview_delay 250
 
+  @fence String.duplicate("`", 12)
+
   @impl true
   def mount(%{"vault_id" => vault_id}, _session, socket) do
     scope = socket.assigns.current_scope
@@ -322,7 +324,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   defp render_preview(%{assigns: %{entry: %Entry{kind: :doc} = entry, mode: :read}} = socket) do
     html =
-      Markdown.to_html(Sync.text(entry.id), socket.assigns.entries, %{
+      Markdown.to_html(readable(entry, Sync.text(entry.id)), socket.assigns.entries, %{
         note: &Paths.entry/1,
         raw: &Paths.raw/1
       })
@@ -331,6 +333,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   defp render_preview(socket), do: assign(socket, :preview, nil)
+
+  defp readable(%Entry{path: path}, text) do
+    if Vaults.Path.markdown?(path), do: text, else: Enum.join([@fence, text, @fence], "\n")
+  end
 
   defp current_folder(%{assigns: %{entry: %Entry{kind: :folder, path: path}}}), do: path
 

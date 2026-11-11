@@ -1,7 +1,7 @@
 import diff from "fast-diff";
 import type * as Y from "yjs";
 
-const DOC_EXTENSIONS = [".md", ".markdown", ".txt"];
+const DOC_EXTENSIONS = [".md", ".markdown", ".txt", ".base", ".canvas"];
 
 export function kindFor(path: string): "doc" | "blob" {
   const lower = path.toLowerCase();

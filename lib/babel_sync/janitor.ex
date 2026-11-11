@@ -6,7 +6,8 @@ defmodule BabelSync.Janitor do
   newest version of every note and attachment is always kept. Attachment
   bytes go once nothing refers to them, whether a live entry, a trashed
   one or a kept version. Uploads that were never finished and expired
-  sign-in artifacts go regardless of the retention setting.
+  sign-in artifacts go regardless of the retention setting. Attachments
+  that have since been recognised as text become notes.
   """
 
   use GenServer
@@ -33,6 +34,8 @@ defmodule BabelSync.Janitor do
       _keep_forever ->
         :ok
     end
+
+    _promoted = Vaults.TextFiles.promote()
 
     recent = DateTime.add(now, -@grace, :second)
     _collected = Blobs.collect_garbage(recent)

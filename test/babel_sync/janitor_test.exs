@@ -14,7 +14,12 @@ defmodule BabelSync.JanitorTest do
     {:ok, blob} = Blobs.put(vault.id, data)
 
     {:ok, entry} =
-      Vaults.create_entry(vault.id, %{path: path, blob_hash: blob.hash, size: blob.size})
+      Vaults.create_entry(vault.id, %{
+        path: path,
+        kind: :blob,
+        blob_hash: blob.hash,
+        size: blob.size
+      })
 
     entry
   end
@@ -23,6 +28,28 @@ defmodule BabelSync.JanitorTest do
     {:ok, blob} = Blobs.put(entry.vault_id, data)
     {:ok, entry} = Vaults.update_entry(entry, %{blob_hash: blob.hash, size: blob.size})
     entry
+  end
+
+  describe "attachments recognised as text" do
+    test "become notes with the same identity, text and history" do
+      vault = vault()
+      base = attachment(vault, "Places/Restaurants.base", "views:\r\n  - type: table\n")
+      binary = attachment(vault, "broken.canvas", <<0, 255, 254>>)
+      photo = attachment(vault, "photo.png", "not really a picture")
+
+      :ok = Janitor.run()
+
+      assert %{kind: :doc, blob_hash: nil} = promoted = Vaults.get_entry(base.id)
+      assert promoted.seq > base.seq
+      assert Sync.text(base.id) == "views:\n  - type: table\n"
+      assert [%{blob_hash: hash}] = Vaults.list_blob_versions(base.id)
+      assert hash == base.blob_hash
+      assert %{kind: :blob} = Vaults.get_entry(binary.id)
+      assert %{kind: :blob} = Vaults.get_entry(photo.id)
+
+      :ok = Janitor.run()
+      assert Vaults.get_entry(base.id).seq == promoted.seq
+    end
   end
 
   describe "attachment history" do

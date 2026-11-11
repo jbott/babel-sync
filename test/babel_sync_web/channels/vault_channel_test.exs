@@ -158,7 +158,7 @@ defmodule BabelSyncWeb.VaultChannelTest do
     assert_reply push(socket, "set_blob", %{"id" => note.id, "blob_hash" => blob.hash}),
                  :error,
                  %{
-                   reason: "not_a_blob"
+                   reason: "conflict"
                  }
 
     assert_reply push(socket, "delete", %{"id" => "not-a-uuid"}), :error, %{reason: "not_found"}

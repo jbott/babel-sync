@@ -60,10 +60,10 @@ async function shutdown(device: Device): Promise<void> {
   await device.client.disconnect();
 }
 
-async function eventually(check: () => boolean | Promise<boolean>, what: string | (() => string)): Promise<void> {
+async function eventually(check: () => boolean | Promise<boolean>, what: string | (() => string | Promise<string>)): Promise<void> {
   const deadline = Date.now() + 20000;
   while (!(await check())) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${typeof what === "string" ? what : what()}`);
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${typeof what === "string" ? what : await what()}`);
     await new Promise((resolve) => setTimeout(resolve, 15));
   }
 }
@@ -290,6 +290,37 @@ test("attachments over the device's size limit are skipped without being deleted
 
   assert.deepEqual(paths(phone), ["small.md"]);
   assert.deepEqual(paths(laptop), ["small.md", "video.mp4"]);
+});
+
+test("bases and canvases are text that merges, and a device that held one as an attachment follows", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  await edit(laptop, "Places/Food.base", "views:\n");
+  await eventually(() => [...laptop.store.entries.values()].some((entry) => entry.path === "Places/Food.base" && entry.hash !== null), "the base on the server");
+  const created = [...laptop.store.entries.values()].find((entry) => entry.path === "Places/Food.base")!;
+  assert.equal(created.kind, "doc");
+
+  const fs = new MemoryFs();
+  const store = new MemoryStore();
+  await fs.writeText("Places/Food.base", "views:\n  - edited before the change\n");
+  await store.put({ ...created, kind: "blob", hash: "an-older-attachment", doc: undefined, dirty: false, moved: false });
+  const phone = await boot("phone", vault, { fs, store });
+
+  await eventually(
+    async () => (await text(phone, "Places/Food.base")) === "views:\n" && paths(phone).length === 2,
+    () => `the phone to take the note and keep its own copy, it has ${paths(phone).join()}; errors ${phone.errors.join()}`,
+  );
+  const kept = paths(phone).find((path) => path.includes("conflict"))!;
+  assert.equal(await text(phone, kept), "views:\n  - edited before the change\n");
+  await eventually(async () => (await text(laptop, kept)) !== null, "the kept copy on the laptop");
+
+  await edit(phone, "Places/Food.base", "views:\n  - type: table\n");
+  await edit(laptop, "Places/Food.base", "filters: none\nviews:\n");
+  const merged = "filters: none\nviews:\n  - type: table\n";
+  await eventually(
+    async () => (await text(laptop, "Places/Food.base")) === merged && (await text(phone, "Places/Food.base")) === merged,
+    async () => `both edits in the base, laptop has ${JSON.stringify(await text(laptop, "Places/Food.base"))} and phone ${JSON.stringify(await text(phone, "Places/Food.base"))}`,
+  );
 });
 
 test("hundreds of notes created at once all arrive", async () => {
