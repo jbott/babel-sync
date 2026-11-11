@@ -84,6 +84,16 @@ export class DocSession extends Emitter<DocEvents> {
     });
   }
 
+  flush(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.channel
+        .push("flush", {})
+        .receive("ok", () => resolve())
+        .receive("error", (reply: { reason?: string }) => reject(new Error(reply.reason ?? "error")))
+        .receive("timeout", () => reject(new Error("timeout")));
+    });
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;

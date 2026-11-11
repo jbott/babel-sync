@@ -85,6 +85,20 @@ defmodule BabelSyncWeb.DocChannelTest do
     refute_push "awareness", _
   end
 
+  test "a client can ask for its edits to be announced to the vault now", ctx do
+    {doc, text} = client_doc(1)
+    {:ok, reply, socket} = join_doc(ctx.owner, ctx.note, doc)
+    :ok = Yex.apply_update(doc, Base.decode64!(reply.update))
+    Yex.Text.insert(text, 0, "x")
+    assert_reply push(socket, "update", {:binary, local_update(doc, reply)}), :ok
+    :ok = Vaults.subscribe(ctx.vault.id)
+
+    assert_reply push(socket, "flush", %{}), :ok
+
+    assert_receive {:entry_changed, %{content_hash: hash}}
+    assert hash == BabelSync.Sync.Store.hash("xserver text")
+  end
+
   test "viewers receive edits but cannot make them", ctx do
     viewer = user()
     {:ok, _} = Vaults.put_member(ctx.vault, viewer, :viewer)

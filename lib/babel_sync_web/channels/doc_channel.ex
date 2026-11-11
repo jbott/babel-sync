@@ -50,6 +50,19 @@ defmodule BabelSyncWeb.DocChannel do
     end
   end
 
+  def handle_in("flush", _payload, socket) do
+    %{scope: scope, entry_id: entry_id, vault_id: vault_id} = socket.assigns
+
+    case Scope.authorize(scope, vault_id, :write) do
+      :ok ->
+        :ok = Sync.flush(entry_id)
+        {:reply, :ok, socket}
+
+      {:error, :forbidden} ->
+        {:reply, {:error, %{reason: "forbidden"}}, socket}
+    end
+  end
+
   def handle_in("awareness", {:binary, state}, socket) do
     Phoenix.PubSub.broadcast_from(
       BabelSync.PubSub,
