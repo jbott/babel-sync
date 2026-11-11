@@ -6,6 +6,7 @@ BabelSync is a self-hosted live-sync server for Obsidian vaults: a Phoenix/LiveV
 - Run every tool through the Nix dev shell: `nix develop --command <cmd>`, or `direnv allow` once and use the shell directly. Nothing is installed globally
 - Run `mix precommit` before every commit. The git hook in `.githooks/pre-commit` runs it too, but `jj` does not run git hooks, so run it by hand when committing with `jj`
 - Run `mix dialyzer` after major changes. It is not part of `mix precommit`
+- After changing `mix.lock` or `package-lock.json`, refresh the matching hash in `nix/package.nix` and check that `nix build` still works
 - If a library is poor, write the piece in-tree instead of working around it, and say so in the commit message
 
 ### Tools

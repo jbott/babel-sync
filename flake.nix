@@ -4,6 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    nix2container = {
+      url = "github:nlewo/nix2container";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -11,14 +15,37 @@
       self,
       nixpkgs,
       flake-utils,
+      nix2container,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
         beam = pkgs.beam28Packages;
+
+        release =
+          packages: beamPackages:
+          packages.callPackage ./nix/package.nix {
+            beamPackages = beamPackages.overrideScope (
+              final: previous: { elixir = previous.elixir_1_20; }
+            );
+          };
+
+        linux = import nixpkgs { system = "${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux"; };
       in
       {
+        packages = {
+          default = release pkgs pkgs.beam28Packages;
+
+          container = pkgs.callPackage ./nix/container.nix {
+            inherit (nix2container.packages.${system}) nix2container;
+            babelsync = release linux linux.beamMinimal28Packages;
+            architecture = linux.go.GOARCH;
+            inherit (linux) cacert coreutils;
+            inherit (linux) runCommand writeShellApplication;
+          };
+        };
+
         devShells.default = pkgs.mkShell {
           packages =
             [

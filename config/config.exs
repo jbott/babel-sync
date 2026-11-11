@@ -8,6 +8,7 @@
 import Config
 
 config :rustler_precompiled, :force_build, y_ex: true
+config :elixir_make, :force_build, exqlite: System.get_env("EXQLITE_FORCE_BUILD") == "1"
 
 default_storage =
   if System.get_env("BABELSYNC_MODE", "single") == "single", do: "local", else: "remote"
@@ -61,6 +62,7 @@ config :babel_sync, BabelSync.Mailer, adapter: Swoosh.Adapters.Local
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
+  path: System.get_env("MIX_ESBUILD_PATH"),
   babel_sync: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
@@ -71,6 +73,7 @@ config :esbuild,
 # Configure tailwind (the version is required)
 config :tailwind,
   version: "4.3.3",
+  path: System.get_env("MIX_TAILWIND_PATH"),
   babel_sync: [
     args: ~w(
       --input=assets/css/app.css
