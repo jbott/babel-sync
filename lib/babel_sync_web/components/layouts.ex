@@ -70,7 +70,7 @@ defmodule BabelSyncWeb.Layouts do
       ]}
     >
       <.logo class="size-5 text-accent" />
-      <span class="font-serif text-base font-semibold tracking-tight">BabelSync</span>
+      <span class="font-serif text-base font-semibold tracking-tight">Babel Sync</span>
     </.link>
     """
   end

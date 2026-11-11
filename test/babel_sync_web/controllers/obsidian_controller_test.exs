@@ -53,7 +53,7 @@ defmodule BabelSyncWeb.ObsidianControllerTest do
   end
 
   test "a vault name that cannot be a folder still gets one" do
-    assert Plugin.folder_name("  ../..  ") == "BabelSync vault"
+    assert Plugin.folder_name("  ../..  ") == "Babel Sync vault"
     assert Plugin.folder_name("a/b\\c") == "a b c"
   end
 

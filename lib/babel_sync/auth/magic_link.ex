@@ -83,10 +83,10 @@ defmodule BabelSync.Auth.MagicLink do
   defp message(email, link) do
     Swoosh.Email.new(
       to: email,
-      from: {"BabelSync", config(:from)},
-      subject: "Your BabelSync sign-in link",
+      from: {"Babel Sync", config(:from)},
+      subject: "Your Babel Sync sign-in link",
       text_body: """
-      Open this link to sign in to BabelSync:
+      Open this link to sign in to Babel Sync:
 
       #{link}
 

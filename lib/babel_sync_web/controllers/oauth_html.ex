@@ -30,7 +30,7 @@ defmodule BabelSyncWeb.OAuthHTML do
               >
                 {@request.client.name}
               </h1>
-              <p class="mt-0.5 text-muted">wants to connect to BabelSync</p>
+              <p class="mt-0.5 text-muted">wants to connect to Babel Sync</p>
             </div>
             <p id="consent-destination" class="text-ink">
               Access will be handed to

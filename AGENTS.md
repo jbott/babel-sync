@@ -1,6 +1,6 @@
-BabelSync is a self-hosted live-sync server for Obsidian vaults: a Phoenix/LiveView app, an Obsidian plugin, a web viewer/editor, and an MCP server for agents.
+Babel Sync is a self-hosted live-sync server for Obsidian vaults: a Phoenix/LiveView app, an Obsidian plugin, a web viewer/editor, and an MCP server for agents.
 
-## BabelSync rules
+## Babel Sync rules
 
 - **Never** add comments to code. Make names and structure carry the meaning; put rationale in the commit message
 - Run every tool through the Nix dev shell: `nix develop --command <cmd>`, or `direnv allow` once and use the shell directly. Nothing is installed globally

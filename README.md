@@ -1,4 +1,4 @@
-# BabelSync
+# Babel Sync
 
 A self-hosted live-sync server for [Obsidian](https://obsidian.md) vaults.
 
@@ -87,7 +87,7 @@ Sign-in:
 
 The server hands out its own copy of the plugin, so a device is set up from the server it will sync with. Open a vault in the web app and choose **Connect Obsidian**:
 
-1. **Get the plugin onto the device, once.** Download the vault folder (the plugin is inside, switched on and already pointed at the vault) and open it in Obsidian, or download the plugin alone and unzip it into an existing vault's `.obsidian/plugins/` folder, then enable it under Community plugins. Obsidian can install a plugin from a link only when it is in the community directory, and BabelSync is not there yet. A device that already syncs keeps its plugin up to date through the sync itself.
+1. **Get the plugin onto the device, once.** Download the vault folder (the plugin is inside, switched on and already pointed at the vault) and open it in Obsidian, or download the plugin alone and unzip it into an existing vault's `.obsidian/plugins/` folder, then enable it under Community plugins. Obsidian can install a plugin from a link only when it is in the community directory, and Babel Sync is not there yet. A device that already syncs keeps its plugin up to date through the sync itself.
 2. **Tap Open in Obsidian.** The link (`obsidian://babelsync-connect?server=…&id=…`) opens Obsidian, which asks whether to sync the open vault with that server vault, then sends you to the server's consent page to approve the device. Nothing is typed and nothing is picked from a list.
 
 The same can be done by hand in Settings › Babel Sync, which shows the next step at the top: enter the server address, sign in, choose a vault.

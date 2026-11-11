@@ -224,7 +224,7 @@ defmodule BabelSyncWeb.AuthLive.Login do
     """
   end
 
-  defp heading(:setup), do: "Set up BabelSync"
-  defp heading(:locked), do: "Set up BabelSync"
-  defp heading(_stage), do: "Sign in to BabelSync"
+  defp heading(:setup), do: "Set up Babel Sync"
+  defp heading(:locked), do: "Set up Babel Sync"
+  defp heading(_stage), do: "Sign in to Babel Sync"
 end

@@ -31,7 +31,7 @@ defmodule BabelSyncWeb.ErrorHTML do
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{@message} · BabelSync</title>
+        <title>{@message} · Babel Sync</title>
         <link rel="icon" type="image/svg+xml" href={~p"/images/favicon.svg"} />
         <link rel="stylesheet" href={~p"/assets/css/app.css"} />
       </head>

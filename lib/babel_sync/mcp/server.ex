@@ -5,7 +5,7 @@ defmodule BabelSync.MCP.Server do
   """
 
   @instructions """
-  BabelSync holds Obsidian vaults: folders of Markdown notes and attachments that people \
+  Babel Sync holds Obsidian vaults: folders of Markdown notes and attachments that people \
   are editing live, in Obsidian and in the browser, while you work.
 
   Find things with list_directory, find_files (path patterns) and search_files (note text). \
@@ -25,7 +25,7 @@ defmodule BabelSync.MCP.Server do
   """
 
   use Anubis.Server,
-    name: "BabelSync",
+    name: "Babel Sync",
     version: "0.1.0",
     capabilities: [:tools],
     instructions: @instructions

@@ -44,7 +44,7 @@ defmodule BabelSyncWeb.MCPTest do
         }
       })
 
-    assert %{"result" => %{"serverInfo" => %{"name" => "BabelSync"}, "instructions" => guide}} =
+    assert %{"result" => %{"serverInfo" => %{"name" => "Babel Sync"}, "instructions" => guide}} =
              decode(response)
 
     assert guide =~ "edit_file"

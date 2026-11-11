@@ -30,7 +30,7 @@ defmodule BabelSync.Auth.Passkeys do
 
     public_key = %{
       challenge: encode(challenge.bytes),
-      rp: %{id: challenge.rp_id, name: "BabelSync"},
+      rp: %{id: challenge.rp_id, name: "Babel Sync"},
       user: %{
         id: encode(user.id),
         name: user.email || user.name || "owner",

@@ -34,7 +34,7 @@ let
 
   root = runCommand "babelsync-root" { } ''
     mkdir -p $out/data $out/tmp $out/etc/ssl/certs
-    echo "babelsync:x:${toString account}:${toString account}:BabelSync:/data:/sbin/nologin" > $out/etc/passwd
+    echo "babelsync:x:${toString account}:${toString account}:Babel Sync:/data:/sbin/nologin" > $out/etc/passwd
     echo "babelsync:x:${toString account}:" > $out/etc/group
     ln -s ${cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
   '';
@@ -82,7 +82,7 @@ nix2container.buildImage {
       "LANG=C.UTF-8"
     ];
     Labels = {
-      "org.opencontainers.image.title" = "BabelSync";
+      "org.opencontainers.image.title" = "Babel Sync";
       "org.opencontainers.image.description" = babelsync.meta.description;
       "org.opencontainers.image.version" = babelsync.version;
     };

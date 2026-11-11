@@ -10,7 +10,7 @@ const readOnlyToken = process.env.BABELSYNC_READ_TOKEN!;
 
 test("the official client negotiates, is told how to work, and lists the tools", async () => {
   const agent = await connectAgent(baseUrl, token);
-  assert.equal(agent.client.getServerVersion()?.name, "BabelSync");
+  assert.equal(agent.client.getServerVersion()?.name, "Babel Sync");
   assert.ok(agent.client.getServerCapabilities()?.tools);
   assert.match(agent.client.getInstructions() ?? "", /edit_file or append_file/);
 

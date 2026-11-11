@@ -1,5 +1,5 @@
 {
-  description = "BabelSync: live-syncing Obsidian vaults (Phoenix server, Obsidian plugin, MCP)";
+  description = "Babel Sync: live-syncing Obsidian vaults (Phoenix server, Obsidian plugin, MCP)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

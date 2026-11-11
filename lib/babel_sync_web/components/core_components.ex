@@ -523,7 +523,7 @@ defmodule BabelSyncWeb.CoreComponents do
   end
 
   @doc """
-  Renders the BabelSync mark: one hexagonal gallery holding lines of text.
+  Renders the Babel Sync mark: one hexagonal gallery holding lines of text.
   """
   attr :class, :any, default: "size-5"
 

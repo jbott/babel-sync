@@ -1,6 +1,6 @@
 defmodule BabelSync do
   @moduledoc """
-  BabelSync keeps Obsidian vaults in sync between devices, people and agents.
+  Babel Sync keeps Obsidian vaults in sync between devices, people and agents.
   """
 
   @spec mode() :: :single | :multi

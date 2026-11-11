@@ -86,7 +86,7 @@ export class SettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Server")
-      .setDesc("Address of your BabelSync server, for example notes.example.com")
+      .setDesc("Address of your Babel Sync server, for example notes.example.com")
       .addText((text) => {
         text.setPlaceholder("https://").setValue(settings.serverUrl);
         text.inputEl.addEventListener("change", () => void this.changeServer(text.getValue()));

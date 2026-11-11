@@ -128,7 +128,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
             <div :if={@plugin == "install"} id="install" class="space-y-4">
               <p class="text-sm leading-6 text-muted">
                 Obsidian can only install a plugin from a link once it is in its community
-                directory, and BabelSync is not there yet. Until then it goes in by hand, once per
+                directory, and Babel Sync is not there yet. Until then it goes in by hand, once per
                 device.
               </p>
 
@@ -403,7 +403,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
         No Obsidian folder there? Install Obsidian and open it once. If Obsidian keeps its vaults
         in iCloud, the folder goes in
         <.ui>iCloud Drive › Obsidian</.ui>
-        instead, but a vault should sync through BabelSync or iCloud, not both, so On My iPhone is
+        instead, but a vault should sync through Babel Sync or iCloud, not both, so On My iPhone is
         the better place.
       </:note>
     </.instruction>

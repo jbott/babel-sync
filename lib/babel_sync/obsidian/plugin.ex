@@ -62,7 +62,7 @@ defmodule BabelSync.Obsidian.Plugin do
       |> String.replace(~r/^[\s.]+|[\s.]+$/u, "")
       |> String.slice(0, 80)
 
-    if cleaned == "", do: "BabelSync vault", else: cleaned
+    if cleaned == "", do: "Babel Sync vault", else: cleaned
   end
 
   defp zip(place, extra) do
