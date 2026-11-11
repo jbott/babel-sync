@@ -12,7 +12,10 @@ defmodule BabelSyncWeb.Endpoint do
   ]
 
   socket "/socket", BabelSyncWeb.UserSocket,
-    websocket: [max_frame_size: 16 * 1024 * 1024],
+    websocket: [
+      max_frame_size: 16 * 1024 * 1024,
+      check_origin: {BabelSyncWeb.Origin, :allowed?, []}
+    ],
     longpoll: false
 
   socket "/live", Phoenix.LiveView.Socket,
