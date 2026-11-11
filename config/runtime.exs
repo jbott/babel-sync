@@ -217,19 +217,27 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  public =
+    URI.parse(
+      System.get_env("BABELSYNC_URL", "http://localhost:#{System.get_env("PORT", "4000")}")
+    )
+
+  if public.scheme not in ["http", "https"] or public.host in [nil, ""] do
+    raise "BABELSYNC_URL must be the address people use, for example https://notes.example.com"
+  end
 
   config :babel_sync, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  bind =
+    case System.get_env("BABELSYNC_BIND", if(auth == [], do: "local", else: "all")) do
+      "local" -> {127, 0, 0, 1}
+      "all" -> {0, 0, 0, 0, 0, 0, 0, 0}
+      other -> raise "BABELSYNC_BIND must be local or all, got: #{inspect(other)}"
+    end
+
   config :babel_sync, BabelSyncWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
-    http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://bandit.hexdocs.pm/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0}
-    ],
+    url: [host: public.host, port: public.port, scheme: public.scheme],
+    http: [ip: bind],
     secret_key_base: secret_key_base
 
   # ## SSL Support

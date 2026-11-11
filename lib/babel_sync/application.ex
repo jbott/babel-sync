@@ -10,6 +10,9 @@ defmodule BabelSync.Application do
     children = [
       BabelSyncWeb.Telemetry,
       BabelSync.Repo.active(),
+      {Ecto.Migrator,
+       repos: [BabelSync.Repo.active()],
+       skip: not Application.get_env(:babel_sync, :auto_migrate, true)},
       {DNSCluster, query: Application.get_env(:babel_sync, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: BabelSync.PubSub},
       {Registry, keys: :unique, name: BabelSync.Sync.Registry},

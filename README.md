@@ -1,18 +1,99 @@
 # BabelSync
 
-To start your Phoenix server:
+A self-hosted live-sync server for [Obsidian](https://obsidian.md) vaults.
 
-* Run `mix setup` to install and setup dependencies
-* Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+- **Live sync** between devices through an Obsidian plugin, desktop and mobile. Notes are merged character by character (a CRDT, [Yjs](https://yjs.dev)), so two devices editing the same note, online or offline, never overwrite each other.
+- **Web app** to browse, read and edit vaults, with live cursors when several people are in the same note.
+- **MCP server** at `/mcp` so agents can list, read, search, write and move notes.
+- **Attachments** of any size, uploaded in resumable 8 MiB parts.
+- **History and trash** for notes and attachments, kept for a configurable number of days.
+- **One user or many**: a single-user server on a disk, or a multi-user server on PostgreSQL and S3 with shared vaults and owner, editor and viewer roles.
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+## Run it
 
-Ready to run in production? Please [check our deployment guides](https://phoenix.hexdocs.pm/deployment.html).
+Everything runs inside the Nix dev shell (`nix develop`, or `direnv allow` once).
 
-## Learn more
+```sh
+mix setup
+mix phx.server
+```
 
-* Official website: https://www.phoenixframework.org/
-* Guides: https://phoenix.hexdocs.pm/overview.html
-* Docs: https://phoenix.hexdocs.pm
-* Forum: https://elixirforum.com/c/phoenix-forum
-* Source: https://github.com/phoenixframework/phoenix
+Open <http://localhost:4000>. With no configuration this is a single-user server with sign-in turned off, storing its data under `.dev/data`.
+
+To try multi-user mode locally, `bin/dev-services up` starts PostgreSQL and an S3-compatible server, then:
+
+```sh
+BABELSYNC_MODE=multi BABELSYNC_AUTH=magic_link BABELSYNC_ALLOWED_EMAILS='*' mix phx.server
+```
+
+Sign-in mail lands in the development mailbox at <http://localhost:4000/dev/mailbox>.
+
+## Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BABELSYNC_MODE` | `single` | `single` for one owner, `multi` for accounts and shared vaults |
+| `BABELSYNC_STORAGE` | `local` in single mode, `remote` in multi | `local` is SQLite plus a directory; `remote` is PostgreSQL plus S3 |
+| `BABELSYNC_AUTH` | `none` in single mode, `oidc` in multi | Comma-separated: `oidc`, `passkey`, `magic_link`; or `none` (single mode only) |
+| `BABELSYNC_URL` | `http://localhost:$PORT` | The address people use. Sign-in links, passkeys and OAuth depend on it |
+| `BABELSYNC_BIND` | `local` when sign-in is off, else `all` | Listen on localhost only, or on every interface |
+| `BABELSYNC_DATA_DIR` | required in production | Where local mode keeps its database and attachments |
+| `BABELSYNC_RETENTION_DAYS` | `30` | How long history and trash are kept; `0` keeps them forever |
+| `BABELSYNC_MAX_BLOB_BYTES` | 5 GiB | Largest attachment accepted |
+| `SECRET_KEY_BASE` | required in production | `mix phx.gen.secret` |
+| `PORT` | `4000` | HTTP port |
+
+Remote storage:
+
+| Variable | Meaning |
+|---|---|
+| `DATABASE_URL` | `ecto://user:pass@host/database` |
+| `BABELSYNC_S3_ENDPOINT`, `BABELSYNC_S3_BUCKET`, `BABELSYNC_S3_REGION` | Where attachments go |
+| `BABELSYNC_S3_ACCESS_KEY_ID`, `BABELSYNC_S3_SECRET_ACCESS_KEY` | Credentials for it |
+
+Sign-in:
+
+| Variable | Meaning |
+|---|---|
+| `BABELSYNC_OIDC_ISSUER`, `BABELSYNC_OIDC_CLIENT_ID`, `BABELSYNC_OIDC_CLIENT_SECRET` | The OpenID Connect provider. Register `$BABELSYNC_URL/login/oidc/callback` as the redirect address |
+| `BABELSYNC_OIDC_REQUIRE` | Claims a person must have, as `claim=value,claim=value`. Required in single mode, for example `email=you@example.com` |
+| `BABELSYNC_OIDC_LABEL`, `BABELSYNC_OIDC_SCOPES` | Button text (default "single sign-on") and scopes (default `openid email profile`) |
+| `BABELSYNC_ALLOWED_EMAILS` | Who may sign in by emailed link without already having an account: addresses, `*@domain`, or `*` |
+| `BABELSYNC_SMTP_HOST`, `_PORT`, `_USERNAME`, `_PASSWORD`, `BABELSYNC_MAIL_FROM` | Mail server for sign-in links |
+
+### Signing in on a single-user server
+
+- `none`: no sign-in. The server listens on localhost only unless `BABELSYNC_BIND=all`.
+- `passkey`: on first start the log prints a one-time setup address. Open it to register your passkey; more can be added on the account page.
+- `oidc`: sign in with one identity at your provider, named by `BABELSYNC_OIDC_REQUIRE`.
+
+## Obsidian plugin
+
+```sh
+cd plugin && npm run build
+```
+
+Copy `main.js` and `manifest.json` into `<vault>/.obsidian/plugins/babelsync/`, enable the plugin, then in its settings enter the server address, sign in, and pick a vault. Signing in opens the server's consent page in a browser and returns to Obsidian.
+
+Notes sync as you type. Themes, snippets, hotkeys and plugins under `.obsidian` sync too (this can be turned off); window layout stays per device. On mobile, attachments over 50 MiB are left on the server by default.
+
+## Agents (MCP)
+
+Add `$BABELSYNC_URL/mcp` to an MCP client as a Streamable HTTP server. The client registers itself and sends you to the consent page; approved agents are listed on the account page, where each can be disconnected. An agent that asks for the `vault:read` scope cannot change anything.
+
+## Development
+
+```sh
+mix precommit                        # compile without warnings, format, test (SQLite, no services)
+bin/dev-services up
+BABELSYNC_STORAGE=remote mix test    # the same suite on PostgreSQL and S3
+mix dialyzer
+```
+
+The end-to-end tests run the JavaScript client and two copies of the plugin's sync engine against the real server under Node.
+
+Layout: `lib/babel_sync` is the server core, `lib/babel_sync_web` the web app, channels and HTTP API, `js/core` the sync client shared by the web editor and the plugin, `plugin` the Obsidian plugin.
+
+### Not yet verified
+
+The automated tests cannot drive a browser or Obsidian itself. The web editor and the plugin's Obsidian-facing layer (editor binding, settings, file events) are type-checked and build, and the sync engine underneath is tested, but they have not been run by hand yet.
