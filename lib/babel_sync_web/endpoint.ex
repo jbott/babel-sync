@@ -8,7 +8,8 @@ defmodule BabelSyncWeb.Endpoint do
     store: :cookie,
     key: "_babel_sync_key",
     signing_salt: "gAKhAW2a",
-    same_site: "Lax"
+    same_site: "Lax",
+    max_age: 30 * 86_400
   ]
 
   socket "/socket", BabelSyncWeb.UserSocket,

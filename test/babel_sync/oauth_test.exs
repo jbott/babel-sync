@@ -222,10 +222,11 @@ defmodule BabelSync.OAuthTest do
       assert {:ok, %Scope{read_only: true}} = OAuth.scope_from_access_token(access)
     end
 
-    test "refreshing rotates both tokens and forgives one lost reply", %{
-      user: user,
-      client: client
-    } do
+    test "refreshing rotates both tokens, and asking again with the same token gives the same pair",
+         %{
+           user: user,
+           client: client
+         } do
       {:ok, first} = exchange(client, code_for(client, user))
 
       refresh = fn token ->
@@ -240,10 +241,49 @@ defmodule BabelSync.OAuthTest do
       assert :error = OAuth.scope_from_access_token(first.access_token)
       assert {:ok, _scope} = OAuth.scope_from_access_token(second.access_token)
 
-      assert {:ok, third} = refresh.(first.refresh_token)
+      for _again <- 1..3 do
+        assert {:ok, repeat} = refresh.(first.refresh_token)
+        assert repeat.access_token == second.access_token
+        assert repeat.refresh_token == second.refresh_token
+      end
+
+      assert {:ok, _scope} = OAuth.scope_from_access_token(second.access_token)
+
+      assert {:ok, third} = refresh.(second.refresh_token)
+      assert third.refresh_token != second.refresh_token
       assert {:ok, _scope} = OAuth.scope_from_access_token(third.access_token)
       assert {:error, "invalid_grant"} = refresh.(first.refresh_token)
       assert {:error, "invalid_grant"} = refresh.("bsr_unknown")
+    end
+
+    test "several refreshes at the same moment all receive the tokens that stay valid", %{
+      user: user,
+      client: client
+    } do
+      {:ok, first} = exchange(client, code_for(client, user))
+
+      replies =
+        1..6
+        |> Task.async_stream(
+          fn _n ->
+            OAuth.token(%{
+              "grant_type" => "refresh_token",
+              "refresh_token" => first.refresh_token,
+              "client_id" => client.id
+            })
+          end,
+          timeout: :infinity
+        )
+        |> Enum.map(fn {:ok, {:ok, tokens}} -> tokens.refresh_token end)
+
+      assert [kept] = Enum.uniq(replies)
+
+      assert {:ok, _next} =
+               OAuth.token(%{
+                 "grant_type" => "refresh_token",
+                 "refresh_token" => kept,
+                 "client_id" => client.id
+               })
     end
 
     test "a grant can be listed and revoked", %{user: user, client: client} do

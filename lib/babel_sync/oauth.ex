@@ -152,7 +152,8 @@ defmodule BabelSync.OAuth do
     client_id = params["client_id"]
 
     case grant do
-      %Grant{client_id: ^client_id} -> {:ok, rotate(grant)}
+      %Grant{client_id: ^client_id, refresh_hash: ^hash} -> {:ok, rotate(grant, refresh)}
+      %Grant{client_id: ^client_id} -> repeated(grant, refresh)
       _invalid -> {:error, "invalid_grant"}
     end
   end
@@ -315,9 +316,17 @@ defmodule BabelSync.OAuth do
     response(grant, access, refresh)
   end
 
-  defp rotate(%Grant{} = grant) do
-    access = secret(@access_prefix)
-    refresh = secret(@refresh_prefix)
+  defp repeated(%Grant{} = grant, presented) do
+    refresh = successor(@refresh_prefix, presented)
+
+    if digest(refresh) == grant.refresh_hash,
+      do: {:ok, response(grant, successor(@access_prefix, presented), refresh)},
+      else: {:error, "invalid_grant"}
+  end
+
+  defp rotate(%Grant{} = grant, presented) do
+    access = successor(@access_prefix, presented)
+    refresh = successor(@refresh_prefix, presented)
     now = DateTime.utc_now()
 
     grant =
@@ -335,12 +344,12 @@ defmodule BabelSync.OAuth do
     response(grant, access, refresh)
   end
 
-  defp response(%Grant{read_only: read_only}, access, refresh) do
+  defp response(%Grant{read_only: read_only} = grant, access, refresh) do
     %{
       access_token: access,
       refresh_token: refresh,
       token_type: "Bearer",
-      expires_in: @access_lifetime,
+      expires_in: remaining(grant.access_expires_at),
       scope: if(read_only, do: @read_scope, else: @full_scope)
     }
   end
@@ -351,6 +360,21 @@ defmodule BabelSync.OAuth do
 
   defp secret(prefix) do
     prefix <> Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+  end
+
+  defp remaining(expires_at) do
+    expires_at
+    |> DateTime.diff(DateTime.utc_now(), :millisecond)
+    |> Kernel./(1000)
+    |> ceil()
+    |> max(1)
+  end
+
+  defp successor(prefix, presented) do
+    key = BabelSyncWeb.Endpoint.config(:secret_key_base)
+
+    prefix <>
+      Base.url_encode64(:crypto.mac(:hmac, :sha256, key, prefix <> presented), padding: false)
   end
 
   defp digest(token), do: :crypto.hash(:sha256, token)

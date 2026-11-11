@@ -264,8 +264,15 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.refreshing ??= refreshTokens(nativeFetch, serverUrl, clientId, tokens.refreshToken)
       .then(async (fresh) => {
+        const saved = fresh ? null : ((await this.loadData()) as Partial<Settings> | null)?.tokens;
+        if (saved && saved.refreshToken !== tokens.refreshToken) {
+          this.settings.tokens = saved;
+          this.record("the saved sign-in was newer than the one in use; using it");
+          return;
+        }
         this.settings.tokens = fresh;
         await this.saveSettings();
+        this.record(fresh ? "sign-in renewed" : "the server refused to renew the sign-in; signed out");
         if (!fresh) new Notice("Babel Sync was signed out. Sign in again from its settings.");
       })
       .finally(() => {
