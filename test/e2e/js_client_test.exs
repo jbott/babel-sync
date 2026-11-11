@@ -50,9 +50,16 @@ defmodule BabelSync.E2E.JsClientTest do
     assert Sync.text(live.id) == "a😀😃b 日本の語\nbob was here\nand the server too ✅🎉\n"
   end
 
+  test "the plugin reads connect links and refuses malformed ones" do
+    {output, status} =
+      System.cmd("node", ["--test", "plugin/test/invitation.test.ts"], stderr_to_stdout: true)
+
+    assert status == 0, output
+  end
+
   test "two plugin sync engines keep their vaults identical through the server" do
     owner = user()
-    vaults = for n <- 1..10, do: vault(owner, %{name: "Device test #{n}"})
+    vaults = for n <- 1..14, do: vault(owner, %{name: "Device test #{n}"})
     token = owner |> Scope.for_user() |> Auth.socket_token()
 
     {output, status} =

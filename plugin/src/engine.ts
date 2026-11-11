@@ -41,6 +41,7 @@ type Live = {
 };
 
 const DISK = Symbol("disk");
+const MAX_RESTING_SESSIONS = 16;
 
 export class SyncEngine extends Emitter<{ status: Status; error: string }> {
   status: Status = "offline";
@@ -596,12 +597,21 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
     live.holds -= 1;
     if (live.holds > 0) return;
 
-    live.timer = setTimeout(() => {
-      live.stop();
-      live.session.close();
-      this.live.delete(id);
-      if (this.docs.size > 200 && !this.open.has(id)) this.docs.delete(id);
-    }, this.options.sessionIdleMs ?? 30_000);
+    live.timer = setTimeout(() => this.retire(id, live), this.options.sessionIdleMs ?? 30_000);
+
+    const resting = [...this.live].filter(([, other]) => other.holds === 0);
+    for (const [oldest, other] of resting.slice(0, -MAX_RESTING_SESSIONS)) this.retire(oldest, other);
+  }
+
+  private retire(id: string, live: Live): void {
+    if (live.timer) clearTimeout(live.timer);
+    live.timer = null;
+    if (this.live.get(id) !== live) return;
+
+    live.stop();
+    live.session.close();
+    this.live.delete(id);
+    if (this.docs.size > 200 && !this.open.has(id)) this.docs.delete(id);
   }
 
   private remember(entry: LocalEntry): void {

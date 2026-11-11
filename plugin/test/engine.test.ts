@@ -28,7 +28,7 @@ async function boot(
   name: string,
   vaultId: string,
   previous?: Pick<Device, "fs" | "store">,
-  options: { maxBlobBytes?: number } = {},
+  options: { maxBlobBytes?: number; sessionIdleMs?: number } = {},
 ): Promise<Device> {
   const fs = previous?.fs ?? new MemoryFs();
   const store = previous?.store ?? new MemoryStore();
@@ -61,7 +61,7 @@ async function shutdown(device: Device): Promise<void> {
 }
 
 async function eventually(check: () => boolean | Promise<boolean>, what: string | (() => string)): Promise<void> {
-  const deadline = Date.now() + 8000;
+  const deadline = Date.now() + 20000;
   while (!(await check())) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${typeof what === "string" ? what : what()}`);
     await new Promise((resolve) => setTimeout(resolve, 15));
@@ -265,6 +265,21 @@ test("attachments over the device's size limit are skipped without being deleted
 
   assert.deepEqual(paths(phone), ["small.md"]);
   assert.deepEqual(paths(laptop), ["small.md", "video.mp4"]);
+});
+
+test("hundreds of notes created at once all arrive", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault, undefined, { sessionIdleMs: 30_000 });
+  const phone = await boot("phone", vault, undefined, { sessionIdleMs: 30_000 });
+
+  for (let n = 0; n < 250; n++) await edit(laptop, `Import/note ${n}.md`, `note ${n}\n`);
+
+  await eventually(
+    () => paths(phone).length === 250,
+    () => `the phone to have all 250, it has ${paths(phone).length}; errors ${[...new Set([...phone.errors, ...laptop.errors])].join()}`,
+  );
+  assert.deepEqual([...laptop.errors, ...phone.errors], []);
+  assert.equal(await text(phone, "Import/note 249.md"), "note 249\n");
 });
 
 test("ignored paths never leave the device", async () => {
