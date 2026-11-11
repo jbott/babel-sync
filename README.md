@@ -99,6 +99,8 @@ Add `$BABELSYNC_URL/mcp` to an MCP client as a Streamable HTTP server. The clien
 
 Apps register themselves without signing in, so registration is bounded: a redirect address is at most 2000 bytes and must be `https`, loopback `http` or an app scheme such as `obsidian://`; one address may register 30 apps an hour; and a registration nobody approves is forgotten after a day.
 
+Agents cannot see or change the `.obsidian` folder, which holds the plugins Obsidian runs. An owner can open it to agents per vault, in the vault's settings.
+
 The agent gets the vault as a file system:
 
 | Tool | What it does |

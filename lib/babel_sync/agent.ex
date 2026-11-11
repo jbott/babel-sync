@@ -9,6 +9,10 @@ defmodule BabelSync.Agent do
   therefore sends only the passage it changes, never the whole note, and
   does not overwrite what someone is typing.
 
+  The `.obsidian` folder holds the plugins Obsidian runs and their
+  settings. Unless the vault's owner opens it to agents, an agent can
+  neither see it nor put anything there.
+
   A note's `rev` names its exact text. A write that carries the rev of an
   earlier read is refused when the note has changed since.
   """
@@ -31,6 +35,7 @@ defmodule BabelSync.Agent do
           | :exists
           | :invalid_path
           | :invalid_pattern
+          | :off_limits
           | :unguarded
           | :no_heading
           | :ambiguous_heading
@@ -57,9 +62,11 @@ defmodule BabelSync.Agent do
   @spec list_directory(Scope.t(), vault_reference(), String.t() | nil, pos_integer()) ::
           {:ok, [map()]} | error()
   def list_directory(scope, vault, path \\ nil, depth \\ 1) do
-    with {:ok, vault} <- vault(scope, vault, :read) do
-      folder = Vaults.Path.normalize(path || "")
-      inside = vault.id |> Vaults.list_entries() |> within(folder)
+    folder = Vaults.Path.normalize(path || "")
+
+    with {:ok, vault} <- vault(scope, vault, :read),
+         :ok <- reachable(vault, folder) do
+      inside = vault |> entries() |> within(folder)
 
       case {inside, folder == "" or Vaults.get_entry_by_path(vault.id, folder)} do
         {[], nil} -> {:error, :not_found}
@@ -75,7 +82,7 @@ defmodule BabelSync.Agent do
          {:ok, glob} <- Glob.compile(pattern) do
       {:ok,
        for(
-         %Entry{kind: kind, path: path} <- Vaults.list_entries(vault.id),
+         %Entry{kind: kind, path: path} <- entries(vault),
          kind != :folder and Regex.match?(glob, path),
          do: path
        )
@@ -93,7 +100,7 @@ defmodule BabelSync.Agent do
 
       found =
         for(
-          %Entry{kind: :doc} = entry <- Vaults.list_entries(vault.id),
+          %Entry{kind: :doc} = entry <- entries(vault),
           Regex.match?(glob, entry.path),
           do: entry
         )
@@ -150,7 +157,8 @@ defmodule BabelSync.Agent do
     content = Sync.normalize(content)
     replace = fn _current -> {:ok, content} end
 
-    with {:ok, vault} <- vault(scope, vault, :write) do
+    with {:ok, vault} <- vault(scope, vault, :write),
+         :ok <- reachable(vault, path) do
       case Vaults.get_entry_by_path(vault.id, path) do
         %Entry{kind: :doc} = entry ->
           if opts[:if_rev] || opts[:overwrite] do
@@ -194,7 +202,8 @@ defmodule BabelSync.Agent do
     content = Sync.normalize(content)
     heading = opts[:heading]
 
-    with {:ok, vault} <- vault(scope, vault, :write) do
+    with {:ok, vault} <- vault(scope, vault, :write),
+         :ok <- reachable(vault, path) do
       case Vaults.get_entry_by_path(vault.id, path) do
         %Entry{kind: :doc} = entry ->
           written(:updated, entry, rewrite(scope, entry, nil, &Text.append(&1, content, heading)))
@@ -213,7 +222,8 @@ defmodule BabelSync.Agent do
 
   @spec create_directory(Scope.t(), vault_reference(), String.t()) :: {:ok, String.t()} | error()
   def create_directory(scope, vault, path) do
-    with {:ok, vault} <- vault(scope, vault, :write) do
+    with {:ok, vault} <- vault(scope, vault, :write),
+         :ok <- reachable(vault, path) do
       case Vaults.create_entry(vault.id, %{path: path, kind: :folder}) do
         {:ok, folder} -> {:ok, folder.path}
         {:error, {:exists, %Entry{kind: :folder} = folder}} -> {:ok, folder.path}
@@ -230,6 +240,8 @@ defmodule BabelSync.Agent do
     to = Vaults.Path.normalize(to)
 
     with {:ok, vault} <- vault(scope, vault, :write),
+         :ok <- reachable(vault, from),
+         :ok <- reachable(vault, to),
          {:ok, moving} <- named(vault, from),
          :ok <- move_each(moving, from, to) do
       {:ok, to}
@@ -239,6 +251,7 @@ defmodule BabelSync.Agent do
   @spec delete_file(Scope.t(), vault_reference(), String.t()) :: {:ok, [String.t()]} | error()
   def delete_file(scope, vault, path) do
     with {:ok, vault} <- vault(scope, vault, :write),
+         :ok <- reachable(vault, path),
          {:ok, doomed} <- named(vault, Vaults.Path.normalize(path)) do
       deleted =
         for entry <- doomed,
@@ -255,7 +268,7 @@ defmodule BabelSync.Agent do
   def list_trash(scope, vault) do
     with {:ok, vault} <- vault(scope, vault, :read) do
       {:ok,
-       for entry <- Vaults.list_trash(vault.id) do
+       for entry <- Vaults.list_trash(vault.id), not hidden?(vault, entry.path) do
          %{path: entry.path, kind: kind(entry), deleted_at: entry.deleted_at}
        end}
     end
@@ -266,6 +279,7 @@ defmodule BabelSync.Agent do
     path = Vaults.Path.normalize(path)
 
     with {:ok, vault} <- vault(scope, vault, :write),
+         :ok <- reachable(vault, path),
          %Entry{} = trashed <- Enum.find(Vaults.list_trash(vault.id), &(&1.path == path)),
          {:ok, restored} <- Vaults.restore_entry(trashed) do
       {:ok, restored.path}
@@ -304,8 +318,8 @@ defmodule BabelSync.Agent do
     with {:ok, vault} <- vault(scope, vault, :read) do
       changed =
         case since do
-          nil -> vault.id |> Vaults.changes_since(0) |> Enum.take(-@recent_changes)
-          since -> vault.id |> Vaults.changes_since(since) |> Enum.take(@listed)
+          nil -> vault |> changes_since(0) |> Enum.take(-@recent_changes)
+          since -> vault |> changes_since(since) |> Enum.take(@listed)
         end
 
       {:ok,
@@ -347,10 +361,28 @@ defmodule BabelSync.Agent do
   end
 
   defp entry(vault, path) do
-    case Vaults.get_entry_by_path(vault.id, path) do
-      %Entry{} = entry -> {:ok, entry}
-      nil -> {:error, :not_found}
+    with :ok <- reachable(vault, path) do
+      case Vaults.get_entry_by_path(vault.id, path) do
+        %Entry{} = entry -> {:ok, entry}
+        nil -> {:error, :not_found}
+      end
     end
+  end
+
+  defp entries(vault),
+    do: vault.id |> Vaults.list_entries() |> Enum.reject(&hidden?(vault, &1.path))
+
+  defp changes_since(vault, seq),
+    do: vault.id |> Vaults.changes_since(seq) |> Enum.reject(&hidden?(vault, &1.path))
+
+  defp reachable(vault, path),
+    do: if(hidden?(vault, path), do: {:error, :off_limits}, else: :ok)
+
+  defp hidden?(%Vault{agents_see_config: true}, _path), do: false
+
+  defp hidden?(%Vault{}, path) do
+    [top | _rest] = path |> Vaults.Path.normalize() |> String.split("/", parts: 2)
+    String.downcase(top) == ".obsidian"
   end
 
   defp note(vault, path) do
@@ -367,7 +399,7 @@ defmodule BabelSync.Agent do
         {:ok, [entry]}
 
       nil ->
-        case vault.id |> Vaults.list_entries() |> within(path) do
+        case vault |> entries() |> within(path) do
           [] -> {:error, :not_found}
           inside -> {:ok, Enum.reject(inside, &nested?(&1, inside))}
         end

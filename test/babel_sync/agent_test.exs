@@ -41,6 +41,50 @@ defmodule BabelSync.AgentTest do
     assert {:error, :vault_not_found} = Agent.read_file(ctx.scope, "Nope", "a.md")
   end
 
+  describe "the .obsidian folder" do
+    setup %{vault: vault} do
+      entry(vault, ".obsidian/plugins/sample/main.js")
+      entry(vault, ".obsidian/app.json")
+      entry(vault, "note.md")
+      :ok
+    end
+
+    test "is invisible to an agent", %{scope: scope} do
+      assert {:ok, [%{path: "note.md"}]} = Agent.list_directory(scope, nil)
+      assert {:ok, ["note.md"]} = Agent.find_files(scope, nil, "**")
+      assert {:ok, %{changes: [%{path: "note.md"}]}} = Agent.list_changes(scope, nil)
+      assert {:error, :off_limits} = Agent.list_directory(scope, nil, ".obsidian")
+      assert {:error, :off_limits} = Agent.read_file(scope, nil, ".obsidian/app.json")
+      assert {:error, :off_limits} = Agent.read_file(scope, nil, "/.Obsidian/app.json")
+    end
+
+    test "cannot be written, moved into, moved out of or deleted", %{scope: scope, vault: vault} do
+      plugin = ".obsidian/plugins/sample/main.js"
+
+      assert {:error, :off_limits} = Agent.write_file(scope, nil, ".obsidian/x.md", "x")
+      assert {:error, :off_limits} = Agent.append_file(scope, nil, ".OBSIDIAN/x.md", "x")
+      assert {:error, :off_limits} = Agent.create_directory(scope, nil, ".obsidian/plugins/evil")
+      assert {:error, :off_limits} = Agent.move_file(scope, nil, "note.md", plugin)
+      assert {:error, :off_limits} = Agent.move_file(scope, nil, "note.md", ".obsidian")
+      assert {:error, :off_limits} = Agent.move_file(scope, nil, plugin, "main.js")
+      assert {:error, :off_limits} = Agent.delete_file(scope, nil, plugin)
+      assert {:error, :off_limits} = Agent.delete_file(scope, nil, ".obsidian")
+
+      {:ok, _deleted} = Vaults.delete_entry(Vaults.get_entry_by_path(vault.id, plugin))
+      assert {:ok, []} = Agent.list_trash(scope, nil)
+      assert {:error, :off_limits} = Agent.restore_file(scope, nil, plugin)
+      assert Vaults.get_entry_by_path(vault.id, ".obsidian/app.json")
+    end
+
+    test "is an ordinary folder once the vault opens it to agents", %{scope: scope, vault: vault} do
+      {:ok, _vault} = Vaults.update_vault(vault, %{agents_see_config: true})
+
+      assert {:ok, [%{path: ".obsidian/"}, %{path: "note.md"}]} = Agent.list_directory(scope, nil)
+      assert {:ok, %{outcome: :created}} = Agent.write_file(scope, nil, ".obsidian/x.md", "x")
+      assert {:ok, [".obsidian/x.md"]} = Agent.delete_file(scope, nil, ".obsidian/x.md")
+    end
+  end
+
   describe "looking around" do
     setup %{scope: scope, vault: vault} do
       write(scope, "top.md", "x")

@@ -51,6 +51,11 @@ defmodule BabelSync.MCP.Reply do
   defp message(:exists), do: "A file already exists at the destination path." <> @unchanged
   defp message(:invalid_path), do: "That is not a valid vault path."
 
+  defp message(:off_limits) do
+    "The .obsidian folder holds Obsidian's plugins and settings and is closed to agents in this vault." <>
+      @unchanged <> " The vault's owner can open it in the vault settings."
+  end
+
   defp message(:invalid_pattern),
     do: "That pattern is empty or malformed. Check the brackets and braces."
 

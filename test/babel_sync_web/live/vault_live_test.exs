@@ -245,6 +245,18 @@ defmodule BabelSyncWeb.VaultLiveTest do
   end
 
   describe "settings" do
+    test "an owner can open the .obsidian folder to agents and close it again", ctx do
+      {:ok, view, _html} = live(ctx.conn, Paths.settings(ctx.vault.id))
+      refute Vaults.get_vault(ctx.vault.id).agents_see_config
+
+      view |> form("#agent-access", agents_see_config: "true") |> render_change()
+      assert Vaults.get_vault(ctx.vault.id).agents_see_config
+      assert has_element?(view, "#agents-see-config[checked]")
+
+      view |> form("#agent-access") |> render_change(%{agents_see_config: "false"})
+      refute Vaults.get_vault(ctx.vault.id).agents_see_config
+    end
+
     test "only owners can open them", ctx do
       editor = user()
       {:ok, _} = Vaults.put_member(ctx.vault, editor, :editor)

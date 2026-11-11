@@ -44,6 +44,12 @@ defmodule BabelSyncWeb.VaultLive.Settings do
     end
   end
 
+  def handle_event("set_agent_access", params, socket) do
+    open = params["agents_see_config"] == "true"
+    {:ok, vault} = Vaults.update_vault(socket.assigns.vault, %{agents_see_config: open})
+    {:noreply, assign(socket, :vault, vault)}
+  end
+
   def handle_event("add_member", %{"member" => %{"email" => email, "role" => role}}, socket)
       when role in ["owner", "editor", "viewer"] do
     case Accounts.get_user_by_email(email) do
@@ -116,6 +122,31 @@ defmodule BabelSyncWeb.VaultLive.Settings do
           <div class="flex-1"><.input field={@name_form[:name]} label="Name" /></div>
           <.button class="mb-2">Save</.button>
         </.form>
+
+        <section id="agents" class="space-y-3">
+          <h2 class="font-semibold">Agents</h2>
+          <form id="agent-access" phx-change="set_agent_access">
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input type="hidden" name="agents_see_config" value="false" />
+              <input
+                type="checkbox"
+                id="agents-see-config"
+                name="agents_see_config"
+                value="true"
+                checked={@vault.agents_see_config}
+                class="checkbox checkbox-sm mt-0.5"
+              />
+              <span>
+                <span class="block font-medium">Let agents into the .obsidian folder</span>
+                <span class="block text-sm text-base-content/60">
+                  Off, agents connected over MCP cannot see or change Obsidian's settings and
+                  plugins in this vault. On, an agent that may write can install or replace a
+                  plugin, which then runs on every device that syncs the vault.
+                </span>
+              </span>
+            </label>
+          </form>
+        </section>
 
         <section :if={@sharing} id="members" class="space-y-4">
           <h2 class="font-semibold">People</h2>
