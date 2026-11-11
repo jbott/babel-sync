@@ -26,6 +26,7 @@
         release =
           packages: beamPackages:
           packages.callPackage ./nix/package.nix {
+            revision = self.shortRev or self.dirtyShortRev or "unknown";
             beamPackages = beamPackages.overrideScope (
               final: previous: { elixir = previous.elixir_1_20; }
             );

@@ -1,4 +1,4 @@
-import { type App, type ButtonComponent, Platform, PluginSettingTab, Setting } from "obsidian";
+import { type App, type ButtonComponent, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
 import { ConnectModal, DisconnectModal } from "./connect.ts";
 import { hostOf, normalizeServer } from "./invitation.ts";
 import type BabelSyncPlugin from "./main.ts";
@@ -176,6 +176,16 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("Debug log")
+      .setDesc("Copy what the plugin has done recently, with its version and status, to paste into a bug report. It holds file names but no passwords or tokens.")
+      .addButton((button) =>
+        button.setButtonText("Copy debug log").onClick(async () => {
+          await navigator.clipboard.writeText(this.plugin.debugLog());
+          new Notice("Babel Sync: debug log copied.");
+        }),
+      );
+
+    new Setting(containerEl)
       .setName("Reconnect")
       .setDesc("Drop the connection to the server and open it again.")
       .addButton((button) => button.setButtonText("Reconnect").onClick(() => this.plugin.restart(true)));
@@ -184,6 +194,11 @@ export class SettingsTab extends PluginSettingTab {
       .setName("Compare everything again")
       .setDesc("Forget what this device has synced and compare every file with the server. Nothing is deleted.")
       .addButton((button) => button.setButtonText("Compare").onClick(() => this.plugin.resync()));
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description babelsync-colophon",
+      text: `Babel Sync ${this.plugin.manifest.version} · commit ${this.plugin.revision} · build ${this.plugin.build || "unknown"}`,
+    });
   }
 
   private summarize(): void {

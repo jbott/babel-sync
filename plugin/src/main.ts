@@ -1,5 +1,5 @@
 import { BabelSyncClient } from "@babelsync/core";
-import { Notice, Plugin, TFile, TFolder, debounce, requestUrl } from "obsidian";
+import { Notice, Platform, Plugin, TFile, TFolder, apiVersion, debounce, requestUrl } from "obsidian";
 import { Collab } from "./collab.ts";
 import { ConnectModal } from "./connect.ts";
 import { type Progress, type Status, SyncEngine } from "./engine.ts";
@@ -36,11 +36,16 @@ const LABELS: Record<Status, string> = {
   error: "Babel Sync: error",
 };
 
+declare const BABELSYNC_REVISION: string;
+
+const MAX_JOURNAL_LINES = 400;
+
 export default class BabelSyncPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   status: Status = "offline";
   onStatus: ((status: Status) => void) | null = null;
   build = "";
+  revision = BABELSYNC_REVISION;
   updated = false;
   lastError = "";
   lastSynced: number | null = null;
@@ -53,6 +58,7 @@ export default class BabelSyncPlugin extends Plugin {
   private statusBar: HTMLElement | null = null;
   private running = "";
   private transition: Promise<void> = Promise.resolve();
+  private journal: string[] = [];
 
   async onload(): Promise<void> {
     this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) as Partial<Settings> | null) };
@@ -315,6 +321,7 @@ export default class BabelSyncPlugin extends Plugin {
     this.running = this.fingerprint();
     if (!serverUrl || !vaultId) return this.show("offline");
 
+    this.record(`connecting to ${serverUrl}, vault ${vaultId}`);
     await this.accessToken().catch(() => {});
     const client = new BabelSyncClient({
       baseUrl: serverUrl,
@@ -341,7 +348,9 @@ export default class BabelSyncPlugin extends Plugin {
       this.rebind();
     });
     client.socket.onError(() => void this.accessToken().catch(() => {}));
+    engine.on("log", (line) => this.record(line));
     engine.on("error", (reason) => {
+      this.record(`error: ${reason}`);
       this.lastError = reason;
       new Notice(`Babel Sync: ${reason}`);
     });
@@ -397,7 +406,29 @@ export default class BabelSyncPlugin extends Plugin {
     return this.engine?.fileCount ?? 0;
   }
 
+  debugLog(): string {
+    const { serverUrl, vaultId, vaultName, tokens } = this.settings;
+    const device = Platform.isMobile ? (Platform.isIosApp ? "iOS" : "Android") : "desktop";
+
+    return [
+      `Babel Sync ${this.manifest.version}, commit ${this.revision}, build ${this.build || "unknown"}${this.updated ? " (newer build on disk)" : ""}`,
+      `Obsidian ${apiVersion}, ${device}, ${navigator.userAgent}`,
+      `server ${serverUrl || "not set"}, vault ${vaultName || "not chosen"} ${vaultId}`,
+      `signed in: ${tokens !== null}, status: ${this.status}, files: ${this.fileCount}`,
+      `last error: ${this.lastError || "none"}`,
+      `last in sync: ${this.lastSynced ? new Date(this.lastSynced).toISOString() : "never"}`,
+      "",
+      ...this.journal,
+    ].join("\n");
+  }
+
+  private record(line: string): void {
+    this.journal.push(`${new Date().toISOString()} ${line}`);
+    if (this.journal.length > MAX_JOURNAL_LINES) this.journal.shift();
+  }
+
   private show(status: Status): void {
+    if (status !== this.status) this.record(`status: ${status}`);
     this.status = status;
     if (status === "synced") {
       this.lastSynced = Date.now();

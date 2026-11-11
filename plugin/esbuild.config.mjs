@@ -1,6 +1,19 @@
+import { execFileSync } from "node:child_process";
 import esbuild from "esbuild";
 
 const production = process.argv[2] === "production";
+
+function checkedOutRevision() {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+const revision = process.env.BABELSYNC_REVISION || checkedOutRevision();
 
 const context = await esbuild.context({
   entryPoints: ["src/main.ts"],
@@ -12,6 +25,7 @@ const context = await esbuild.context({
   sourcemap: production ? false : "inline",
   minify: production,
   logLevel: "info",
+  define: { BABELSYNC_REVISION: JSON.stringify(revision) },
   external: [
     "obsidian",
     "electron",
