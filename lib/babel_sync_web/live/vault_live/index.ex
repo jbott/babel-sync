@@ -26,30 +26,46 @@ defmodule BabelSyncWeb.VaultLive.Index do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-2xl px-4 py-10 space-y-8">
+      <div class="mx-auto max-w-2xl space-y-8 py-8 md:py-14">
         <.header>
           Vaults
           <:subtitle>Each vault syncs with one Obsidian vault folder.</:subtitle>
         </.header>
 
-        <ul id="vaults" phx-update="stream" class="menu bg-base-200 rounded-box w-full">
-          <li id="vaults-empty" class="hidden only:block px-4 py-3 text-base-content/60">
-            No vaults yet. Create the first one below.
+        <.rows id="vaults" phx-update="stream">
+          <li id="vaults-empty" class="hidden px-6 py-10 text-center only:block">
+            <.logo class="mx-auto size-10 text-line-strong" />
+            <p class="mt-3 text-muted">No vaults yet. Create the first one below.</p>
           </li>
           <li :for={{id, vault} <- @streams.vaults} id={id}>
-            <.link navigate={Paths.vault(vault.id)} class="flex items-center gap-3">
-              <.icon name="hero-archive-box" class="size-5" />
-              <span class="font-medium">{vault.name}</span>
+            <.link
+              navigate={Paths.vault(vault.id)}
+              class="group flex items-center gap-3.5 px-4 py-3.5 transition-colors duration-150 hover:bg-canvas"
+            >
+              <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-accent/12 text-accent transition-colors duration-150 group-hover:bg-accent group-hover:text-accent-ink">
+                <.logo class="size-5" />
+              </span>
+              <span class="min-w-0 flex-1 truncate font-serif text-lg font-bold tracking-tight text-ink">
+                {vault.name}
+              </span>
+              <.icon
+                name="hero-arrow-right-mini"
+                class="size-4 shrink-0 text-faint transition duration-150 group-hover:translate-x-0.5 group-hover:text-ink"
+              />
             </.link>
           </li>
-        </ul>
+        </.rows>
 
-        <.form for={@form} id="new-vault" phx-submit="create" class="flex items-end gap-3">
-          <div class="flex-1">
-            <.input field={@form[:name]} label="New vault" placeholder="Personal notes" />
-          </div>
-          <.button variant="primary" class="mb-2">Create</.button>
-        </.form>
+        <.panel title="New vault">
+          <.form for={@form} id="new-vault" phx-submit="create" class="flex items-start gap-2.5">
+            <div class="flex-1">
+              <.input field={@form[:name]} aria-label="New vault" placeholder="Personal notes" />
+            </div>
+            <.button variant="primary">
+              <.icon name="hero-plus-mini" class="size-4" /> Create
+            </.button>
+          </.form>
+        </.panel>
       </div>
     </Layouts.app>
     """

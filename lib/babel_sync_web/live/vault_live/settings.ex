@@ -110,23 +110,30 @@ defmodule BabelSyncWeb.VaultLive.Settings do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-2xl px-4 py-10 space-y-10">
+      <div class="mx-auto max-w-2xl space-y-10 py-8 md:py-14">
         <.header>
+          <:trail>
+            <.back_link navigate={Paths.vault(@vault.id)}>Back to the vault</.back_link>
+          </:trail>
           {@vault.name}
-          <:subtitle>
-            <.link navigate={Paths.vault(@vault.id)} class="link">Back to the vault</.link>
-          </:subtitle>
+          <:subtitle>Vault settings</:subtitle>
         </.header>
 
-        <.form for={@name_form} id="rename-vault" phx-submit="rename" class="flex items-end gap-3">
-          <div class="flex-1"><.input field={@name_form[:name]} label="Name" /></div>
-          <.button class="mb-2">Save</.button>
-        </.form>
+        <.panel title="Name">
+          <.form
+            for={@name_form}
+            id="rename-vault"
+            phx-submit="rename"
+            class="flex items-start gap-2.5"
+          >
+            <div class="flex-1"><.input field={@name_form[:name]} aria-label="Name" /></div>
+            <.button>Save</.button>
+          </.form>
+        </.panel>
 
-        <section id="agents" class="space-y-3">
-          <h2 class="font-semibold">Agents</h2>
+        <.panel id="agents" title="Agents">
           <form id="agent-access" phx-change="set_agent_access">
-            <label class="flex items-start gap-3 cursor-pointer">
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-surface p-4 transition hover:border-line-strong">
               <input type="hidden" name="agents_see_config" value="false" />
               <input
                 type="checkbox"
@@ -134,11 +141,11 @@ defmodule BabelSyncWeb.VaultLive.Settings do
                 name="agents_see_config"
                 value="true"
                 checked={@vault.agents_see_config}
-                class="checkbox checkbox-sm mt-0.5"
+                class="mt-0.5 size-4 shrink-0 rounded accent-accent"
               />
-              <span>
-                <span class="block font-medium">Let agents into the .obsidian folder</span>
-                <span class="block text-sm text-base-content/60">
+              <span class="min-w-0">
+                <span class="block font-medium text-ink">Let agents into the .obsidian folder</span>
+                <span class="mt-1 block text-sm text-muted">
                   Off, agents connected over MCP cannot see or change Obsidian's settings and
                   plugins in this vault. On, an agent that may write can install or replace a
                   plugin, which then runs on every device that syncs the vault.
@@ -146,20 +153,25 @@ defmodule BabelSyncWeb.VaultLive.Settings do
               </span>
             </label>
           </form>
-        </section>
+        </.panel>
 
-        <section :if={@sharing} id="members" class="space-y-4">
-          <h2 class="font-semibold">People</h2>
-          <ul class="divide-y divide-base-300 border border-base-300 rounded-box">
+        <.panel :if={@sharing} id="members" title="People">
+          <.rows>
             <li
               :for={member <- @members}
               id={"member-#{member.user_id}"}
-              class="flex items-center gap-3 px-4 py-2"
+              class="flex items-center gap-2 py-2 pl-4 pr-2"
             >
-              <span class="flex-1 truncate">{member.user.email || member.user.name}</span>
-              <form id={"role-#{member.user_id}"} phx-change="set_role">
+              <span class="min-w-0 flex-1 truncate text-ink">
+                {member.user.email || member.user.name}
+              </span>
+              <form id={"role-#{member.user_id}"} phx-change="set_role" class="relative">
                 <input type="hidden" name="user_id" value={member.user_id} />
-                <select name="role" class="select select-sm">
+                <select
+                  name="role"
+                  aria-label="Role"
+                  class={[field_class(), "h-8 appearance-none pl-2.5 pr-8 text-sm capitalize"]}
+                >
                   <option
                     :for={role <- ~w(owner editor viewer)}
                     value={role}
@@ -168,24 +180,27 @@ defmodule BabelSyncWeb.VaultLive.Settings do
                     {role}
                   </option>
                 </select>
+                <.icon
+                  name="hero-chevron-up-down-mini"
+                  class="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-faint"
+                />
               </form>
-              <button
+              <.icon_button
                 phx-click="remove_member"
                 phx-value-user_id={member.user_id}
-                class="btn btn-ghost btn-xs"
-                title="Remove"
-              >
-                <.icon name="hero-x-mark" class="size-4" />
-              </button>
+                icon="hero-x-mark"
+                label="Remove"
+                tone="danger"
+              />
             </li>
-          </ul>
+          </.rows>
           <.form
             for={@member_form}
             id="add-member"
             phx-submit="add_member"
-            class="flex items-end gap-3"
+            class="flex flex-wrap items-end gap-2.5"
           >
-            <div class="flex-1">
+            <div class="min-w-0 flex-1 basis-56">
               <.input
                 field={@member_form[:email]}
                 type="email"
@@ -193,30 +208,36 @@ defmodule BabelSyncWeb.VaultLive.Settings do
                 placeholder="person@example.com"
               />
             </div>
-            <.input
-              field={@member_form[:role]}
-              type="select"
-              label="Role"
-              options={~w(editor viewer owner)}
-            />
-            <.button class="mb-2">Share</.button>
+            <div class="flex flex-1 items-end gap-2.5 sm:flex-none">
+              <div class="flex-1 sm:w-28">
+                <.input
+                  field={@member_form[:role]}
+                  type="select"
+                  label="Role"
+                  class="capitalize"
+                  options={~w(editor viewer owner)}
+                />
+              </div>
+              <.button variant="primary">Share</.button>
+            </div>
           </.form>
-        </section>
+        </.panel>
 
-        <section class="space-y-3">
-          <h2 class="font-semibold text-error">Delete vault</h2>
-          <p class="text-sm text-base-content/70">
-            Removes the vault, its notes, attachments and history from the server. Copies in Obsidian are not touched.
-          </p>
-          <button
-            id="delete-vault"
-            phx-click="delete_vault"
-            data-confirm={"Delete #{@vault.name} from the server?"}
-            class="btn btn-error btn-outline btn-sm"
-          >
-            Delete vault
-          </button>
-        </section>
+        <.panel title="Delete vault" tone="danger">
+          <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-danger/30 bg-danger/5 p-4">
+            <p class="min-w-0 flex-1 basis-64 text-sm text-muted">
+              Removes the vault, its notes, attachments and history from the server. Copies in Obsidian are not touched.
+            </p>
+            <.button
+              id="delete-vault"
+              phx-click="delete_vault"
+              data-confirm={"Delete #{@vault.name} from the server?"}
+              variant="danger"
+            >
+              Delete vault
+            </.button>
+          </div>
+        </.panel>
       </div>
     </Layouts.app>
     """

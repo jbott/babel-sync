@@ -5,10 +5,6 @@ defmodule BabelSyncWeb.Layouts do
   """
   use BabelSyncWeb, :html
 
-  # Embed all files in layouts/* within this module.
-  # The default root.html.heex file contains the HTML
-  # skeleton of your application, namely HTML headers
-  # and other static content.
   embed_templates "layouts/*"
 
   @doc """
@@ -37,24 +33,23 @@ defmodule BabelSyncWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar min-h-14 h-14 px-4 border-b border-base-300">
-      <div class="flex-1">
-        <.link navigate={~p"/"} class="flex w-fit items-center gap-2 font-semibold">
-          <.icon name="hero-square-3-stack-3d" class="size-5 text-primary" /> BabelSync
-        </.link>
-      </div>
-      <div class="flex flex-none items-center gap-2">
-        <.link
-          :if={@current_scope}
-          id="account-link"
-          navigate={~p"/account"}
-          class="btn btn-ghost btn-sm btn-circle"
-          title="Account"
-        >
-          <.icon name="hero-user-circle" class="size-5" />
-        </.link>
-        <.theme_toggle />
-      </div>
+    <header class="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-line bg-canvas/85 px-3 backdrop-blur-md md:px-4">
+      <.link
+        navigate={~p"/"}
+        class="group -ml-1 flex items-center gap-2 rounded-lg px-1.5 py-1 text-ink"
+      >
+        <.logo class="size-[1.375rem] text-accent transition-transform duration-300 group-hover:rotate-[60deg]" />
+        <span class="font-serif text-[1.0625rem] font-bold tracking-tight">BabelSync</span>
+      </.link>
+      <div class="flex-1"></div>
+      <.theme_toggle />
+      <.icon_button
+        :if={@current_scope}
+        id="account-link"
+        navigate={~p"/account"}
+        icon="hero-user-circle"
+        label="Account"
+      />
     </header>
 
     <main class={[not @wide && "px-4 sm:px-6 lg:px-8"]}>
@@ -77,7 +72,11 @@ defmodule BabelSyncWeb.Layouts do
 
   def flash_group(assigns) do
     ~H"""
-    <div id={@id} aria-live="polite">
+    <div
+      id={@id}
+      aria-live="polite"
+      class="pointer-events-none fixed inset-x-3 top-14 z-50 flex flex-col gap-2 sm:left-auto sm:right-4 sm:w-96"
+    >
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
 
@@ -121,31 +120,27 @@ defmodule BabelSyncWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 [[data-theme-source=system]_&]:!left-0 transition-[left]" />
-
+    <div
+      class="theme-toggle flex items-center gap-0.5 rounded-full border border-line bg-sunken p-0.5"
+      role="group"
+      aria-label="Theme"
+    >
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        :for={
+          {theme, icon, label} <- [
+            {"system", "hero-computer-desktop-micro", "Match the system theme"},
+            {"light", "hero-sun-micro", "Light theme"},
+            {"dark", "hero-moon-micro", "Dark theme"}
+          ]
+        }
+        type="button"
+        class="grid h-7 w-8 cursor-pointer place-items-center rounded-full"
         phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="system"
+        data-phx-theme={theme}
+        title={label}
+        aria-label={label}
       >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="light"
-      >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="dark"
-      >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name={icon} class="size-4" />
       </button>
     </div>
     """

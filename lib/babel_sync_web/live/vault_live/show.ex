@@ -350,146 +350,178 @@ defmodule BabelSyncWeb.VaultLive.Show do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} wide>
-      <div id="vault" class="flex h-[calc(100dvh-3.5rem)]">
+      <div id="vault" class="flex h-[calc(100dvh-3rem)]">
         <aside
           id="sidebar"
           class={[
-            "flex-col bg-base-200/40 border-base-300 md:flex md:w-72 md:shrink-0 md:border-r",
+            "flex-col border-line bg-sunken md:flex md:w-72 md:shrink-0 md:border-r",
             if(@entry, do: "hidden", else: "flex w-full")
           ]}
         >
-          <div class="flex items-center justify-between gap-2 px-4 py-3">
-            <.link patch={Paths.vault(@vault.id)} class="font-semibold truncate">{@vault.name}</.link>
-            <div class="flex items-center">
-              <.link
-                navigate={Paths.trash(@vault.id)}
-                id="vault-trash"
-                class="btn btn-ghost btn-xs"
-                title="Trash"
-              >
-                <.icon name="hero-trash" class="size-4" />
-              </.link>
-              <.link
-                :if={@admin}
-                navigate={Paths.settings(@vault.id)}
-                id="vault-settings"
-                class="btn btn-ghost btn-xs"
-                title="Vault settings"
-              >
-                <.icon name="hero-cog-6-tooth" class="size-4" />
-              </.link>
-            </div>
+          <div class="flex items-center gap-1 py-2.5 pl-4 pr-2">
+            <.link
+              patch={Paths.vault(@vault.id)}
+              class="min-w-0 flex-1 truncate rounded font-serif text-lg font-bold tracking-tight text-ink"
+            >
+              {@vault.name}
+            </.link>
+            <.icon_button
+              navigate={Paths.trash(@vault.id)}
+              id="vault-trash"
+              icon="hero-trash"
+              label="Trash"
+            />
+            <.icon_button
+              :if={@admin}
+              navigate={Paths.settings(@vault.id)}
+              id="vault-settings"
+              icon="hero-cog-6-tooth"
+              label="Vault settings"
+            />
           </div>
 
-          <div :if={@writable} class="px-3 pb-3 space-y-2">
-            <.form for={@new_form} id="new-note" phx-submit="create_note" class="join w-full">
-              <input
-                type="text"
-                id={"new-note-path-#{@notes_created}"}
-                name={@new_form[:path].name}
-                value=""
-                placeholder="New note path"
-                required
-                class="input input-sm join-item w-full"
-              />
-              <button class="btn btn-sm btn-primary join-item" title="Create note"><.icon
-                name="hero-plus"
-                class="size-4"
-              /></button>
-            </.form>
-            <label class="btn btn-sm btn-block">
-              <.icon name="hero-arrow-up-tray" class="size-4" /> Upload files
-              <input
-                id="uploader"
-                type="file"
-                multiple
-                class="hidden"
-                phx-hook="Uploader"
-                data-vault-id={@vault.id}
-                data-token={@socket_token}
-              />
-            </label>
+          <div :if={@writable} class="space-y-2 px-3 pb-3">
+            <div class="flex items-center gap-1.5">
+              <.form
+                for={@new_form}
+                id="new-note"
+                phx-submit="create_note"
+                class="relative min-w-0 flex-1"
+              >
+                <input
+                  type="text"
+                  id={"new-note-path-#{@notes_created}"}
+                  name={@new_form[:path].name}
+                  value=""
+                  placeholder="New note path"
+                  aria-label="New note path"
+                  autocapitalize="off"
+                  autocomplete="off"
+                  spellcheck="false"
+                  required
+                  class={[field_class(), "h-9 bg-canvas pr-10 text-sm"]}
+                />
+                <button
+                  class="absolute right-1 top-1 grid size-7 cursor-pointer place-items-center rounded-md bg-accent text-accent-ink transition duration-150 hover:brightness-110 active:scale-95"
+                  title="Create note"
+                  aria-label="Create note"
+                >
+                  <.icon name="hero-plus-mini" class="size-4" />
+                </button>
+              </.form>
+              <label
+                class="grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg border border-line-strong bg-canvas text-muted shadow-raise transition duration-150 hover:border-faint hover:text-ink has-focus-visible:border-accent has-focus-visible:ring-3 has-focus-visible:ring-accent/20 active:scale-95"
+                title="Upload files"
+              >
+                <.icon name="hero-arrow-up-tray-mini" class="size-4" />
+                <input
+                  id="uploader"
+                  type="file"
+                  multiple
+                  class="sr-only"
+                  aria-label="Upload files"
+                  phx-hook="Uploader"
+                  data-vault-id={@vault.id}
+                  data-token={@socket_token}
+                />
+              </label>
+            </div>
             <progress
               id="upload-progress"
               phx-update="ignore"
-              class="progress progress-primary w-full"
+              class="upload-meter"
               value="0"
               max="100"
               hidden
             ></progress>
           </div>
 
-          <nav id="tree" class="flex-1 overflow-y-auto px-2 pb-4 text-sm">
-            <p :if={@tree == []} class="px-2 py-4 text-base-content/60">This vault is empty.</p>
+          <nav
+            id="tree"
+            aria-label="Files"
+            class="flex-1 overflow-y-auto border-t border-line px-2 pb-6 pt-2 text-base md:text-sm"
+          >
+            <div :if={@tree == []} class="px-3 py-10 text-center">
+              <.icon name="hero-document-plus" class="size-7 text-faint" />
+              <p class="mt-2 text-muted">This vault is empty.</p>
+            </div>
             <.tree nodes={@tree} selected={@entry && @entry.path} vault_id={@vault.id} />
           </nav>
         </aside>
 
-        <section class={["flex-1 min-w-0 flex-col md:flex", if(@entry, do: "flex", else: "hidden")]}>
-          <div
-            :if={is_nil(@entry)}
-            id="empty"
-            class="m-auto text-center text-base-content/60 space-y-2 p-8"
-          >
-            <.icon name="hero-document-text" class="size-10" />
-            <p>Select a note, or connect Obsidian to this vault to start syncing.</p>
+        <section class={[
+          "min-w-0 flex-1 flex-col bg-surface md:flex",
+          if(@entry, do: "flex", else: "hidden")
+        ]}>
+          <div :if={is_nil(@entry)} id="empty" class="m-auto max-w-sm p-8 text-center">
+            <.logo class="mx-auto size-14 text-line-strong" />
+            <h2 class="mt-5 font-serif text-xl font-bold tracking-tight text-ink">
+              {@vault.name}
+            </h2>
+            <p class="mt-2 text-muted">
+              Select a note, or connect Obsidian to this vault to start syncing.
+            </p>
           </div>
 
           <div
             :if={@entry}
             id="toolbar"
-            class="flex items-center gap-1 md:gap-2 border-b border-base-300 px-2 md:px-4 h-12 shrink-0"
+            class="flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-1.5 pr-1.5 md:gap-1 md:pl-5 md:pr-3"
           >
-            <.link
+            <.icon_button
               patch={Paths.vault(@vault.id)}
               id="back-to-files"
-              class="btn btn-ghost btn-sm btn-circle md:hidden"
-              title="All files"
+              icon="hero-chevron-left"
+              label="All files"
+              class="md:hidden"
+            />
+            <span
+              id="entry-path"
+              class="path-tail min-w-0 flex-1 truncate pr-2 text-sm font-medium text-ink"
+            ><bdi>{@entry.path}</bdi></span>
+            <div
+              :if={@entry.kind == :doc}
+              class="mr-1 flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunken p-0.5"
+              role="group"
+              aria-label="Mode"
             >
-              <.icon name="hero-chevron-left" class="size-5" />
-            </.link>
-            <span id="entry-path" class="font-medium truncate flex-1">{@entry.path}</span>
-            <div :if={@entry.kind == :doc} class="join">
               <button
                 :if={@writable}
                 phx-click="mode"
                 phx-value-mode="edit"
-                class={["btn btn-xs join-item", @mode == :edit && "btn-active"]}
+                aria-pressed={to_string(@mode == :edit)}
+                class={mode_class(@mode == :edit)}
               >Edit</button>
               <button
                 phx-click="mode"
                 phx-value-mode="read"
-                class={["btn btn-xs join-item", @mode == :read && "btn-active"]}
+                aria-pressed={to_string(@mode == :read)}
+                class={mode_class(@mode == :read)}
               >Read</button>
             </div>
-            <button
+            <.icon_button
               :if={@entry.kind in [:doc, :blob]}
               id="history-button"
               phx-click="history"
-              class="btn btn-ghost btn-xs"
-              title="History"
-            >
-              <.icon name="hero-clock" class="size-4" />
-            </button>
-            <button
+              icon="hero-clock"
+              label="History"
+            />
+            <.icon_button
               :if={@writable}
               id="rename-button"
               phx-click="start_rename"
-              class="btn btn-ghost btn-xs"
-              title="Rename or move"
-            >
-              <.icon name="hero-pencil-square" class="size-4" />
-            </button>
-            <button
+              icon="hero-pencil-square"
+              label="Rename or move"
+            />
+            <.icon_button
               :if={@writable}
               id="delete-button"
               phx-click="delete"
               data-confirm={"Delete #{@entry.path}?"}
-              class="btn btn-ghost btn-xs text-error"
-              title="Delete"
-            >
-              <.icon name="hero-trash" class="size-4" />
-            </button>
+              icon="hero-trash"
+              label="Delete"
+              tone="danger"
+            />
           </div>
 
           <.form
@@ -497,20 +529,26 @@ defmodule BabelSyncWeb.VaultLive.Show do
             for={@rename_form}
             id="rename-form"
             phx-submit="rename"
-            class="flex items-center gap-2 border-b border-base-300 px-2 md:px-4 py-2"
+            class="flex animate-rise flex-wrap items-center justify-end gap-2 border-b border-line bg-sunken px-3 py-2.5 md:px-5"
           >
             <input
               type="text"
               name={@rename_form[:path].name}
               value={@rename_form[:path].value}
-              class="input input-sm flex-1 min-w-0"
+              aria-label="New path"
+              autocapitalize="off"
+              autocomplete="off"
+              spellcheck="false"
+              class={[field_class(), "h-9 w-full basis-full text-sm sm:w-auto sm:flex-1 sm:basis-0"]}
               required
             />
-            <button class="btn btn-sm btn-primary">Move</button>
-            <button type="button" phx-click="cancel_rename" class="btn btn-sm btn-ghost">Cancel</button>
+            <.button type="button" phx-click="cancel_rename" variant="ghost" size="sm">
+              Cancel
+            </.button>
+            <.button variant="primary" size="sm">Move</.button>
           </.form>
 
-          <div :if={@entry && @entry.kind == :doc && @mode == :edit} class="flex-1 min-h-0">
+          <div :if={@entry && @entry.kind == :doc && @mode == :edit} class="min-h-0 flex-1">
             <div
               id={"editor-#{@entry.id}"}
               phx-hook="Editor"
@@ -528,113 +566,179 @@ defmodule BabelSyncWeb.VaultLive.Show do
           <article
             :if={@entry && @entry.kind == :doc && @mode == :read}
             id="preview"
-            class="flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6"
+            class="flex-1 overflow-y-auto px-5 pb-24 pt-7 md:px-10 md:pt-12"
           >
-            <div class="markdown mx-auto max-w-3xl">{raw(@preview)}</div>
+            <div class="markdown mx-auto max-w-[42rem]">{raw(@preview)}</div>
           </article>
 
           <div
             :if={@entry && @entry.kind == :blob}
             id="attachment"
-            class="flex-1 overflow-auto p-4 md:p-8 space-y-4"
+            class="flex flex-1 flex-col items-center gap-5 overflow-auto bg-sunken/60 p-4 md:p-10"
           >
             <img
               :if={media(@entry) == :image}
               src={Paths.raw(@entry)}
               alt={@entry.path}
-              class="max-w-full rounded-box border border-base-300"
+              class="max-w-full rounded-lg border border-line bg-surface shadow-float"
             />
-            <audio :if={media(@entry) == :audio} src={Paths.raw(@entry)} controls class="w-full"></audio>
+            <audio
+              :if={media(@entry) == :audio}
+              src={Paths.raw(@entry)}
+              controls
+              class="w-full max-w-xl"
+            ></audio>
             <video
               :if={media(@entry) == :video}
               src={Paths.raw(@entry)}
               controls
-              class="max-w-full rounded-box"
+              class="max-w-full rounded-lg border border-line shadow-float"
             ></video>
-            <p class="text-sm text-base-content/70">
-              {size(@entry.size)} ·
-              <a href={Paths.raw(@entry)} download={Path.basename(@entry.path)} class="link">Download</a>
+            <div
+              :if={media(@entry) == :other}
+              class="grid size-20 place-items-center rounded-2xl border border-line bg-surface text-faint shadow-raise"
+            >
+              <.icon name="hero-paper-clip" class="size-8" />
+            </div>
+            <p class="flex items-center gap-3 text-sm text-muted">
+              <span class="tabular-nums">{size(@entry.size)}</span>
+              <.button href={Paths.raw(@entry)} download={Path.basename(@entry.path)} size="sm">
+                <.icon name="hero-arrow-down-tray-mini" class="size-4" /> Download
+              </.button>
             </p>
           </div>
 
-          <div :if={@entry && @entry.kind == :folder} class="m-auto text-base-content/60">Folder</div>
+          <div :if={@entry && @entry.kind == :folder} class="m-auto p-8 text-center text-muted">
+            <.icon name="hero-folder-open" class="size-10 text-line-strong" />
+            <p class="mt-2">Folder</p>
+          </div>
         </section>
 
         <aside
           :if={@versions}
           id="history"
-          class="fixed inset-x-0 bottom-0 top-14 z-20 bg-base-100 flex flex-col border-base-300 md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
+          class="fixed inset-x-0 bottom-0 top-12 z-20 flex flex-col border-line bg-canvas md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
         >
-          <div class="flex items-center justify-between px-4 h-12 border-b border-base-300">
-            <span class="font-medium">History</span>
-            <button phx-click="close_history" class="btn btn-ghost btn-xs"><.icon
-              name="hero-x-mark"
-              class="size-4"
-            /></button>
+          <.history_heading />
+          <div :if={@versions == []} class="px-6 py-12 text-center">
+            <.icon name="hero-clock" class="size-7 text-faint" />
+            <p class="mt-2 text-sm text-muted">No saved versions yet.</p>
           </div>
-          <p :if={@versions == []} class="p-4 text-sm text-base-content/60">No saved versions yet.</p>
-          <ul class="menu w-full overflow-y-auto max-h-56 shrink-0 flex-nowrap">
+          <ul class={[
+            "shrink-0 overflow-y-auto p-2",
+            if(@version, do: "max-h-56", else: "min-h-0 flex-1")
+          ]}>
             <li :for={version <- @versions}>
               <button
                 phx-click="show_version"
                 phx-value-id={version.id}
-                class={@version && @version.id == version.id && "menu-active"}
+                aria-current={to_string(not is_nil(@version) and @version.id == version.id)}
+                class={[
+                  "group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition duration-150",
+                  if(@version && @version.id == version.id,
+                    do: "bg-accent/14 text-ink",
+                    else: "text-muted hover:bg-ink/6 hover:text-ink"
+                  )
+                ]}
               >
-                {Calendar.strftime(version.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}
-                <span class="text-xs text-base-content/60">{size(byte_size(version.content))}</span>
+                <span class={[
+                  "size-2 shrink-0 rounded-full border-[1.5px] transition",
+                  if(@version && @version.id == version.id,
+                    do: "border-accent bg-accent",
+                    else: "border-line-strong group-hover:border-faint"
+                  )
+                ]}></span>
+                <span class="flex-1 tabular-nums">
+                  <span class="font-medium text-ink">
+                    {Calendar.strftime(version.inserted_at, "%d %b %Y")}
+                  </span>
+                  {Calendar.strftime(version.inserted_at, "%H:%M:%S UTC")}
+                </span>
+                <span class="text-xs tabular-nums text-faint">
+                  {size(byte_size(version.content))}
+                </span>
               </button>
             </li>
           </ul>
-          <div :if={@version} class="flex-1 min-h-0 flex flex-col border-t border-base-300">
-            <pre id="version-content" class="flex-1 overflow-auto p-4 text-xs whitespace-pre-wrap">{@version.content}</pre>
-            <button
-              :if={@writable}
-              id="restore-button"
-              phx-click="restore"
-              phx-value-id={@version.id}
-              class="btn btn-primary btn-sm m-3"
-            >
-              Restore this version
-            </button>
+          <p
+            :if={@versions != [] and is_nil(@version)}
+            class="border-t border-line px-4 py-3 text-xs text-faint"
+          >
+            Choose a version to see its text.
+          </p>
+          <div :if={@version} class="flex min-h-0 flex-1 flex-col border-t border-line bg-surface">
+            <pre
+              id="version-content"
+              class="flex-1 overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-relaxed text-ink"
+            >{@version.content}</pre>
+            <div :if={@writable} class="border-t border-line p-3">
+              <.button
+                id="restore-button"
+                phx-click="restore"
+                phx-value-id={@version.id}
+                variant="primary"
+                class="w-full"
+              >
+                <.icon name="hero-arrow-uturn-left-mini" class="size-4" /> Restore this version
+              </.button>
+            </div>
           </div>
         </aside>
 
         <aside
           :if={@blob_versions}
           id="blob-history"
-          class="fixed inset-x-0 bottom-0 top-14 z-20 bg-base-100 flex flex-col border-base-300 md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
+          class="fixed inset-x-0 bottom-0 top-12 z-20 flex flex-col border-line bg-canvas md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
         >
-          <div class="flex items-center justify-between px-4 h-12 border-b border-base-300">
-            <span class="font-medium">History</span>
-            <button phx-click="close_history" class="btn btn-ghost btn-xs"><.icon
-              name="hero-x-mark"
-              class="size-4"
-            /></button>
-          </div>
-          <ul class="divide-y divide-base-300 overflow-y-auto">
+          <.history_heading />
+          <ul class="divide-y divide-line overflow-y-auto">
             <li
               :for={version <- @blob_versions}
               id={"blob-version-#{version.id}"}
               class="flex items-center gap-3 px-4 py-3 text-sm"
             >
-              <div class="flex-1">
-                <div>{Calendar.strftime(version.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}</div>
-                <div class="text-xs text-base-content/60">{size(version.size)}</div>
+              <div class="flex-1 tabular-nums">
+                <div class="text-muted">
+                  <span class="font-medium text-ink">
+                    {Calendar.strftime(version.inserted_at, "%d %b %Y")}
+                  </span>
+                  {Calendar.strftime(version.inserted_at, "%H:%M:%S UTC")}
+                </div>
+                <div class="text-xs text-faint">{size(version.size)}</div>
               </div>
-              <span :if={version.blob_hash == @entry.blob_hash} class="badge badge-sm">current</span>
-              <button
+              <.badge :if={version.blob_hash == @entry.blob_hash}>current</.badge>
+              <.button
                 :if={@writable and version.blob_hash != @entry.blob_hash}
                 phx-click="restore_blob"
                 phx-value-id={version.id}
-                class="btn btn-xs transition hover:-translate-y-px"
+                size="sm"
               >
                 Restore
-              </button>
+              </.button>
             </li>
           </ul>
         </aside>
       </div>
     </Layouts.app>
+    """
+  end
+
+  defp mode_class(active) do
+    [
+      "h-7 cursor-pointer rounded-md px-3 text-sm font-medium transition duration-150",
+      if(active,
+        do: "bg-surface text-ink shadow-raise",
+        else: "text-muted hover:text-ink"
+      )
+    ]
+  end
+
+  defp history_heading(assigns) do
+    ~H"""
+    <div class="flex h-12 shrink-0 items-center justify-between border-b border-line pl-4 pr-1.5">
+      <span class="text-xs font-semibold uppercase tracking-[0.1em] text-muted">History</span>
+      <.icon_button phx-click="close_history" icon="hero-x-mark" label="Close history" />
+    </div>
     """
   end
 
@@ -649,28 +753,35 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   defp tree(assigns) do
     ~H"""
-    <ul class="space-y-0.5">
+    <ul class="space-y-px">
       <li :for={node <- @nodes}>
         <details :if={Tree.folder?(node)} open={unfolded?(node, @selected)}>
-          <summary class="flex items-center gap-1.5 rounded px-2 py-1 cursor-pointer hover:bg-base-300/60">
-            <.icon name="hero-folder" class="size-4 shrink-0 text-base-content/60" />
+          <summary class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-2 font-medium text-ink transition-colors duration-100 hover:bg-ink/6 md:py-1">
+            <.icon name="hero-chevron-right-mini" class="tree-chevron size-4 shrink-0 text-faint" />
             <span class="truncate">{node.name}</span>
           </summary>
-          <div class="ml-3 border-l border-base-300 pl-1">
+          <div class="ml-[0.9375rem] border-l border-line pl-1.5">
             <.tree nodes={node.children} selected={@selected} vault_id={@vault_id} />
           </div>
         </details>
         <.link
           :if={not Tree.folder?(node)}
           patch={Paths.entry(node.entry)}
+          aria-current={@selected == node.path && "page"}
           class={[
-            "flex items-center gap-1.5 rounded px-2 py-1 hover:bg-base-300/60",
-            @selected == node.path && "bg-primary/15 font-medium"
+            "flex items-center gap-1.5 rounded-md px-2 py-2 transition-colors duration-100 md:py-1",
+            if(@selected == node.path,
+              do: "bg-accent/14 font-medium text-ink",
+              else: "text-muted hover:bg-ink/6 hover:text-ink"
+            )
           ]}
         >
           <.icon
             name={if node.entry.kind == :doc, do: "hero-document-text", else: "hero-paper-clip"}
-            class="size-4 shrink-0 text-base-content/60"
+            class={[
+              "size-4 shrink-0",
+              if(@selected == node.path, do: "text-accent", else: "text-faint")
+            ]}
           />
           <span class="truncate">{node.name}</span>
         </.link>

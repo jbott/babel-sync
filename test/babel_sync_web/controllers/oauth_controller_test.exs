@@ -95,6 +95,11 @@ defmodule BabelSyncWeb.OAuthControllerTest do
     assert LazyHTML.text(LazyHTML.query(document, "#consent-client")) =~ "Research agent"
     assert LazyHTML.text(LazyHTML.query(document, "#consent-access")) =~ "read and change"
 
+    assert LazyHTML.text(LazyHTML.query(document, "#consent-destination")) =~
+             "an app on this device"
+
+    assert LazyHTML.text(LazyHTML.query(document, "#consent-first-time")) =~ "not been approved"
+
     approved =
       post(
         browser,

@@ -86,117 +86,117 @@ defmodule BabelSyncWeb.AuthLive.Account do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-2xl px-4 py-10 space-y-10">
+      <div class="mx-auto max-w-2xl space-y-10 py-8 md:py-14">
         <.header>
           Account
           <:subtitle>{@current_scope.user.email}</:subtitle>
         </.header>
 
-        <section class="space-y-3">
-          <h2 class="font-semibold">Profile</h2>
+        <.panel title="Profile">
           <.form
             for={@profile}
             id="profile-form"
             phx-submit="save_profile"
-            class="flex items-end gap-3"
+            class="flex items-end gap-2.5"
           >
             <div class="flex-1">
               <.input field={@profile[:name]} label="Name shown to collaborators" />
             </div>
-            <.button class="mb-2">Save</.button>
+            <.button>Save</.button>
           </.form>
-        </section>
+        </.panel>
 
-        <section :if={@passkeys?} id="passkeys" class="space-y-3">
-          <h2 class="font-semibold">Passkeys</h2>
-          <ul class="divide-y divide-base-300 rounded-box border border-base-300">
-            <li :if={@passkeys == []} class="px-4 py-3 text-sm text-base-content/60">
+        <.panel :if={@passkeys?} id="passkeys" title="Passkeys">
+          <.rows>
+            <li :if={@passkeys == []} class="px-4 py-4 text-sm text-muted">
               No passkeys yet.
             </li>
             <li
               :for={passkey <- @passkeys}
               id={"passkey-#{passkey.id}"}
-              class="flex items-center gap-3 px-4 py-3"
+              class="flex items-center gap-3 py-2.5 pl-4 pr-2.5"
             >
-              <.icon name="hero-finger-print" class="size-5 text-base-content/50" />
-              <div class="flex-1">
-                <div class="font-medium">{passkey.name}</div>
-                <div class="text-xs text-base-content/50">
+              <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-accent/12 text-accent">
+                <.icon name="hero-finger-print" class="size-5" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="truncate font-medium text-ink">{passkey.name}</div>
+                <div class="text-xs tabular-nums text-faint">
                   Added {Calendar.strftime(passkey.inserted_at, "%d %b %Y")}
                 </div>
               </div>
-              <button
+              <.button
                 :if={length(@passkeys) > 1 or not only_passkeys?()}
                 phx-click="remove_passkey"
                 phx-value-id={passkey.id}
                 data-confirm="Remove this passkey?"
-                class="btn btn-ghost btn-sm text-error"
+                variant="danger-ghost"
+                size="sm"
               >
                 Remove
-              </button>
+              </.button>
             </li>
-          </ul>
-          <div class="flex gap-3">
+          </.rows>
+          <div class="flex flex-wrap gap-2.5">
             <input
               id="passkey-name"
               type="text"
               placeholder="Name, for example Laptop"
-              class="input flex-1"
+              aria-label="Name for the new passkey"
+              class={[field_class(), "w-auto flex-1 basis-full sm:basis-48"]}
             />
-            <button
+            <.button
               id="passkey-add"
               phx-hook="Passkey"
               data-name-from="passkey-name"
-              class="btn transition hover:-translate-y-px"
+              class="flex-1 sm:flex-none"
             >
-              <.icon name="hero-plus" class="size-4" /> Add passkey
-            </button>
+              <.icon name="hero-plus-mini" class="size-4" /> Add passkey
+            </.button>
           </div>
-        </section>
+        </.panel>
 
-        <section id="grants" class="space-y-3">
-          <h2 class="font-semibold">Connected devices and agents</h2>
-          <ul class="divide-y divide-base-300 rounded-box border border-base-300">
-            <li :if={@grants == []} class="px-4 py-3 text-sm text-base-content/60">
+        <.panel id="grants" title="Connected devices and agents">
+          <.rows>
+            <li :if={@grants == []} class="px-4 py-4 text-sm text-muted">
               Nothing is connected. Sign in from the Obsidian plugin or add this server to an agent
-              as an MCP server at <code>/mcp</code>.
+              as an MCP server at <code class="rounded border border-line bg-sunken px-1 py-px font-mono text-xs text-ink">/mcp</code>.
             </li>
             <li
               :for={grant <- @grants}
               id={"grant-#{grant.id}"}
-              class="flex items-center gap-3 px-4 py-3"
+              class="flex items-center gap-3 py-2.5 pl-4 pr-2.5"
             >
-              <.icon name="hero-device-phone-mobile" class="size-5 text-base-content/50" />
-              <div class="flex-1">
-                <div class="font-medium">
+              <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-ink/6 text-muted">
+                <.icon name="hero-link" class="size-5" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="truncate font-medium text-ink">
                   {grant.client.name}
-                  <span :if={grant.read_only} class="badge badge-sm ml-1">read only</span>
+                  <.badge :if={grant.read_only} class="ml-1">read only</.badge>
                 </div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs tabular-nums text-faint">
                   Last active {Calendar.strftime(grant.last_used_at, "%d %b %Y %H:%M")} UTC
                 </div>
               </div>
-              <button
+              <.button
                 phx-click="revoke"
                 phx-value-id={grant.id}
                 data-confirm={"Disconnect #{grant.client.name}?"}
-                class="btn btn-ghost btn-sm text-error"
+                variant="danger-ghost"
+                size="sm"
               >
                 Disconnect
-              </button>
+              </.button>
             </li>
-          </ul>
-        </section>
+          </.rows>
+        </.panel>
 
-        <.link
-          :if={@signed_in?}
-          id="sign-out"
-          href={~p"/logout"}
-          method="delete"
-          class="btn btn-ghost"
-        >
-          <.icon name="hero-arrow-right-start-on-rectangle" class="size-5" /> Sign out
-        </.link>
+        <div :if={@signed_in?} class="border-t border-line pt-6">
+          <.button id="sign-out" href={~p"/logout"} method="delete" variant="ghost" class="-ml-4">
+            <.icon name="hero-arrow-right-start-on-rectangle" class="size-5" /> Sign out
+          </.button>
+        </div>
       </div>
     </Layouts.app>
     """

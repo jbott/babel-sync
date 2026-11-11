@@ -74,60 +74,58 @@ defmodule BabelSyncWeb.VaultLive.Trash do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-2xl px-4 py-10 space-y-6">
+      <div class="mx-auto max-w-2xl space-y-7 py-8 md:py-14">
         <.header>
+          <:trail>
+            <.back_link navigate={Paths.vault(@vault.id)}>{@vault.name}</.back_link>
+          </:trail>
           Trash
-          <:subtitle>
-            <.link navigate={Paths.vault(@vault.id)} class="link">{@vault.name}</.link>
-            <span :if={@retention_days}>
-              · deleted files are kept for {@retention_days} days
-            </span>
+          <:subtitle :if={@retention_days}>
+            Deleted files are kept for {@retention_days} days.
           </:subtitle>
         </.header>
 
-        <p :if={@empty?} id="trash-empty" class="text-sm text-base-content/60">
-          Nothing has been deleted lately.
-        </p>
-
-        <ul
-          id="trash"
-          phx-update="stream"
-          class="divide-y divide-base-300 rounded-box border border-base-300 empty:hidden"
+        <div
+          :if={@empty?}
+          id="trash-empty"
+          class="rounded-xl border border-dashed border-line-strong px-6 py-14 text-center"
         >
+          <.icon name="hero-trash" class="size-8 text-line-strong" />
+          <p class="mt-3 text-muted">Nothing has been deleted lately.</p>
+        </div>
+
+        <.rows id="trash" phx-update="stream" class="empty:hidden">
           <li
             :for={{id, entry} <- @streams.trashed}
             id={id}
-            class="flex items-center gap-3 px-4 py-3 transition hover:bg-base-200/60"
+            class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3"
           >
             <.icon
               name={if(entry.kind == :doc, do: "hero-document-text", else: "hero-paper-clip")}
-              class="size-5 shrink-0 text-base-content/50"
+              class="size-5 shrink-0 text-faint"
             />
-            <div class="min-w-0 flex-1">
-              <div class="truncate font-medium">{entry.path}</div>
-              <div class="text-xs text-base-content/50">
+            <div class="min-w-0 flex-1 basis-48">
+              <div class="truncate font-medium text-ink">{entry.path}</div>
+              <div class="text-xs tabular-nums text-faint">
                 Deleted {Calendar.strftime(entry.deleted_at, "%d %b %Y %H:%M")} UTC
               </div>
             </div>
-            <button
-              :if={@writable}
-              phx-click="restore"
-              phx-value-id={entry.id}
-              class="btn btn-sm transition hover:-translate-y-px"
-            >
-              Restore
-            </button>
-            <button
-              :if={@writable}
-              phx-click="purge"
-              phx-value-id={entry.id}
-              data-confirm={"Delete #{entry.path} forever?"}
-              class="btn btn-ghost btn-sm text-error"
-            >
-              Delete forever
-            </button>
+            <div :if={@writable} class="ml-auto flex items-center gap-1.5">
+              <.button
+                phx-click="purge"
+                phx-value-id={entry.id}
+                data-confirm={"Delete #{entry.path} forever?"}
+                variant="danger-ghost"
+                size="sm"
+              >
+                Delete forever
+              </.button>
+              <.button phx-click="restore" phx-value-id={entry.id} size="sm">
+                <.icon name="hero-arrow-uturn-left-mini" class="size-4" /> Restore
+              </.button>
+            </div>
           </li>
-        </ul>
+        </.rows>
       </div>
     </Layouts.app>
     """

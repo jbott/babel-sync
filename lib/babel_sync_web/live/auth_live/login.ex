@@ -102,80 +102,91 @@ defmodule BabelSyncWeb.AuthLive.Login do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-sm px-4 py-20">
-        <div class="rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm space-y-6">
-          <div class="space-y-1 text-center">
-            <.icon name="hero-square-3-stack-3d" class="size-9 text-primary" />
-            <h1 class="text-xl font-semibold">{heading(@stage)}</h1>
+      <div class="mx-auto max-w-sm py-12 md:py-24">
+        <div class="animate-rise space-y-6 rounded-2xl border border-line bg-surface p-6 shadow-float sm:p-8">
+          <div class="space-y-4 text-center">
+            <span class="mx-auto grid size-14 place-items-center rounded-2xl bg-accent/12 text-accent">
+              <.logo class="size-8" />
+            </span>
+            <h1 class="font-serif text-xl font-bold tracking-tight text-ink">{heading(@stage)}</h1>
           </div>
 
           <%= case @stage do %>
             <% :locked -> %>
-              <p id="setup-locked" class="text-sm text-base-content/70 text-center">
+              <p id="setup-locked" class="text-center text-muted">
                 This server has no passkey yet. Open the setup link printed in the server log to
                 register the first one.
               </p>
             <% :setup -> %>
-              <p class="text-sm text-base-content/70 text-center">
+              <p class="text-center text-muted">
                 Register a passkey on this device. It becomes the way to sign in.
               </p>
-              <button
+              <.button
                 id="passkey-setup"
                 phx-hook="Passkey"
-                class="btn btn-primary w-full transition hover:-translate-y-px"
+                variant="primary"
+                size="lg"
+                class="w-full"
               >
                 <.icon name="hero-finger-print" class="size-5" /> Create passkey
-              </button>
+              </.button>
             <% :expired -> %>
-              <p id="link-expired" class="text-sm text-base-content/70 text-center">
+              <p id="link-expired" class="text-center text-muted">
                 That link has expired or was already used.
               </p>
-              <.link navigate={~p"/login"} class="btn w-full">Back to sign in</.link>
+              <.button navigate={~p"/login"} size="lg" class="w-full">Back to sign in</.button>
             <% :confirm -> %>
-              <p class="text-sm text-base-content/70 text-center">
-                Continue as <strong>{elem(@link, 1)}</strong>
+              <p class="text-center text-muted">
+                Continue as <strong class="font-semibold text-ink">{elem(@link, 1)}</strong>
               </p>
               <.form for={%{}} id="link-confirm" action={~p"/login/link"}>
                 <input type="hidden" name="token" value={elem(@link, 0)} />
-                <button class="btn btn-primary w-full transition hover:-translate-y-px">
-                  Sign in
-                </button>
+                <.button variant="primary" size="lg" class="w-full">Sign in</.button>
               </.form>
             <% :sign_in -> %>
-              <div class="space-y-3">
-                <.link
+              <div class="space-y-2.5">
+                <.button
                   :if={:oidc in @methods}
                   id="oidc-sign-in"
                   href={~p"/login/oidc"}
-                  class="btn btn-primary w-full transition hover:-translate-y-px"
+                  variant="primary"
+                  size="lg"
+                  class="w-full"
                 >
                   <.icon name="hero-building-office-2" class="size-5" /> Continue with {@oidc_label}
-                </.link>
+                </.button>
 
-                <button
+                <.button
                   :if={:passkey in @methods}
                   id="passkey-sign-in"
                   phx-hook="Passkey"
-                  class={[
-                    "btn w-full transition hover:-translate-y-px",
-                    :oidc not in @methods && "btn-primary"
-                  ]}
+                  variant={if(:oidc in @methods, do: "secondary", else: "primary")}
+                  size="lg"
+                  class="w-full"
                 >
                   <.icon name="hero-finger-print" class="size-5" /> Use a passkey
-                </button>
+                </.button>
               </div>
 
-              <div :if={:magic_link in @methods} class="space-y-3">
+              <div :if={:magic_link in @methods} class="space-y-4">
                 <div
                   :if={@methods != [:magic_link]}
-                  class="flex items-center gap-3 text-xs text-base-content/40"
+                  class="flex items-center gap-3 text-2xs font-medium uppercase tracking-[0.14em] text-faint"
                 >
-                  <span class="h-px flex-1 bg-base-300"></span>
-                  or <span class="h-px flex-1 bg-base-300"></span>
+                  <span class="h-px flex-1 bg-line"></span>
+                  or <span class="h-px flex-1 bg-line"></span>
                 </div>
 
-                <p :if={@sent_to} id="link-sent" class="rounded-lg bg-success/10 p-3 text-sm">
-                  If <strong>{@sent_to}</strong> can sign in here, a link is on its way.
+                <p
+                  :if={@sent_to}
+                  id="link-sent"
+                  class="flex gap-3 rounded-xl border border-accent/30 bg-accent/8 p-3.5 text-sm text-ink"
+                >
+                  <.icon name="hero-envelope-open" class="mt-0.5 size-5 shrink-0 text-accent" />
+                  <span>
+                    If <strong class="font-semibold">{@sent_to}</strong>
+                    can sign in here, a link is on its way.
+                  </span>
                 </p>
 
                 <.form
@@ -183,22 +194,31 @@ defmodule BabelSyncWeb.AuthLive.Login do
                   for={@email_form}
                   id="link-form"
                   phx-submit="request_link"
-                  class="space-y-2"
+                  class="space-y-2.5"
                 >
                   <.input
                     field={@email_form[:email]}
                     type="email"
                     placeholder="you@example.com"
                     autocomplete="email"
+                    aria-label="Email address"
+                    class="h-11"
                     required
                   />
-                  <button class="btn w-full transition hover:-translate-y-px">
+                  <.button
+                    variant={if(@methods == [:magic_link], do: "primary", else: "secondary")}
+                    size="lg"
+                    class="w-full"
+                  >
                     <.icon name="hero-envelope" class="size-5" /> Email me a link
-                  </button>
+                  </.button>
                 </.form>
               </div>
           <% end %>
         </div>
+        <p class="mt-6 text-center text-xs text-faint">
+          A self-hosted home for your Obsidian vaults.
+        </p>
       </div>
     </Layouts.app>
     """

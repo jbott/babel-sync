@@ -1,30 +1,8 @@
 defmodule BabelSyncWeb.CoreComponents do
   @moduledoc """
-  Provides core UI components.
-
-  At first glance, this module may seem daunting, but its goal is to provide
-  core building blocks for your application, such as tables, forms, and
-  inputs. The components consist mostly of markup and are well-documented
-  with doc strings and declarative assigns. You may customize and style
-  them in any way you want, based on your application growth and needs.
-
-  The foundation for styling is Tailwind CSS, a utility-first CSS framework,
-  augmented with daisyUI, a Tailwind CSS plugin that provides UI components
-  and themes. Here are useful references:
-
-    * [daisyUI](https://daisyui.com/docs/intro/) - a good place to get
-      started and see the available components.
-
-    * [Tailwind CSS](https://tailwindcss.com) - the foundational framework
-      we build on. You will use it for layout, sizing, flexbox, grid, and
-      spacing.
-
-    * [Heroicons](https://heroicons.com) - see `icon/1` for usage.
-
-    * [Phoenix.Component](https://phoenix-live-view.hexdocs.pm/Phoenix.Component.html) -
-      the component system used by Phoenix. Some components, such as `<.link>`
-      and `<.form>`, are defined there.
-
+  The building blocks every page is drawn from: buttons, fields, flash
+  notices, page headers, panels and row lists. They are styled with the
+  design tokens defined in `assets/css/app.css`.
   """
   use Phoenix.Component
   use Gettext, backend: BabelSyncWeb.Gettext
@@ -32,19 +10,7 @@ defmodule BabelSyncWeb.CoreComponents do
   alias Phoenix.LiveView.JS
 
   @doc """
-  Renders flash notices.
-
-  ## Examples
-
-      <.flash kind={:info} flash={@flash} />
-      <.flash
-        id="welcome-back"
-        kind={:info}
-        phx-mounted={show("#welcome-back") |> JS.remove_attribute("hidden")}
-        hidden
-      >
-        Welcome Back!
-      </.flash>
+  Renders a flash notice.
   """
   attr :id, :string, doc: "the optional id of flash container"
   attr :flash, :map, default: %{}, doc: "the map of flash messages to display"
@@ -63,23 +29,32 @@ defmodule BabelSyncWeb.CoreComponents do
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
-      class="toast toast-top toast-end z-50"
+      class="pointer-events-auto animate-rise cursor-pointer"
       {@rest}
     >
       <div class={[
-        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
-        @kind == :info && "alert-info",
-        @kind == :error && "alert-error"
+        "flex items-start gap-3 rounded-xl border bg-surface py-3 pl-3.5 pr-2.5 text-sm shadow-float",
+        @kind == :info && "border-line-strong",
+        @kind == :error && "border-danger/50"
       ]}>
-        <.icon :if={@kind == :info} name="hero-information-circle" class="size-5 shrink-0" />
-        <.icon :if={@kind == :error} name="hero-exclamation-circle" class="size-5 shrink-0" />
-        <div>
+        <span class={[
+          "mt-px grid size-6 shrink-0 place-items-center rounded-full",
+          @kind == :info && "bg-accent/15 text-accent",
+          @kind == :error && "bg-danger/15 text-danger"
+        ]}>
+          <.icon :if={@kind == :info} name="hero-check-mini" class="size-4" />
+          <.icon :if={@kind == :error} name="hero-exclamation-triangle-mini" class="size-4" />
+        </span>
+        <div class="min-w-0 flex-1 py-0.5 text-ink">
           <p :if={@title} class="font-semibold">{@title}</p>
-          <p>{msg}</p>
+          <p class="break-words">{msg}</p>
         </div>
-        <div class="flex-1" />
-        <button type="button" class="group self-start cursor-pointer" aria-label={gettext("close")}>
-          <.icon name="hero-x-mark" class="size-5 opacity-40 group-hover:opacity-70" />
+        <button
+          type="button"
+          class="grid size-7 shrink-0 place-items-center rounded-md text-faint transition hover:bg-ink/8 hover:text-ink"
+          aria-label={gettext("close")}
+        >
+          <.icon name="hero-x-mark-mini" class="size-4" />
         </button>
       </div>
     </div>
@@ -87,81 +62,140 @@ defmodule BabelSyncWeb.CoreComponents do
   end
 
   @doc """
-  Renders a button with navigation support.
+  Renders a button, or a link that looks like one when given `href`,
+  `navigate` or `patch`.
 
   ## Examples
 
-      <.button>Send!</.button>
-      <.button phx-click="go" variant="primary">Send!</.button>
+      <.button>Save</.button>
+      <.button variant="primary" size="lg">Sign in</.button>
+      <.button variant="danger" phx-click="delete">Delete</.button>
       <.button navigate={~p"/"}>Home</.button>
   """
-  attr :rest, :global, include: ~w(href navigate patch method download name value disabled)
-  attr :class, :any
-  attr :variant, :string, values: ~w(primary)
+  attr :rest, :global, include: ~w(href navigate patch method download name value disabled type)
+  attr :class, :any, default: nil
+
+  attr :variant, :string,
+    values: ~w(primary secondary ghost danger danger-ghost),
+    default: "secondary"
+
+  attr :size, :string, values: ~w(sm md lg), default: "md"
   slot :inner_block, required: true
 
   def button(%{rest: rest} = assigns) do
-    variants = %{"primary" => "btn-primary", nil => "btn-primary btn-soft"}
-
     assigns =
-      assign_new(assigns, :class, fn ->
-        ["btn", Map.fetch!(variants, assigns[:variant])]
-      end)
+      assign(assigns, :classes, [button_class(assigns.variant, assigns.size), assigns.class])
 
     if rest[:href] || rest[:navigate] || rest[:patch] do
       ~H"""
-      <.link class={@class} {@rest}>
+      <.link class={@classes} {@rest}>
         {render_slot(@inner_block)}
       </.link>
       """
     else
       ~H"""
-      <button class={@class} {@rest}>
+      <button class={@classes} {@rest}>
         {render_slot(@inner_block)}
       </button>
       """
     end
   end
 
+  defp button_class(variant, size) do
+    [
+      "inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium",
+      "transition duration-150 active:translate-y-px active:scale-[0.99]",
+      "disabled:pointer-events-none disabled:opacity-50 phx-submit-loading:opacity-60 phx-click-loading:opacity-60",
+      button_size(size),
+      button_variant(variant)
+    ]
+  end
+
+  defp button_size("sm"), do: "h-8 px-3 text-sm"
+  defp button_size("md"), do: "h-10 px-4 text-sm"
+  defp button_size("lg"), do: "h-11 px-5 text-base"
+
+  defp button_variant("primary"),
+    do: "bg-accent text-accent-ink shadow-raise hover:brightness-110"
+
+  defp button_variant("secondary"),
+    do:
+      "border border-line-strong bg-surface text-ink shadow-raise hover:border-faint hover:bg-canvas"
+
+  defp button_variant("ghost"), do: "text-muted hover:bg-ink/7 hover:text-ink"
+
+  defp button_variant("danger"),
+    do:
+      "border border-danger/45 text-danger hover:border-danger hover:bg-danger hover:text-danger-ink"
+
+  defp button_variant("danger-ghost"), do: "text-danger hover:bg-danger/12"
+
   @doc """
-  Renders an input with label and error messages.
-
-  A `Phoenix.HTML.FormField` may be passed as argument,
-  which is used to retrieve the input name, id, and values.
-  Otherwise all attributes may be passed explicitly.
-
-  ## Types
-
-  This function accepts all HTML input types, considering that:
-
-    * You may also set `type="select"` to render a `<select>` tag
-
-    * `type="checkbox"` is used exclusively to render boolean values
-
-    * For live file uploads, see `Phoenix.Component.live_file_input/1`
-
-  See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input
-  for more information. Unsupported types, such as radio, are best
-  written directly in your templates.
+  Renders a square button that shows only an icon. The label is required and
+  becomes both the tooltip and the accessible name.
 
   ## Examples
 
-  ```heex
-  <.input field={@form[:email]} type="email" />
-  <.input name="my-input" errors={["oh no!"]} />
-  ```
+      <.icon_button icon="hero-clock" label="History" phx-click="history" />
+      <.icon_button icon="hero-trash" label="Trash" navigate={~p"/trash"} />
+  """
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :tone, :string, values: ~w(neutral danger), default: "neutral"
+  attr :class, :any, default: nil
+  attr :rest, :global, include: ~w(href navigate patch method disabled type)
 
-  ## Select type
+  def icon_button(%{rest: rest} = assigns) do
+    assigns =
+      assign(assigns, :classes, [
+        "grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg transition duration-150 md:size-8",
+        "active:scale-95 disabled:pointer-events-none disabled:opacity-50",
+        assigns.tone == "neutral" && "text-muted hover:bg-ink/7 hover:text-ink",
+        assigns.tone == "danger" && "text-muted hover:bg-danger/12 hover:text-danger",
+        assigns.class
+      ])
 
-  When using `type="select"`, you must pass the `options` and optionally
-  a `value` to mark which option should be preselected.
+    if rest[:href] || rest[:navigate] || rest[:patch] do
+      ~H"""
+      <.link class={@classes} title={@label} aria-label={@label} {@rest}>
+        <.icon name={@icon} class="size-[1.125rem]" />
+      </.link>
+      """
+    else
+      ~H"""
+      <button class={@classes} title={@label} aria-label={@label} {@rest}>
+        <.icon name={@icon} class="size-[1.125rem]" />
+      </button>
+      """
+    end
+  end
 
-  ```heex
-  <.input field={@form[:user_type]} type="select" options={["Admin": "admin", "User": "user"]} />
-  ```
+  @doc """
+  The classes of a text field, for the few inputs that are written by hand
+  because they sit inside a composite control.
+  """
+  def field_class do
+    [
+      "block h-10 w-full min-w-0 rounded-lg border border-line-strong bg-surface px-3 text-base text-ink shadow-raise",
+      "outline-none transition duration-150 hover:border-faint focus:border-accent focus:ring-3 focus:ring-accent/20",
+      "disabled:opacity-60"
+    ]
+  end
 
-  For more information on what kind of data can be passed to `options` see
-  [`options_for_select`](https://phoenix-html.hexdocs.pm/Phoenix.HTML.Form.html#options_for_select/2).
+  defp field_error_class,
+    do: "border-danger hover:border-danger focus:border-danger focus:ring-danger/20"
+
+  @doc """
+  Renders an input with label and error messages.
+
+  A `Phoenix.HTML.FormField` may be passed as argument, which is used to
+  retrieve the input name, id, and values. Otherwise all attributes may be
+  passed explicitly. `type="select"` renders a `<select>` and needs `options`.
+
+  ## Examples
+
+      <.input field={@form[:email]} type="email" />
+      <.input name="my-input" errors={["oh no!"]} />
   """
   attr :id, :any, default: nil
   attr :name, :any
@@ -181,7 +215,7 @@ defmodule BabelSyncWeb.CoreComponents do
   attr :prompt, :string, default: nil, doc: "the prompt for select inputs"
   attr :options, :list, doc: "the options to pass to Phoenix.HTML.Form.options_for_select/2"
   attr :multiple, :boolean, default: false, doc: "the multiple flag for select inputs"
-  attr :class, :any, default: nil, doc: "the input class to use over defaults"
+  attr :class, :any, default: nil, doc: "extra classes for the input"
   attr :error_class, :any, default: nil, doc: "the input error class to use over defaults"
 
   attr :rest, :global,
@@ -212,8 +246,8 @@ defmodule BabelSyncWeb.CoreComponents do
       end)
 
     ~H"""
-    <div class="fieldset mb-2">
-      <label for={@id}>
+    <div class="min-w-0">
+      <label for={@id} class="flex items-center gap-2.5 text-sm text-ink">
         <input
           type="hidden"
           name={@name}
@@ -221,17 +255,15 @@ defmodule BabelSyncWeb.CoreComponents do
           disabled={@rest[:disabled]}
           form={@rest[:form]}
         />
-        <span class="label">
-          <input
-            type="checkbox"
-            id={@id}
-            name={@name}
-            value="true"
-            checked={@checked}
-            class={@class || "checkbox checkbox-sm"}
-            {@rest}
-          />{@label}
-        </span>
+        <input
+          type="checkbox"
+          id={@id}
+          name={@name}
+          value="true"
+          checked={@checked}
+          class={["size-4 rounded accent-accent", @class]}
+          {@rest}
+        />{@label}
       </label>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
@@ -240,19 +272,30 @@ defmodule BabelSyncWeb.CoreComponents do
 
   def input(%{type: "select"} = assigns) do
     ~H"""
-    <div class="fieldset mb-2">
-      <label for={@id}>
-        <span :if={@label} class="label mb-1">{@label}</span>
-        <select
-          id={@id}
-          name={@name}
-          class={[@class || "w-full select", @errors != [] && (@error_class || "select-error")]}
-          multiple={@multiple}
-          {@rest}
-        >
-          <option :if={@prompt} value="">{@prompt}</option>
-          {Phoenix.HTML.Form.options_for_select(@options, @value)}
-        </select>
+    <div class="min-w-0">
+      <label for={@id} class="block">
+        <span :if={@label} class="mb-1.5 block text-sm font-medium text-muted">{@label}</span>
+        <span class="relative block">
+          <select
+            id={@id}
+            name={@name}
+            class={[
+              field_class(),
+              "appearance-none pr-9",
+              @errors != [] && (@error_class || field_error_class()),
+              @class
+            ]}
+            multiple={@multiple}
+            {@rest}
+          >
+            <option :if={@prompt} value="">{@prompt}</option>
+            {Phoenix.HTML.Form.options_for_select(@options, @value)}
+          </select>
+          <.icon
+            name="hero-chevron-up-down-mini"
+            class="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-faint"
+          />
+        </span>
       </label>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
@@ -261,15 +304,17 @@ defmodule BabelSyncWeb.CoreComponents do
 
   def input(%{type: "textarea"} = assigns) do
     ~H"""
-    <div class="fieldset mb-2">
-      <label for={@id}>
-        <span :if={@label} class="label mb-1">{@label}</span>
+    <div class="min-w-0">
+      <label for={@id} class="block">
+        <span :if={@label} class="mb-1.5 block text-sm font-medium text-muted">{@label}</span>
         <textarea
           id={@id}
           name={@name}
           class={[
-            @class || "w-full textarea",
-            @errors != [] && (@error_class || "textarea-error")
+            field_class(),
+            "h-auto min-h-24 py-2",
+            @errors != [] && (@error_class || field_error_class()),
+            @class
           ]}
           {@rest}
         >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
@@ -279,20 +324,20 @@ defmodule BabelSyncWeb.CoreComponents do
     """
   end
 
-  # All other inputs text, datetime-local, url, password, etc. are handled here...
   def input(assigns) do
     ~H"""
-    <div class="fieldset mb-2">
-      <label for={@id}>
-        <span :if={@label} class="label mb-1">{@label}</span>
+    <div class="min-w-0">
+      <label for={@id} class="block">
+        <span :if={@label} class="mb-1.5 block text-sm font-medium text-muted">{@label}</span>
         <input
           type={@type}
           name={@name}
           id={@id}
           value={Phoenix.HTML.Form.normalize_value(@type, @value)}
           class={[
-            @class || "w-full input",
-            @errors != [] && (@error_class || "input-error")
+            field_class(),
+            @errors != [] && (@error_class || field_error_class()),
+            @class
           ]}
           {@rest}
         />
@@ -302,141 +347,157 @@ defmodule BabelSyncWeb.CoreComponents do
     """
   end
 
-  # Helper used by inputs to generate form errors
   defp error(assigns) do
     ~H"""
-    <p class="mt-1.5 flex gap-2 items-center text-sm text-error">
-      <.icon name="hero-exclamation-circle" class="size-5" />
+    <p class="mt-1.5 flex items-center gap-1.5 text-sm text-danger">
+      <.icon name="hero-exclamation-circle-mini" class="size-4 shrink-0" />
       {render_slot(@inner_block)}
     </p>
     """
   end
 
   @doc """
-  Renders a header with title.
+  Renders a page header: an optional trail back to the parent page, the
+  title, an optional subtitle and optional actions.
   """
   slot :inner_block, required: true
+  slot :trail
   slot :subtitle
   slot :actions
 
   def header(assigns) do
     ~H"""
-    <header class={[@actions != [] && "flex items-center justify-between gap-6", "pb-4"]}>
-      <div>
-        <h1 class="text-lg font-semibold leading-8">
-          {render_slot(@inner_block)}
-        </h1>
-        <p :if={@subtitle != []} class="text-sm text-base-content/70">
-          {render_slot(@subtitle)}
-        </p>
+    <header class="space-y-3">
+      <div :if={@trail != []} class="text-sm">{render_slot(@trail)}</div>
+      <div class="flex items-end justify-between gap-6">
+        <div class="min-w-0">
+          <h1 class="truncate font-serif text-2xl font-bold tracking-tight text-ink">
+            {render_slot(@inner_block)}
+          </h1>
+          <p :if={@subtitle != []} class="mt-1 text-base text-muted">
+            {render_slot(@subtitle)}
+          </p>
+        </div>
+        <div :if={@actions != []} class="flex-none">{render_slot(@actions)}</div>
       </div>
-      <div class="flex-none">{render_slot(@actions)}</div>
     </header>
     """
   end
 
   @doc """
-  Renders a table with generic styling.
-
-  ## Examples
-
-      <.table id="users" rows={@users}>
-        <:col :let={user} label="id">{user.id}</:col>
-        <:col :let={user} label="username">{user.username}</:col>
-      </.table>
+  Renders the link that leads from a page back to its parent.
   """
-  attr :id, :string, required: true
-  attr :rows, :list, required: true
-  attr :row_id, :any, default: nil, doc: "the function for generating the row id"
-  attr :row_click, :any, default: nil, doc: "the function for handling phx-click on each row"
+  attr :navigate, :string, required: true
+  slot :inner_block, required: true
 
-  attr :row_item, :any,
-    default: &Function.identity/1,
-    doc: "the function for mapping each row before calling the :col and :action slots"
-
-  slot :col, required: true do
-    attr :label, :string
-  end
-
-  slot :action, doc: "the slot for showing user actions in the last table column"
-
-  def table(assigns) do
-    assigns =
-      with %{rows: %Phoenix.LiveView.LiveStream{}} <- assigns do
-        assign(assigns, row_id: assigns.row_id || fn {id, _item} -> id end)
-      end
-
+  def back_link(assigns) do
     ~H"""
-    <table class="table table-zebra">
-      <thead>
-        <tr>
-          <th :for={col <- @col}>{col[:label]}</th>
-          <th :if={@action != []}>
-            <span class="sr-only">{gettext("Actions")}</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody id={@id} phx-update={is_struct(@rows, Phoenix.LiveView.LiveStream) && "stream"}>
-        <tr :for={row <- @rows} id={@row_id && @row_id.(row)}>
-          <td
-            :for={col <- @col}
-            phx-click={@row_click && @row_click.(row)}
-            class={@row_click && "hover:cursor-pointer"}
-          >
-            {render_slot(col, @row_item.(row))}
-          </td>
-          <td :if={@action != []} class="w-0 font-semibold">
-            <div class="flex gap-4">
-              <%= for action <- @action do %>
-                {render_slot(action, @row_item.(row))}
-              <% end %>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <.link
+      navigate={@navigate}
+      class="group -ml-1 inline-flex max-w-full items-center gap-1 rounded-md px-1 py-0.5 text-muted transition hover:text-ink"
+    >
+      <.icon
+        name="hero-arrow-left-mini"
+        class="size-4 shrink-0 transition-transform group-hover:-translate-x-0.5"
+      />
+      <span class="truncate">{render_slot(@inner_block)}</span>
+    </.link>
     """
   end
 
   @doc """
-  Renders a data list.
-
-  ## Examples
-
-      <.list>
-        <:item title="Title">{@post.title}</:item>
-        <:item title="Views">{@post.views}</:item>
-      </.list>
+  Renders a titled section of a settings-like page.
   """
-  slot :item, required: true do
-    attr :title, :string, required: true
+  attr :title, :string, required: true
+  attr :tone, :string, values: ~w(neutral danger), default: "neutral"
+  attr :rest, :global
+  slot :description
+  slot :inner_block, required: true
+
+  def panel(assigns) do
+    ~H"""
+    <section class="space-y-3" {@rest}>
+      <div class="flex items-center gap-3">
+        <h2 class={[
+          "text-xs font-semibold uppercase tracking-[0.1em]",
+          if(@tone == "danger", do: "text-danger", else: "text-muted")
+        ]}>
+          {@title}
+        </h2>
+        <span class="h-px flex-1 bg-line"></span>
+      </div>
+      <p :if={@description != []} class="max-w-prose text-sm text-muted">
+        {render_slot(@description)}
+      </p>
+      {render_slot(@inner_block)}
+    </section>
+    """
   end
 
-  def list(assigns) do
+  @doc """
+  Renders the bordered list that rows of vaults, people, passkeys and
+  deleted files sit in.
+  """
+  attr :class, :any, default: nil
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  def rows(assigns) do
     ~H"""
-    <ul class="list">
-      <li :for={item <- @item} class="list-row">
-        <div class="list-col-grow">
-          <div class="font-bold">{item.title}</div>
-          <div>{render_slot(item)}</div>
-        </div>
-      </li>
+    <ul
+      class={[
+        "divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface shadow-raise",
+        @class
+      ]}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
     </ul>
     """
   end
 
   @doc """
-  Renders a [Heroicon](https://heroicons.com).
+  Renders a small label such as "current" or "read only".
+  """
+  attr :class, :any, default: nil
+  slot :inner_block, required: true
 
-  Heroicons come in three styles – outline, solid, and mini.
-  By default, the outline style is used, but solid and mini may
-  be applied by using the `-solid` and `-mini` suffix.
+  def badge(assigns) do
+    ~H"""
+    <span class={[
+      "inline-flex items-center rounded-full border border-line-strong px-2 py-px align-middle text-2xs font-medium uppercase tracking-wider text-muted",
+      @class
+    ]}>
+      {render_slot(@inner_block)}
+    </span>
+    """
+  end
 
-  You can customize the size and colors of the icons by setting
-  width, height, and background color classes.
+  @doc """
+  Renders the BabelSync mark: one hexagonal gallery holding lines of text.
+  """
+  attr :class, :any, default: "size-5"
 
-  Icons are extracted from the `deps/heroicons` directory and bundled within
-  your compiled app.css by the plugin in `assets/vendor/heroicons.js`.
+  def logo(assigns) do
+    ~H"""
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.7"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class={@class}
+      aria-hidden="true"
+    >
+      <path d="M12 2.2 20.5 7.1v9.8L12 21.8 3.5 16.9V7.1Z" />
+      <path d="M8.2 9.3h7.6M8.2 12.2h7.6M8.2 15.1h4.4" />
+    </svg>
+    """
+  end
+
+  @doc """
+  Renders a [Heroicon](https://heroicons.com) by its `hero-` class name.
 
   ## Examples
 
@@ -448,30 +509,27 @@ defmodule BabelSyncWeb.CoreComponents do
 
   def icon(%{name: "hero-" <> _} = assigns) do
     ~H"""
-    <span class={[@name, @class]} />
+    <span class={[@name, @class]} aria-hidden="true" />
     """
   end
-
-  ## JS Commands
 
   def show(js \\ %JS{}, selector) do
     JS.show(js,
       to: selector,
-      time: 300,
+      time: 220,
       transition:
-        {"transition-all ease-out duration-300",
-         "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95",
-         "opacity-100 translate-y-0 sm:scale-100"}
+        {"transition-all ease-out duration-200", "opacity-0 -translate-y-1",
+         "opacity-100 translate-y-0"}
     )
   end
 
   def hide(js \\ %JS{}, selector) do
     JS.hide(js,
       to: selector,
-      time: 200,
+      time: 160,
       transition:
-        {"transition-all ease-in duration-200", "opacity-100 translate-y-0 sm:scale-100",
-         "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"}
+        {"transition-all ease-in duration-150", "opacity-100 translate-y-0",
+         "opacity-0 -translate-y-1"}
     )
   end
 
@@ -479,16 +537,6 @@ defmodule BabelSyncWeb.CoreComponents do
   Translates an error message using gettext.
   """
   def translate_error({msg, opts}) do
-    # When using gettext, we typically pass the strings we want
-    # to translate as a static argument:
-    #
-    #     # Translate the number of files with plural rules
-    #     dngettext("errors", "1 file", "%{count} files", count)
-    #
-    # However the error messages in our forms and APIs are generated
-    # dynamically, so we need to translate them by calling Gettext
-    # with our gettext backend as first argument. Translations are
-    # available in the errors.po file (as we use the "errors" domain).
     if count = opts[:count] do
       Gettext.dngettext(BabelSyncWeb.Gettext, "errors", msg, msg, count, opts)
     else
