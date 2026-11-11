@@ -1,5 +1,12 @@
 {
   "name": "babelsync-workspace",
   "private": true,
-  "workspaces": ["js/core", "assets", "plugin"]
+  "workspaces": [
+    "js/core",
+    "assets",
+    "plugin"
+  ],
+  "devDependencies": {
+    "puppeteer-core": "^25.17.0"
+  }
 }
