@@ -61,6 +61,23 @@ defmodule BabelSync.Sync.Store do
   @spec get_version(Ecto.UUID.t(), integer()) :: Version.t() | nil
   def get_version(entry_id, id), do: Repo.get_by(Version, entry_id: entry_id, id: id)
 
+  @spec latest_contents([Ecto.UUID.t()]) :: %{Ecto.UUID.t() => String.t()}
+  def latest_contents(entry_ids) do
+    latest =
+      from v in Version,
+        where: v.entry_id in ^entry_ids,
+        group_by: v.entry_id,
+        select: %{id: max(v.id)}
+
+    Repo.all(
+      from v in Version,
+        join: l in subquery(latest),
+        on: l.id == v.id,
+        select: {v.entry_id, v.content}
+    )
+    |> Map.new()
+  end
+
   @spec prune_versions(DateTime.t()) :: non_neg_integer()
   def prune_versions(older_than) do
     newest =

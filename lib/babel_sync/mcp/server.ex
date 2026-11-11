@@ -1,26 +1,53 @@
 defmodule BabelSync.MCP.Server do
   @moduledoc """
-  The Model Context Protocol server: vault operations as tools for agents,
-  served over Streamable HTTP at `/mcp`.
+  The Model Context Protocol server: a vault as a file system of tools for
+  agents, served over Streamable HTTP at `/mcp`.
+  """
+
+  @instructions """
+  BabelSync holds Obsidian vaults: folders of Markdown notes and attachments that people \
+  are editing live, in Obsidian and in the browser, while you work.
+
+  Find things with list_directory, find_files (path patterns) and search_files (note text). \
+  For a long note, file_outline gives its headings and line numbers; read_file then takes \
+  an offset and limit.
+
+  Change a note with edit_file or append_file. They send only the passage you change, need \
+  no read first, and merge with what people are typing. write_file is for new notes; \
+  replacing a whole existing note needs the rev from your last read, and is refused if the \
+  note changed since. A refused call changes nothing and says what to do next.
+
+  Deleted files go to the trash (list_trash, restore_file) and every note keeps its saved \
+  versions (file_history). list_changes shows what happened in a vault since a cursor.
+
+  Notes use Obsidian Markdown: [[wikilinks]], #tags, and YAML properties between --- lines \
+  at the top.
   """
 
   use Anubis.Server,
     name: "BabelSync",
     version: "0.1.0",
-    capabilities: [:tools]
+    capabilities: [:tools],
+    instructions: @instructions
 
   alias BabelSync.MCP.Tools
 
   component(Tools.ListVaults)
-  component(Tools.ListFiles)
-  component(Tools.ReadNote)
-  component(Tools.WriteNote)
-  component(Tools.EditNote)
-  component(Tools.AppendNote)
-  component(Tools.SearchNotes)
+  component(Tools.ListDirectory)
+  component(Tools.FindFiles)
+  component(Tools.SearchFiles)
+  component(Tools.ReadFile)
+  component(Tools.FileOutline)
+  component(Tools.WriteFile)
+  component(Tools.EditFile)
+  component(Tools.AppendFile)
+  component(Tools.CreateDirectory)
   component(Tools.MoveFile)
   component(Tools.DeleteFile)
-  component(Tools.NoteHistory)
+  component(Tools.ListTrash)
+  component(Tools.RestoreFile)
+  component(Tools.FileHistory)
+  component(Tools.ListChanges)
 
   @impl true
   def init(_client_info, frame), do: {:ok, frame}

@@ -1,6 +1,6 @@
 defmodule BabelSync.MCP.Tools.ListVaults do
   @moduledoc """
-  Lists the note vaults this credential can reach, with the role held in each.
+  Lists the vaults this credential can use, with the role held in each.
   """
 
   use Anubis.Server.Component, type: :tool

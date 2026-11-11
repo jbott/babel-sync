@@ -1,6 +1,6 @@
 defmodule BabelSync.MCP.Tools.MoveFile do
   @moduledoc """
-  Renames or moves a note, attachment or folder. A note keeps its history.
+  Moves or renames a note, attachment or folder. A folder moves with everything in it. People who have a moved note open keep editing it.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -13,7 +13,7 @@ defmodule BabelSync.MCP.Tools.MoveFile do
       description: "Vault name or id. May be omitted when only one vault is available."
 
     field :from, :string, required: true, description: "Current path."
-    field :to, :string, required: true, description: "New path."
+    field :to, :string, required: true, description: "New path, including the file name."
   end
 
   @impl true

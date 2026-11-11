@@ -1,6 +1,6 @@
-defmodule BabelSync.MCP.Tools.ReadNote do
+defmodule BabelSync.MCP.Tools.FileHistory do
   @moduledoc """
-  Returns the current Markdown text of a note, including edits people are making right now.
+  Lists the saved versions of a note, newest first. Read one with read_file and its version number; go back to one with restore_file.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -20,7 +20,7 @@ defmodule BabelSync.MCP.Tools.ReadNote do
   @impl true
   def execute(params, frame) do
     Reply.run(frame, fn scope ->
-      Agent.read_note(scope, params[:vault], params.path)
+      Agent.history(scope, params[:vault], params.path)
     end)
   end
 end

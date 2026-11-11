@@ -4,7 +4,7 @@ A self-hosted live-sync server for [Obsidian](https://obsidian.md) vaults.
 
 - **Live sync** between devices through an Obsidian plugin, desktop and mobile. Notes are merged character by character (a CRDT, [Yjs](https://yjs.dev)), so two devices editing the same note, online or offline, never overwrite each other.
 - **Web app** to browse, read and edit vaults, with live cursors when several people are in the same note.
-- **MCP server** at `/mcp` so agents can list, read, search, write and move notes.
+- **MCP server** at `/mcp` that gives agents the vault as a file system: list, find, search, read by line range, edit in place, move, trash and restore.
 - **Attachments** of any size, uploaded in resumable 8 MiB parts.
 - **History and trash** for notes and attachments, kept for a configurable number of days.
 - **One user or many**: a single-user server on a disk, or a multi-user server on PostgreSQL and S3 with shared vaults and owner, editor and viewer roles.
@@ -96,6 +96,21 @@ Notes sync as you type. Themes, snippets, hotkeys and plugins under `.obsidian` 
 ## Agents (MCP)
 
 Add `$BABELSYNC_URL/mcp` to an MCP client as a Streamable HTTP server. The client registers itself and sends you to the consent page; approved agents are listed on the account page, where each can be disconnected. An agent that asks for the `vault:read` scope cannot change anything.
+
+The agent gets the vault as a file system:
+
+| Tool | What it does |
+| --- | --- |
+| `list_vaults`, `list_directory`, `find_files` | Look around: folders with file counts, files by path pattern (`Projects/**/*.md`) |
+| `search_files` | Search note text, plain or regular expression, with line numbers and context; includes what is being typed right now |
+| `file_outline`, `read_file` | Headings and properties with line numbers, then any line range; image attachments are shown as images |
+| `edit_file`, `append_file` | Replace exact passages, or add to the end of a note or of the section under a heading |
+| `write_file` | Create a note, or replace a whole one |
+| `create_directory`, `move_file`, `delete_file` | Folders move and are deleted with their contents; deleted files go to the trash |
+| `list_trash`, `restore_file`, `file_history` | Bring back deleted files and earlier versions of a note |
+| `list_changes` | What was written or deleted since a cursor |
+
+Edits are applied inside the note's live document on the server, as the smallest insertions and deletions that make the change. An agent sends only the passage it changes, does not need to read the note first, and does not disturb what people are typing elsewhere in it. Every read returns a `rev` that names the note's exact text; replacing a whole note requires that rev and is refused if the note has changed since, so a person's edit is never undone by an agent working from an old copy.
 
 ## Development
 

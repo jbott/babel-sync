@@ -122,23 +122,23 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
 
   const agent = await connectAgent(baseUrl, token);
   const note = { vault: vaultId, path: "Notes/browser.md" };
-  assert.equal((await agent.call("edit_note", { ...note, old_text: "from tab one", new_text: "from tab one, says the agent" })).failed, false);
+  assert.equal((await agent.call("edit_file", { ...note, edits: [{ old_text: "from tab one", new_text: "from tab one, says the agent" }] })).failed, false);
   await waitForText(one, ".cm-content", "from tab one, says the agent 😀");
   await waitForText(two, ".cm-content", "from tab one, says the agent 😀");
 
   const appending = (async () => {
-    for (let line = 1; line <= 15; line++) await agent.call("append_note", { ...note, content: `agent line ${line}\n` });
+    for (let line = 1; line <= 15; line++) await agent.call("append_file", { ...note, content: `agent line ${line}\n` });
   })();
   await two.keyboard.type("typed while the agent was writing\n", { delay: 5 });
   await appending;
   await two.keyboard.type("still typing\n");
 
-  const afterAgent = (await agent.call("read_note", note)).text;
+  const afterAgent = (await agent.read(note.path, { vault: vaultId })).text;
   for (let line = 1; line <= 15; line++) assert.ok(afterAgent.includes(`agent line ${line}\n`), `agent line ${line} survived`);
   assert.ok(afterAgent.includes("typed while the agent was writing\nstill typing\n"), afterAgent);
   await waitForText(one, ".cm-content", "agent line 15");
   await waitForText(one, ".cm-content", "typed while the agent was writing");
-  const settled = (await agent.call("read_note", note)).text;
+  const settled = (await agent.read(note.path, { vault: vaultId })).text;
   for (const tab of [one, two]) {
     await eventually(async () => (await editorText(tab)) === settled, async () => `editor has ${JSON.stringify(await editorText(tab))}, server has ${JSON.stringify(settled)}`);
   }

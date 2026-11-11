@@ -198,11 +198,11 @@ async function run() {
 
   const note = { vault: vaultId, path: "Hello.md" };
   const agent = await connectAgent(server, await laptop.page.evaluate(() => app.plugins.plugins.babelsync.settings.tokens.accessToken));
-  await agent.call("append_note", { ...note, content: "the agent adds a line\n" });
+  await agent.call("append_file", { ...note, content: "the agent adds a line\n" });
   await eventually("an agent's append shows up in both open Obsidian editors", async () =>
     (await editorText(laptop))?.endsWith("\nthe agent adds a line\n") && (await editorText(desk))?.endsWith("\nthe agent adds a line\n"),
   );
-  await agent.call("edit_note", { ...note, old_text: "desk says hello", new_text: "desk says hello to the agent" });
+  await agent.call("edit_file", { ...note, edits: [{ old_text: "desk says hello", new_text: "desk says hello to the agent" }] });
   await eventually("an agent's edit shows up in both open Obsidian editors", async () =>
     (await editorText(laptop))?.startsWith("desk says hello to the agent\n") && (await editorText(desk))?.startsWith("desk says hello to the agent\n"),
   );
@@ -214,18 +214,18 @@ async function run() {
     editor.setCursor({ line: 1, ch: 0 });
   });
   const appending = (async () => {
-    for (let line = 1; line <= 12; line++) await agent.call("append_note", { ...note, content: `agent line ${line}\n` });
+    for (let line = 1; line <= 12; line++) await agent.call("append_file", { ...note, content: `agent line ${line}\n` });
   })();
   await laptop.page.keyboard.type("typed in Obsidian while the agent wrote ", { delay: 8 });
   await appending;
-  const afterAgent = (await agent.call("read_note", note)).text;
+  const afterAgent = (await agent.read(note.path, { vault: vaultId })).text;
   check(
     "typing in Obsidian while an agent appends loses neither",
     afterAgent.includes("typed in Obsidian while the agent wrote hi from the laptop 😀") && Array.from({ length: 12 }, (_, n) => `agent line ${n + 1}\n`).every((line) => afterAgent.includes(line)),
     JSON.stringify(afterAgent),
   );
   await eventually("both Obsidian editors match what the agent reads", async () => {
-    const now = (await agent.call("read_note", note)).text;
+    const now = (await agent.read(note.path, { vault: vaultId })).text;
     return (await editorText(laptop)) === now && (await editorText(desk)) === now;
   });
 
@@ -261,7 +261,7 @@ async function run() {
     check("web editor opened (no Chrome found, skipped)", true);
   }
 
-  merged = (await agent.call("read_note", note)).text;
+  merged = (await agent.read(note.path, { vault: vaultId })).text;
   await agent.close();
   await eventually("everything written by all three is on disk in both vaults", () => readFileSync(join(laptop.vault, "Hello.md"), "utf8") === merged && readFileSync(join(desk.vault, "Hello.md"), "utf8") === merged, 30000);
 

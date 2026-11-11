@@ -1,6 +1,6 @@
 defmodule BabelSync.MCP.Tools.DeleteFile do
   @moduledoc """
-  Deletes a note, attachment or folder (with everything in it). Deleted notes stay recoverable for the retention period.
+  Moves a note, attachment or folder to the vault's trash. A folder goes with everything in it. restore_file brings a file back.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -12,9 +12,7 @@ defmodule BabelSync.MCP.Tools.DeleteFile do
     field :vault, :string,
       description: "Vault name or id. May be omitted when only one vault is available."
 
-    field :path, :string,
-      required: true,
-      description: "Path inside the vault, for example Projects/plan.md"
+    field :path, :string, required: true, description: "Path of the file or folder to delete."
   end
 
   @impl true

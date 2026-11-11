@@ -8,7 +8,7 @@ defmodule BabelSync.Sync do
   and `rewrite_text/3`, which turn them into minimal edits so they merge
   with concurrent typing. `rewrite_text/3` computes the new text from the
   current one inside the document's process, so nothing typed in between
-  is lost.
+  is lost, and returns the text before and after.
   """
 
   alias BabelSync.Sync.{DocServer, Store}
@@ -38,14 +38,15 @@ defmodule BabelSync.Sync do
   @spec replace_text(Ecto.UUID.t(), String.t(), keyword()) :: :ok
   def replace_text(entry_id, text, opts \\ []) do
     text = normalize(text)
-    rewrite_text(entry_id, fn _current -> {:ok, text} end, opts)
+    {:ok, _before, _after} = rewrite_text(entry_id, fn _current -> {:ok, text} end, opts)
+    :ok
   end
 
   @spec rewrite_text(
           Ecto.UUID.t(),
           (String.t() -> {:ok, String.t()} | {:error, reason}),
           keyword()
-        ) :: :ok | {:error, reason}
+        ) :: {:ok, String.t(), String.t()} | {:error, reason}
         when reason: term()
   def rewrite_text(entry_id, rewrite, opts \\ []) do
     call(entry_id, {:rewrite_text, rewrite, opts[:origin], opts[:author_id]})
@@ -53,6 +54,17 @@ defmodule BabelSync.Sync do
 
   @spec flush(Ecto.UUID.t()) :: :ok
   def flush(entry_id), do: call(entry_id, :flush)
+
+  @spec live?(Ecto.UUID.t()) :: boolean()
+  def live?(entry_id), do: Registry.lookup(BabelSync.Sync.Registry, entry_id) != []
+
+  @spec texts([Ecto.UUID.t()]) :: %{Ecto.UUID.t() => String.t()}
+  def texts(entry_ids) do
+    {live, idle} = Enum.split_with(entry_ids, &live?/1)
+    saved = Store.latest_contents(idle)
+
+    Map.new(live ++ (idle -- Map.keys(saved)), &{&1, text(&1)}) |> Map.merge(saved)
+  end
 
   defdelegate list_versions(entry_id), to: Store
   defdelegate get_version(entry_id, version_id), to: Store

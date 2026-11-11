@@ -1,11 +1,12 @@
-defmodule BabelSync.MCP.Tools.NoteHistory do
+defmodule BabelSync.MCP.Tools.FileOutline do
   @moduledoc """
-  Lists the saved versions of a note, newest first. Pass a version number to get the text of that version.
+  Shows the shape of a note without its text: line count, rev, frontmatter properties and every heading with its line number. Use it to pick the lines to read from a long note.
   """
 
   use Anubis.Server.Component, type: :tool
 
   alias BabelSync.Agent
+  alias BabelSync.MCP.Format
   alias BabelSync.MCP.Reply
 
   schema do
@@ -15,16 +16,13 @@ defmodule BabelSync.MCP.Tools.NoteHistory do
     field :path, :string,
       required: true,
       description: "Path inside the vault, for example Projects/plan.md"
-
-    field :version, :integer, description: "Return the text of this version instead of the list."
   end
 
   @impl true
   def execute(params, frame) do
     Reply.run(frame, fn scope ->
-      case params[:version] do
-        nil -> Agent.history(scope, params[:vault], params.path)
-        version -> Agent.read_version(scope, params[:vault], params.path, version)
+      with {:ok, outline} <- Agent.outline(scope, params[:vault], params.path) do
+        {:ok, Format.outline(outline)}
       end
     end)
   end

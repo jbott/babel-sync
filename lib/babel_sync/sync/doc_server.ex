@@ -78,7 +78,7 @@ defmodule BabelSync.Sync.DocServer do
 
     case rewrite.(old_text) do
       {:ok, ^old_text} ->
-        {:reply, :ok, server, idle_timeout()}
+        {:reply, {:ok, old_text, old_text}, server, idle_timeout()}
 
       {:ok, new_text} ->
         before = Yex.encode_state_vector!(server.doc)
@@ -88,7 +88,9 @@ defmodule BabelSync.Sync.DocServer do
         end)
 
         {:ok, update} = Yex.encode_state_as_update(server.doc, before)
-        {:reply, :ok, record(server, update, origin, author_id), idle_timeout()}
+
+        {:reply, {:ok, old_text, new_text}, record(server, update, origin, author_id),
+         idle_timeout()}
 
       {:error, _reason} = refused ->
         {:reply, refused, server, idle_timeout()}
