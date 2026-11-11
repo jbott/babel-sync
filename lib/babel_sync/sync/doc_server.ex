@@ -143,9 +143,13 @@ defmodule BabelSync.Sync.DocServer do
     if hash != server.versioned_hash do
       Store.put_version(server.entry_id, content, server.last_author)
 
-      with %Vaults.Entry{deleted_at: nil} = entry <- Vaults.get_entry(server.entry_id) do
-        {:ok, _entry} =
-          Vaults.update_entry(entry, %{content_hash: hash, size: byte_size(content)})
+      with %Vaults.Entry{} = entry <- Vaults.get_entry(server.entry_id),
+           {:error, :not_found} <-
+             Vaults.update_entry(entry, %{content_hash: hash, size: byte_size(content)}) do
+        :ok
+      else
+        nil -> :ok
+        {:ok, _entry} -> :ok
       end
     end
 

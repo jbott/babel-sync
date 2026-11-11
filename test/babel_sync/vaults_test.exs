@@ -131,5 +131,30 @@ defmodule BabelSync.VaultsTest do
       assert_receive {:entry_changed, %{id: id}}
       assert id == created.id
     end
+
+    test "a change made through a stale copy does not undo a rename" do
+      vault = vault()
+      stale = entry(vault, "draft.md")
+      {:ok, [_moved]} = Vaults.rename_entry(stale, "Final/done.md")
+
+      Vaults.subscribe(vault.id)
+      assert {:ok, updated} = Vaults.update_entry(stale, %{content_hash: "abc", size: 3})
+      assert updated.path == "Final/done.md"
+      assert_receive {:entry_changed, %{path: "Final/done.md", content_hash: "abc"}}
+    end
+
+    test "a change made through a stale copy does not bring a deleted entry back" do
+      vault = vault()
+      stale = entry(vault, "junk.md")
+      {:ok, [deleted]} = Vaults.delete_entry(stale)
+
+      Vaults.subscribe(vault.id)
+      assert {:error, :not_found} = Vaults.update_entry(stale, %{content_hash: "abc", size: 3})
+      assert {:error, :not_found} = Vaults.rename_entry(stale, "kept.md")
+      assert {:error, :not_found} = Vaults.delete_entry(stale)
+      refute_receive {:entry_changed, _entry}, 50
+      assert [%{seq: seq}] = Vaults.changes_since(vault.id, 0)
+      assert seq == deleted.seq
+    end
   end
 end

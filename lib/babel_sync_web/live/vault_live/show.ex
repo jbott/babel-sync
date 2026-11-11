@@ -133,6 +133,9 @@ defmodule BabelSyncWeb.VaultLive.Show do
         {:error, {:exists, _entry}} ->
           {:noreply, put_flash(socket, :error, "Something already exists at #{path}.")}
 
+        {:error, :not_found} ->
+          {:noreply, push_patch(socket, to: Paths.vault(entry.vault_id))}
+
         {:error, _changeset} ->
           {:noreply, put_flash(socket, :error, "That is not a valid path.")}
       end
@@ -141,7 +144,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   def handle_event("delete", _params, %{assigns: %{entry: %Entry{} = entry}} = socket) do
     write(socket, fn ->
-      {:ok, _deleted} = Vaults.delete_entry(entry)
+      _deleted_here_or_elsewhere = Vaults.delete_entry(entry)
       {:noreply, push_patch(socket, to: Paths.vault(entry.vault_id))}
     end)
   end

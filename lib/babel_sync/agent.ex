@@ -132,6 +132,7 @@ defmodule BabelSync.Agent do
       case Vaults.rename_entry(entry, to) do
         {:ok, moved} -> {:ok, Enum.find(moved, &(&1.id == entry.id)).path}
         {:error, {:exists, _entry}} -> {:error, :exists}
+        {:error, :not_found} -> {:error, :not_found}
         {:error, %Ecto.Changeset{}} -> {:error, :invalid_path}
       end
     end

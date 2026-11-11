@@ -125,12 +125,14 @@ defmodule BabelSync.Vaults do
 
     result =
       Repo.transact(fn ->
+        seq = next_seq(vault_id)
+
         case get_entry_by_path(vault_id, attrs.path) do
           %Entry{} = existing ->
             {:error, {:exists, existing}}
 
           nil ->
-            %Entry{vault_id: vault_id, seq: next_seq(vault_id)}
+            %Entry{vault_id: vault_id, seq: seq}
             |> Entry.changeset(attrs)
             |> Repo.insert()
         end
@@ -139,35 +141,41 @@ defmodule BabelSync.Vaults do
     announce(result)
   end
 
-  @spec update_entry(Entry.t(), map()) :: {:ok, Entry.t()} | {:error, Ecto.Changeset.t()}
+  @spec update_entry(Entry.t(), map()) ::
+          {:ok, Entry.t()} | {:error, :not_found} | {:error, Ecto.Changeset.t()}
   def update_entry(%Entry{} = entry, attrs) do
-    Repo.transact(fn ->
-      entry
+    entry
+    |> change(fn current, seq ->
+      current
       |> Entry.changeset(attrs)
-      |> Ecto.Changeset.put_change(:seq, next_seq(entry.vault_id))
+      |> Ecto.Changeset.put_change(:seq, seq)
       |> Repo.update()
     end)
     |> announce()
   end
 
   @spec rename_entry(Entry.t(), String.t()) ::
-          {:ok, [Entry.t()]} | {:error, {:exists, Entry.t()}} | {:error, Ecto.Changeset.t()}
+          {:ok, [Entry.t()]}
+          | {:error, :not_found}
+          | {:error, {:exists, Entry.t()}}
+          | {:error, Ecto.Changeset.t()}
   def rename_entry(%Entry{} = entry, new_path) do
     new_path = BabelSync.Vaults.Path.normalize(new_path)
 
-    Repo.transact(fn ->
-      case get_entry_by_path(entry.vault_id, new_path) do
-        %Entry{id: id} = existing when id != entry.id ->
+    entry
+    |> change(fn current, seq ->
+      case get_entry_by_path(current.vault_id, new_path) do
+        %Entry{id: id} = existing when id != current.id ->
           {:error, {:exists, existing}}
 
         _none_or_self ->
-          [entry | descendants(entry)]
-          |> Enum.reduce_while({:ok, []}, fn moving, {:ok, moved} ->
-            target = new_path <> String.replace_prefix(moving.path, entry.path, "")
+          [{current, seq} | with_seqs(descendants(current))]
+          |> Enum.reduce_while({:ok, []}, fn {moving, seq}, {:ok, moved} ->
+            target = new_path <> String.replace_prefix(moving.path, current.path, "")
 
             moving
             |> Entry.changeset(%{path: target})
-            |> Ecto.Changeset.put_change(:seq, next_seq(entry.vault_id))
+            |> Ecto.Changeset.put_change(:seq, seq)
             |> Repo.update()
             |> case do
               {:ok, updated} -> {:cont, {:ok, [updated | moved]}}
@@ -179,15 +187,16 @@ defmodule BabelSync.Vaults do
     |> announce_all()
   end
 
-  @spec delete_entry(Entry.t()) :: {:ok, [Entry.t()]}
+  @spec delete_entry(Entry.t()) :: {:ok, [Entry.t()]} | {:error, :not_found}
   def delete_entry(%Entry{} = entry) do
     now = DateTime.utc_now()
 
-    Repo.transact(fn ->
+    entry
+    |> change(fn current, seq ->
       deleted =
-        for doomed <- [entry | descendants(entry)] do
+        for {doomed, seq} <- [{current, seq} | with_seqs(descendants(current))] do
           doomed
-          |> Ecto.Changeset.change(deleted_at: now, seq: next_seq(entry.vault_id))
+          |> Ecto.Changeset.change(deleted_at: now, seq: seq)
           |> Repo.update!()
         end
 
@@ -195,6 +204,19 @@ defmodule BabelSync.Vaults do
     end)
     |> announce_all()
   end
+
+  defp change(%Entry{id: id, vault_id: vault_id}, fun) do
+    Repo.transact(fn ->
+      seq = next_seq(vault_id)
+
+      case Repo.get(Entry, id) do
+        %Entry{deleted_at: nil} = current -> fun.(current, seq)
+        _gone -> {:error, :not_found}
+      end
+    end)
+  end
+
+  defp with_seqs(entries), do: Enum.map(entries, &{&1, next_seq(&1.vault_id)})
 
   @spec subscribe(Ecto.UUID.t()) :: :ok
   def subscribe(vault_id), do: Phoenix.PubSub.subscribe(BabelSync.PubSub, topic(vault_id))
