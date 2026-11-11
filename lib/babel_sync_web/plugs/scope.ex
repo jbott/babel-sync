@@ -6,6 +6,10 @@ defmodule BabelSyncWeb.Plugs.Scope do
   A bearer token has to be attached on purpose, so it is honoured from
   any origin. The session cookie and the open single-user mode are
   ambient, so requests relying on them must not come from another site.
+
+  A browser session lasts 30 days from its last use, not from sign-in:
+  once a day, a request made with a valid session is answered with a
+  freshly dated one.
   """
 
   import Plug.Conn
@@ -14,6 +18,8 @@ defmodule BabelSyncWeb.Plugs.Scope do
   alias BabelSyncWeb.Origin
 
   @session_key "scope_token"
+  @prolonged_key "scope_prolonged"
+  @prolong_after 86_400
 
   def session_key, do: @session_key
 
@@ -25,8 +31,29 @@ defmodule BabelSyncWeb.Plugs.Scope do
       end
 
     case result do
-      {:ok, scope} -> assign(conn, :current_scope, scope)
+      {:ok, scope} -> conn |> assign(:current_scope, scope) |> prolong(scope)
       :error -> assign(conn, :current_scope, nil)
+    end
+  end
+
+  defp prolong(conn, %{user: %{} = user}) do
+    now = System.system_time(:second)
+
+    if bearer(conn) == nil and session_token(conn) != nil and not Auth.open?() and due?(conn, now) do
+      conn
+      |> put_session(@session_key, Auth.session_token(user))
+      |> put_session(@prolonged_key, now)
+    else
+      conn
+    end
+  end
+
+  defp prolong(conn, _scope), do: conn
+
+  defp due?(conn, now) do
+    case get_session(conn, @prolonged_key) do
+      at when is_integer(at) -> now - at >= @prolong_after
+      _never -> true
     end
   end
 
