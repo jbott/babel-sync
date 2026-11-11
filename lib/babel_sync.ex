@@ -1,9 +1,14 @@
 defmodule BabelSync do
   @moduledoc """
-  BabelSync keeps the contexts that define your domain
-  and business logic.
-
-  Contexts are also responsible for managing your data, regardless
-  if it comes from the database, an external API or others.
+  BabelSync keeps Obsidian vaults in sync between devices, people and agents.
   """
+
+  @spec mode() :: :single | :multi
+  def mode, do: Application.fetch_env!(:babel_sync, :mode)
+
+  @spec storage() :: :local | :remote
+  def storage, do: Application.fetch_env!(:babel_sync, :storage)
+
+  @spec data_dir() :: Path.t()
+  def data_dir, do: Application.fetch_env!(:babel_sync, :data_dir)
 end
