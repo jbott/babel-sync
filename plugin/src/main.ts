@@ -21,6 +21,7 @@ import { DEFAULT_SETTINGS, type RemoteVault, type Settings, SettingsTab, maxBlob
 
 const CONFIG_SCAN_MS = 30_000;
 const TOKEN_CHECK_MS = 60_000;
+const UPDATE_CHECK_MS = 60_000;
 const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\/data\.json$/, /^\.obsidian\/cache$/, /^\.trash\//];
 
 export type VaultsReply =
@@ -39,6 +40,8 @@ export default class BabelSyncPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   status: Status = "offline";
   onStatus: ((status: Status) => void) | null = null;
+  build = "";
+  updated = false;
   lastError = "";
   lastSynced: number | null = null;
 
@@ -67,6 +70,8 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.addCommand({ id: "resync", name: "Compare everything with the server again", callback: () => this.resync() });
     this.addCommand({ id: "reconnect", name: "Reconnect", callback: () => this.restart(true) });
+    this.registerInterval(window.setInterval(() => void this.noticeUpdate(), UPDATE_CHECK_MS));
+    void this.fingerprintOnDisk().then((build) => (this.build = build));
 
     this.registerEvent(this.app.vault.on("create", (file) => this.changed(file)));
     this.registerEvent(this.app.vault.on("modify", (file) => this.changed(file)));
@@ -101,6 +106,32 @@ export default class BabelSyncPlugin extends Plugin {
     });
 
     this.app.workspace.onLayoutReady(() => void this.restart());
+  }
+
+  async reload(): Promise<void> {
+    const plugins = (this.app as unknown as { plugins: { disablePlugin(id: string): Promise<void>; enablePlugin(id: string): Promise<void> } }).plugins;
+    await plugins.disablePlugin(this.manifest.id);
+    await plugins.enablePlugin(this.manifest.id);
+  }
+
+  private async fingerprintOnDisk(): Promise<string> {
+    try {
+      const bytes = await this.app.vault.adapter.readBinary(`${this.manifest.dir}/main.js`);
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+      return [...digest.slice(0, 4)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    } catch {
+      return "";
+    }
+  }
+
+  private async noticeUpdate(): Promise<void> {
+    if (this.updated || !this.build) return;
+    const onDisk = await this.fingerprintOnDisk();
+    if (!onDisk || onDisk === this.build) return;
+
+    this.updated = true;
+    this.onStatus?.(this.status);
+    new Notice("Babel Sync was updated. Open its settings and tap Reload to use the new version.", 15_000);
   }
 
   async adopt({ server, vaultId, vaultName }: Invitation): Promise<void> {

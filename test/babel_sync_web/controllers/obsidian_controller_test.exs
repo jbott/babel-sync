@@ -32,6 +32,7 @@ defmodule BabelSyncWeb.ObsidianControllerTest do
 
     assert get_resp_header(conn, "content-disposition") |> hd() =~ "babelsync-plugin.zip"
     assert Plugin.version() == "9.9.9"
+    assert Plugin.build() =~ ~r/^[0-9a-f]{8}$/
   end
 
   test "a starter vault has the plugin on and pointed at the vault", %{conn: conn} do

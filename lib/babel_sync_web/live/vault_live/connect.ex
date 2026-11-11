@@ -33,7 +33,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
        |> assign(:vault, vault)
        |> assign(:folder, Plugin.folder_name(vault.name))
        |> assign(:available?, Plugin.available?())
-       |> assign(:version, Plugin.version())
+       |> assign(:version, plugin_label())
        |> assign(:server_url, server_url)
        |> assign(:deep_link, deep_link(server_url, vault))
        |> assign(:plugin_choices, @plugin_choices)
@@ -556,5 +556,13 @@ defmodule BabelSyncWeb.VaultLive.Connect do
       <div :if={@extra != []}>{render_slot(@extra)}</div>
     </div>
     """
+  end
+
+  defp plugin_label do
+    case {Plugin.version(), Plugin.build()} do
+      {nil, _build} -> nil
+      {version, nil} -> version
+      {version, build} -> "#{version}, build #{build}"
+    end
   end
 end

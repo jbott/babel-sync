@@ -152,6 +152,18 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName("Troubleshooting").setHeading();
 
     new Setting(containerEl)
+      .setName(this.plugin.updated ? "Update ready" : "Version")
+      .setDesc(
+        this.plugin.updated
+          ? `A newer plugin has synced to this device. This one is build ${this.plugin.build}; reload to switch.`
+          : `Build ${this.plugin.build || "unknown"}. Updates arrive through sync; reload after one to use it.`,
+      )
+      .addButton((button) => {
+        button.setButtonText("Reload plugin").onClick(() => this.plugin.reload());
+        if (this.plugin.updated) button.setCta();
+      });
+
+    new Setting(containerEl)
       .setName("Reconnect")
       .setDesc("Drop the connection to the server and open it again.")
       .addButton((button) => button.setButtonText("Reconnect").onClick(() => this.plugin.restart(true)));

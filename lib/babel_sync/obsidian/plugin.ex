@@ -29,6 +29,17 @@ defmodule BabelSync.Obsidian.Plugin do
     end
   end
 
+  @spec build() :: String.t() | nil
+  def build do
+    case File.read(path("main.js")) do
+      {:ok, bundle} ->
+        :crypto.hash(:sha256, bundle) |> binary_part(0, 4) |> Base.encode16(case: :lower)
+
+      {:error, _missing} ->
+        nil
+    end
+  end
+
   @spec archive() :: {:ok, binary()} | {:error, :unavailable}
   def archive, do: zip(fn name -> Path.join(@id, name) end, [])
 
