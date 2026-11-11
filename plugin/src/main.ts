@@ -29,10 +29,10 @@ export type VaultsReply =
   | { kind: "failed"; message: string };
 
 const LABELS: Record<Status, string> = {
-  offline: "BabelSync: offline",
-  syncing: "BabelSync: syncing",
-  synced: "BabelSync: synced",
-  error: "BabelSync: error",
+  offline: "Babel Sync: offline",
+  syncing: "Babel Sync: syncing",
+  synced: "Babel Sync: synced",
+  error: "Babel Sync: error",
 };
 
 export default class BabelSyncPlugin extends Plugin {
@@ -96,7 +96,7 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.registerObsidianProtocolHandler("babelsync-connect", (params) => {
       const invitation = readInvitation(params);
-      if (!invitation) return void new Notice("BabelSync: that connect link is not valid.");
+      if (!invitation) return void new Notice("Babel Sync: that connect link is not valid.");
       new ConnectModal(this.app, this, invitation).open();
     });
 
@@ -168,7 +168,7 @@ export default class BabelSyncPlugin extends Plugin {
       await this.saveSettings();
       return url;
     } catch (error) {
-      new Notice(`BabelSync: ${describe(error)}`);
+      new Notice(`Babel Sync: ${describe(error)}`);
       return null;
     }
   }
@@ -192,7 +192,7 @@ export default class BabelSyncPlugin extends Plugin {
       .then(async (fresh) => {
         this.settings.tokens = fresh;
         await this.saveSettings();
-        if (!fresh) new Notice("BabelSync was signed out. Sign in again from its settings.");
+        if (!fresh) new Notice("Babel Sync was signed out. Sign in again from its settings.");
       })
       .finally(() => {
         this.refreshing = null;
@@ -207,16 +207,16 @@ export default class BabelSyncPlugin extends Plugin {
   private async finishSignIn(params: Callback): Promise<void> {
     const pending = this.settings.pendingSignIn;
     this.settings.pendingSignIn = null;
-    if (!pending) return void new Notice("BabelSync: no sign-in is in progress.");
+    if (!pending) return void new Notice("Babel Sync: no sign-in is in progress.");
 
     try {
       this.settings.tokens = await finishAuthorization(nativeFetch, pending, params);
       await this.saveSettings();
-      new Notice("BabelSync is signed in.");
+      new Notice("Babel Sync is signed in.");
       await this.restart(true);
     } catch (error) {
       await this.saveSettings();
-      new Notice(`BabelSync: ${describe(error)}`);
+      new Notice(`Babel Sync: ${describe(error)}`);
     }
   }
 
@@ -244,7 +244,7 @@ export default class BabelSyncPlugin extends Plugin {
       await store.clear();
       await store.close();
       await this.launch();
-      new Notice("BabelSync is comparing this vault with the server.");
+      new Notice("Babel Sync is comparing this vault with the server.");
     });
   }
 
@@ -254,7 +254,7 @@ export default class BabelSyncPlugin extends Plugin {
 
   private serial(step: () => Promise<void>): Promise<void> {
     this.transition = this.transition.then(step).catch((error) => {
-      console.error("BabelSync", error);
+      console.error("Babel Sync", error);
       this.show("error");
     });
     return this.transition;
@@ -293,7 +293,7 @@ export default class BabelSyncPlugin extends Plugin {
     client.socket.onError(() => void this.accessToken().catch(() => {}));
     engine.on("error", (reason) => {
       this.lastError = reason;
-      new Notice(`BabelSync: ${reason}`);
+      new Notice(`Babel Sync: ${reason}`);
     });
     engine.on("progress", () => this.onStatus?.(this.status));
 

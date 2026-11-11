@@ -26,7 +26,7 @@ export class ConnectModal extends Modal {
     const remote = vaultName ? `“${vaultName}”` : "a vault";
     const replacing = settings.serverUrl && settings.vaultId && (settings.serverUrl !== server || settings.vaultId !== this.invitation.vaultId);
 
-    this.setTitle("Connect to BabelSync");
+    this.setTitle("Connect to Babel Sync");
     this.contentEl.empty();
     this.contentEl.createEl("p", {
       text: `Sync this Obsidian vault (“${this.app.vault.getName()}”) with ${remote} on ${hostOf(server)}?`,
@@ -60,13 +60,13 @@ export class ConnectModal extends Modal {
     const reply = await this.plugin.remoteVaults();
 
     if (reply.kind === "vaults") {
-      new Notice("BabelSync is connected.");
+      new Notice("Babel Sync is connected.");
       return this.close();
     }
     if (reply.kind !== "signed-out") return this.explain(reply.message);
 
     const url = await this.plugin.prepareSignIn();
-    if (!url) return this.explain("Sign-in could not be started. Try again from Settings › BabelSync.");
+    if (!url) return this.explain("Sign-in could not be started. Try again from Settings › Babel Sync.");
     if (!Platform.isMobile) {
       window.open(url);
       return this.close();
@@ -90,7 +90,7 @@ export class ConnectModal extends Modal {
     this.contentEl.createEl("p", { text: message });
     this.contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "The connection is saved. You can finish from Settings › BabelSync.",
+      text: "The connection is saved. You can finish from Settings › Babel Sync.",
     });
     new Setting(this.contentEl).addButton((button) => button.setButtonText("Close").onClick(() => this.close()));
   }

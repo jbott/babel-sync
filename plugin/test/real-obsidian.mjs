@@ -148,7 +148,7 @@ async function signIn(device, vaultId) {
   );
   if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `settings-${name}.png`) });
   await page.evaluate(() => app.setting.close());
-  await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("BabelSync: synced")));
+  await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("Babel Sync: synced")));
 }
 
 async function followLink(device, vaultId) {
@@ -212,7 +212,7 @@ async function followLink(device, vaultId) {
     },
     name,
   );
-  await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("BabelSync: synced")));
+  await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("Babel Sync: synced")));
 }
 
 const read = (device, path) => device.page.evaluate(async (path) => ((await app.vault.adapter.exists(path)) ? app.vault.adapter.read(path) : null), path);

@@ -8,7 +8,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
   alias BabelSyncWeb.Paths
 
   @plugin_choices [
-    {"ready", "hero-check-circle", "Obsidian already has BabelSync"},
+    {"ready", "hero-check-circle", "Obsidian already has Babel Sync"},
     {"install", "hero-arrow-down-tray", "Install it first"}
   ]
 
@@ -181,7 +181,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
                     <.ui>Sign in</.ui>
                     in
                     <.ui>Settings</.ui>
-                    › <.ui>BabelSync</.ui>. The button below does the same.
+                    › <.ui>Babel Sync</.ui>. The button below does the same.
                   </p>
                 </div>
               </.group>
@@ -228,7 +228,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
                     <.instruction letter="c">
                       In Obsidian, open
                       <.ui>Settings</.ui>
-                      › <.ui>Community plugins</.ui>, turn on community plugins if it asks, and switch on <.ui>BabelSync</.ui>.
+                      › <.ui>Community plugins</.ui>, turn on community plugins if it asks, and switch on <.ui>Babel Sync</.ui>.
                     </.instruction>
                   </ol>
                 </div>
@@ -276,7 +276,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
             </.fact>
             <.fact icon="hero-check-circle">
               On a computer the status bar reads
-              <.ui>BabelSync: synced</.ui>
+              <.ui>Babel Sync: synced</.ui>
               when everything is up to date.
             </.fact>
             <.fact icon="hero-swatch">
@@ -304,7 +304,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
               The plugin is not installed or switched on in the vault that opened, or it is an old
               build. You can also connect by hand: in
               <.ui>Settings</.ui>
-              › <.ui>BabelSync</.ui>, enter the server address below, tap <.ui>Sign in</.ui>, then choose
+              › <.ui>Babel Sync</.ui>, enter the server address below, tap <.ui>Sign in</.ui>, then choose
               <.ui>{@vault.name}</.ui>
               under <.ui>Vault</.ui>.
               <:extra>
@@ -374,7 +374,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
             <.remedy problem="Still stuck">
               In
               <.ui>Settings</.ui>
-              › <.ui>BabelSync</.ui>, under Troubleshooting, try <.ui>Reconnect</.ui>, then <.ui>Compare everything again</.ui>.
+              › <.ui>Babel Sync</.ui>, under Troubleshooting, try <.ui>Reconnect</.ui>, then <.ui>Compare everything again</.ui>.
             </.remedy>
           </.group>
         </.panel>
