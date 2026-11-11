@@ -1,7 +1,7 @@
 import { BabelSyncClient } from "@babelsync/core";
 import { Notice, Platform, Plugin, TFile, TFolder, apiVersion, debounce, requestUrl } from "obsidian";
 import { Collab } from "./collab.ts";
-import { ConnectModal } from "./connect.ts";
+import { ConnectModal, VaultPickerModal } from "./connect.ts";
 import { type Progress, type Status, SyncEngine } from "./engine.ts";
 import { IdbStore } from "./idb-store.ts";
 import { type Invitation, readInvitation } from "./invitation.ts";
@@ -195,6 +195,24 @@ export default class BabelSyncPlugin extends Plugin {
     }
   }
 
+  async chooseVault(): Promise<void> {
+    const reply = await this.remoteVaults();
+    if (reply.kind === "signed-out") return void new Notice("Babel Sync: sign in first.");
+    if (reply.kind === "failed") return void new Notice(`Babel Sync: ${reply.message}`);
+
+    const server = this.settings.serverUrl;
+    const confirm = (vault: RemoteVault) =>
+      new ConnectModal(this.app, this, { server, vaultId: vault.id, vaultName: vault.name, files: vault.files }).open();
+
+    if (reply.vaults.length === 0) {
+      new Notice("Babel Sync: there are no vaults on the server yet. Create one in the web app, then choose a vault from the plugin's settings.", 12_000);
+    } else if (reply.vaults.length === 1) {
+      confirm(reply.vaults[0]);
+    } else {
+      new VaultPickerModal(this.app, reply.vaults, confirm).open();
+    }
+  }
+
   private async rememberName(vaults: RemoteVault[]): Promise<void> {
     const name = vaults.find((vault) => vault.id === this.settings.vaultId)?.name;
     if (!name || name === this.settings.vaultName) return;
@@ -270,6 +288,7 @@ export default class BabelSyncPlugin extends Plugin {
       await this.saveSettings();
       new Notice("Babel Sync is signed in.");
       await this.restart(true);
+      if (!this.settings.vaultId) await this.chooseVault();
     } catch (error) {
       await this.saveSettings();
       new Notice(`Babel Sync: ${describe(error)}`);

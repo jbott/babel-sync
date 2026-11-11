@@ -1,5 +1,5 @@
-import { type App, type ButtonComponent, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
-import { ConnectModal, DisconnectModal } from "./connect.ts";
+import { type App, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
+import { DisconnectModal } from "./connect.ts";
 import { hostOf, normalizeServer } from "./invitation.ts";
 import type BabelSyncPlugin from "./main.ts";
 import type { Pending, Tokens } from "./oauth.ts";
@@ -50,12 +50,11 @@ function clock(time: number): string {
 
 export class SettingsTab extends PluginSettingTab {
   private plugin: BabelSyncPlugin;
-  private vaults: RemoteVault[] = [];
   private reach: Reach = "unknown";
   private problem = "";
   private signInUrl: string | null = null;
   private summary: Setting | null = null;
-  private signedIn = false;
+  private drawn = "";
 
   constructor(app: App, plugin: BabelSyncPlugin) {
     super(app, plugin);
@@ -64,7 +63,7 @@ export class SettingsTab extends PluginSettingTab {
 
   display(): void {
     this.plugin.onStatus = () => this.statusChanged();
-    this.signedIn = this.plugin.settings.tokens !== null;
+    this.drawn = this.shape();
     this.draw();
     if (this.reach === "unknown") void this.check();
   }
@@ -85,46 +84,8 @@ export class SettingsTab extends PluginSettingTab {
     this.summary = new Setting(containerEl).setHeading();
     this.summarize();
 
-    new Setting(containerEl)
-      .setName("Server")
-      .setDesc(
-        settings.vaultId
-          ? "Stop syncing with the vault below before changing the server."
-          : "Address of your Babel Sync server, for example notes.example.com",
-      )
-      .addText((text) => {
-        text.setPlaceholder("https://").setValue(settings.serverUrl).setDisabled(settings.vaultId !== "");
-        text.inputEl.addEventListener("change", () => void this.changeServer(text.getValue()));
-      });
-
-    if (settings.serverUrl) {
-      new Setting(containerEl)
-        .setName("Account")
-        .setDesc(this.accountDescription())
-        .addButton((button) => this.accountButton(button));
-    }
-
-    if (settings.vaultId) {
-      new Setting(containerEl)
-        .setName("Vault")
-        .setDesc(`This Obsidian vault is synced with ${settings.vaultName || "a vault"} on ${hostOf(settings.serverUrl)}. One Obsidian vault syncs with one server vault; to use another, make a new Obsidian vault for it.`)
-        .addButton((button) =>
-          button.setButtonText("Stop syncing").onClick(() => new DisconnectModal(this.app, this.plugin, () => void this.check()).open()),
-        );
-    } else if (this.reach === "open") {
-      new Setting(containerEl)
-        .setName("Vault")
-        .setDesc(
-          this.vaults.length === 0
-            ? "There are no vaults on the server yet. Create one in the web app, then come back."
-            : "The server vault this Obsidian vault syncs with. You are asked to confirm before anything is sent.",
-        )
-        .addDropdown((dropdown) => {
-          dropdown.addOption("", "Choose a vault");
-          for (const vault of this.vaults) dropdown.addOption(vault.id, vault.name);
-          dropdown.setValue("").onChange((value) => this.chooseVault(value));
-        });
-    }
+    if (settings.vaultId) this.connected(this.summary);
+    else this.connect(containerEl);
 
     new Setting(containerEl).setName("You").setHeading();
 
@@ -206,26 +167,111 @@ export class SettingsTab extends PluginSettingTab {
     this.summary?.setName(name).setDesc(description);
   }
 
+  private connect(containerEl: HTMLElement): void {
+    const { serverUrl, tokens } = this.plugin.settings;
+    const signInUrl = this.signInUrl;
+    const ready = serverUrl !== "" && (tokens !== null || this.reach === "open");
+    let address = serverUrl;
+
+    const row = new Setting(containerEl)
+      .setName("Server")
+      .setDesc("Address of your Babel Sync server, for example notes.example.com")
+      .addText((text) => {
+        text.setPlaceholder("https://").setValue(serverUrl).onChange((value) => (address = value));
+        text.inputEl.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") void this.begin(address);
+        });
+      });
+
+    if (signInUrl) {
+      row.addButton((button) =>
+        button
+          .setButtonText("Open sign-in page")
+          .setCta()
+          .onClick(() => void window.open(signInUrl)),
+      );
+    } else {
+      row.addButton((button) =>
+        button
+          .setButtonText(ready ? "Choose vault" : "Sign in")
+          .setCta()
+          .onClick(() => this.begin(address)),
+      );
+    }
+
+    if (tokens) row.addButton((button) => button.setButtonText("Sign out").onClick(() => this.plugin.signOut()));
+  }
+
+  private connected(summary: Setting): void {
+    const signInUrl = this.signInUrl;
+
+    if (signInUrl) {
+      summary.addButton((button) =>
+        button
+          .setButtonText("Open sign-in page")
+          .setCta()
+          .onClick(() => void window.open(signInUrl)),
+      );
+    } else if (this.reach === "signed-out") {
+      summary.addButton((button) =>
+        button
+          .setButtonText("Sign in")
+          .setCta()
+          .onClick(() => this.signIn()),
+      );
+    }
+
+    summary.addButton((button) =>
+      button.setButtonText("Sign out").onClick(() => new DisconnectModal(this.app, this.plugin, () => void this.check()).open()),
+    );
+  }
+
+  private async begin(value: string): Promise<void> {
+    const serverUrl = normalizeServer(value);
+    if (!serverUrl) return void new Notice("Enter the address of your Babel Sync server first.");
+
+    if (serverUrl !== this.plugin.settings.serverUrl) {
+      if (this.plugin.settings.tokens) await this.plugin.signOut();
+      await this.save({ serverUrl });
+    }
+
+    await this.check();
+    if (this.reach === "open") await this.plugin.chooseVault();
+    if (this.reach === "signed-out") await this.signIn();
+  }
+
+  private async signIn(): Promise<void> {
+    if (!Platform.isMobile) return this.plugin.signIn();
+    this.signInUrl = await this.plugin.prepareSignIn();
+    this.draw();
+  }
+
   private headline(): { name: string; description: string } {
     const { serverUrl, vaultId, vaultName, tokens } = this.plugin.settings;
+    const ready = "Sign-in is ready. Open the page, approve this device, and you will come straight back.";
 
-    if (!serverUrl) {
+    if (!vaultId) {
+      if (this.reach === "checking") return { name: "Checking the server…", description: hostOf(serverUrl) };
+      if (this.reach === "failed") return { name: "Cannot talk to the server", description: this.problem };
+      if (this.signInUrl) return { name: "Not connected", description: ready };
+      if (serverUrl && (tokens || this.reach === "open")) {
+        return {
+          name: `Signed in to ${hostOf(serverUrl)}`,
+          description: "One step left: choose the vault on the server that this Obsidian vault syncs with.",
+        };
+      }
       return {
-        name: "Step 1 of 3: enter your server",
-        description: "Type the address below. Or open the vault in the web app and choose Connect Obsidian to set all of this up with one tap.",
+        name: "Not connected",
+        description: "Enter your server and sign in; the rest follows. Or open the vault in the web app and choose Connect Obsidian.",
       };
     }
-    if (this.reach === "checking") return { name: "Checking the server…", description: hostOf(serverUrl) };
-    if (this.reach === "failed") return { name: "Cannot talk to the server", description: this.problem };
-    if (this.reach === "signed-out" || (this.reach === "unknown" && !tokens && !vaultId)) {
+
+    if (this.reach === "signed-out") {
       return {
-        name: "Step 2 of 3: sign in",
-        description: this.signInUrl
-          ? "Sign-in is ready. Open the page, approve this device, and you will come straight back."
-          : `Sign in to ${hostOf(serverUrl)} so this device can sync.`,
+        name: `Signed out of ${vaultName || "your vault"} on ${hostOf(serverUrl)}`,
+        description: this.signInUrl ? ready : "Sign in again to keep syncing. Changes made here meanwhile are kept and sent afterwards.",
       };
     }
-    if (!vaultId) return { name: "Step 3 of 3: choose a vault", description: "Pick the server vault to sync with below." };
 
     return {
       name: `Syncing with ${vaultName || "your vault"} on ${hostOf(serverUrl)}`,
@@ -250,12 +296,17 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private statusChanged(): void {
-    const signedIn = this.plugin.settings.tokens !== null;
-    if (signedIn === this.signedIn) return this.summarize();
+    const shape = this.shape();
+    if (shape === this.drawn) return this.summarize();
 
-    this.signedIn = signedIn;
+    this.drawn = shape;
     this.signInUrl = null;
     void this.check();
+  }
+
+  private shape(): string {
+    const { tokens, vaultId } = this.plugin.settings;
+    return `${tokens !== null} ${vaultId}`;
   }
 
   private async check(): Promise<void> {
@@ -269,7 +320,6 @@ export class SettingsTab extends PluginSettingTab {
     const reply = await this.plugin.remoteVaults();
 
     if (reply.kind === "vaults") {
-      this.vaults = reply.vaults;
       this.reach = "open";
     } else if (reply.kind === "signed-out") {
       this.reach = "signed-out";
@@ -279,57 +329,6 @@ export class SettingsTab extends PluginSettingTab {
     }
 
     this.draw();
-  }
-
-  private async changeServer(value: string): Promise<void> {
-    const serverUrl = normalizeServer(value) ?? "";
-    if (serverUrl === this.plugin.settings.serverUrl) return this.draw();
-
-    this.signedIn = false;
-    if (this.plugin.settings.tokens) await this.plugin.signOut();
-    await this.save({ serverUrl, vaultId: "", vaultName: "" });
-    this.signInUrl = null;
-    this.vaults = [];
-    await this.check();
-  }
-
-  private chooseVault(vaultId: string): void {
-    const vault = this.vaults.find((candidate) => candidate.id === vaultId);
-    if (!vault) return;
-
-    const invitation = { server: this.plugin.settings.serverUrl, vaultId, vaultName: vault.name, files: vault.files };
-    new ConnectModal(this.app, this.plugin, invitation, () => this.draw()).open();
-  }
-
-  private accountDescription(): string {
-    if (this.plugin.settings.tokens) return "This device is signed in.";
-    if (this.reach === "open") return "This server does not ask for sign-in.";
-    if (this.signInUrl) return "Open the page, approve this device, and come back.";
-    return "Not signed in.";
-  }
-
-  private accountButton(button: ButtonComponent): void {
-    const signInUrl = this.signInUrl;
-
-    if (this.plugin.settings.tokens) {
-      button.setButtonText("Sign out").onClick(() => this.plugin.signOut());
-    } else if (this.reach === "open") {
-      button.setButtonText("Not needed").setDisabled(true);
-    } else if (signInUrl) {
-      button
-        .setButtonText("Open sign-in page")
-        .setCta()
-        .onClick(() => void window.open(signInUrl));
-    } else {
-      button
-        .setButtonText("Sign in")
-        .setCta()
-        .onClick(async () => {
-          if (!Platform.isMobile) return this.plugin.signIn();
-          this.signInUrl = await this.plugin.prepareSignIn();
-          this.draw();
-        });
-    }
   }
 
   private async save(changes: Partial<Settings>): Promise<void> {

@@ -115,35 +115,47 @@ async function signIn(device, vaultId) {
   await page.evaluate(
     async (server, name) => {
       const plugin = app.plugins.plugins.babelsync;
-      plugin.settings.serverUrl = server;
       plugin.settings.deviceName = name;
       plugin.settings.userName = name;
       await plugin.saveSettings();
-      await plugin.signIn();
+      app.setting.open();
+      app.setting.openTabById("babelsync");
     },
     server,
     name,
   );
-  const url = await page.evaluate(() => window.__opened.at(-1));
-  check(`${name}: sign-in opens the server's consent page`, !!url && url.startsWith(`${server}/oauth/authorize?`), url?.slice(0, 60));
-  const callback = await approve(url);
-  await page.evaluate((callback) => app.plugins.plugins.babelsync.finishSignIn(callback), callback);
-  const signedIn = await page.evaluate(() => !!app.plugins.plugins.babelsync.settings.tokens?.accessToken?.startsWith("bsa_"));
-  check(`${name}: oauth code is exchanged for tokens inside Obsidian`, signedIn);
-
-  await page.evaluate(() => {
-    app.setting.open();
-    app.setting.openTabById("babelsync");
-  });
-  await eventually(`${name}: settings tab lists the server's vaults by itself`, () =>
-    page.evaluate((vaultId) => [...document.querySelectorAll(".vertical-tab-content select option")].some((option) => option.value === vaultId), vaultId),
+  await eventually(`${name}: a fresh settings tab offers one address field and one sign-in button`, () =>
+    page.evaluate(() => {
+      const tab = document.querySelector(".vertical-tab-content");
+      const connection = [...tab.querySelectorAll(".setting-item")].slice(0, 2);
+      const buttons = connection.flatMap((item) => [...item.querySelectorAll("button")]).map((button) => button.innerText);
+      const fields = connection.flatMap((item) => [...item.querySelectorAll("input, select")]);
+      return tab.querySelector(".setting-item-heading")?.innerText.startsWith("Not connected") && fields.length === 1 && buttons.join() === "Sign in";
+    }),
   );
-  await page.evaluate(async (vaultId) => {
-    const select = [...document.querySelectorAll(".vertical-tab-content select")].find((select) => [...select.options].some((option) => option.value === vaultId));
-    select.value = vaultId;
-    select.dispatchEvent(new Event("change"));
-  }, vaultId);
-  await eventually(`${name}: choosing a vault asks first and says what will happen`, () =>
+  if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `settings-${name}-fresh.png`) });
+  await page.evaluate((server) => {
+    const tab = document.querySelector(".vertical-tab-content");
+    const field = tab.querySelector(".setting-item input[type=text]");
+    field.value = server;
+    field.dispatchEvent(new Event("input"));
+    [...tab.querySelectorAll("button")].find((button) => button.innerText === "Sign in").click();
+  }, server);
+  const consent = async (what) => {
+    let url;
+    await eventually(`${name}: ${what} opens the server's consent page`, async () => {
+      url = await page.evaluate(() => window.__opened.at(-1));
+      return !!url?.startsWith(`${server}/oauth/authorize?`);
+    });
+    const callback = await approve(url);
+    await page.evaluate((callback) => app.plugins.plugins.babelsync.finishSignIn(callback), callback);
+    const signedIn = await page.evaluate(() => !!app.plugins.plugins.babelsync.settings.tokens?.accessToken?.startsWith("bsa_"));
+    check(`${name}: oauth code is exchanged for tokens inside Obsidian`, signedIn);
+  };
+  const needsSignIn = (await fetch(`${server}/api/vaults`)).status === 401;
+  if (needsSignIn) await consent("the sign-in button");
+
+  await eventually(`${name}: signing in goes straight on to the vault, asking first and saying what will happen`, () =>
     page.evaluate(() => [...document.querySelectorAll(".modal-container .modal")].some((modal) => modal.innerText.includes("Sync this Obsidian vault"))),
   );
   await page.evaluate(() => [...document.querySelectorAll(".modal-container .modal button")].find((button) => button.innerText === "Connect").click());
@@ -152,6 +164,10 @@ async function signIn(device, vaultId) {
   );
   if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `settings-${name}.png`) });
   await page.evaluate(() => app.setting.close());
+  if (!needsSignIn) {
+    await page.evaluate(() => app.plugins.plugins.babelsync.signIn());
+    await consent("signing in on a server that does not demand it");
+  }
   await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("Babel Sync: synced")));
 }
 
@@ -161,10 +177,9 @@ async function followLink(device, vaultId) {
     app.setting.open();
     app.setting.openTabById("babelsync");
   });
-  await eventually(`${name}: a fresh settings tab starts at step 1`, () =>
-    page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.startsWith("Step 1 of 3")),
+  await eventually(`${name}: a fresh settings tab says it is not connected`, () =>
+    page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.startsWith("Not connected")),
   );
-  if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `settings-${name}-fresh.png`) });
   await page.evaluate(() => app.setting.close());
 
   const handled = await page.evaluate(
@@ -232,10 +247,17 @@ async function followLink(device, vaultId) {
     app.setting.open();
     app.setting.openTabById("babelsync");
   });
-  await eventually(`${name}: a synced vault offers to stop syncing and no way to switch`, () =>
+  await eventually(`${name}: a synced vault shows one line with a sign-out button and no way to switch`, () =>
     page.evaluate(() => {
       const tab = document.querySelector(".vertical-tab-content");
-      return !tab.querySelector("select") && [...tab.querySelectorAll("button")].some((button) => button.innerText === "Stop syncing");
+      const heading = tab.querySelector(".setting-item-heading");
+      const next = heading.nextElementSibling;
+      return (
+        !tab.querySelector("select") &&
+        heading.innerText.startsWith("Syncing with ") &&
+        [...heading.querySelectorAll("button")].map((button) => button.innerText).join() === "Sign out" &&
+        next.classList.contains("setting-item-heading")
+      );
     }),
   );
   if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `settings-${name}-bound.png`) });

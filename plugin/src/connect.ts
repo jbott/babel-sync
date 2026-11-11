@@ -1,6 +1,7 @@
 import { type App, Modal, Notice, Platform, Setting } from "obsidian";
 import { type Invitation, hostOf } from "./invitation.ts";
 import type BabelSyncPlugin from "./main.ts";
+import type { RemoteVault } from "./settings.ts";
 
 export class ConnectModal extends Modal {
   private plugin: BabelSyncPlugin;
@@ -122,6 +123,41 @@ export class ConnectModal extends Modal {
   }
 }
 
+export class VaultPickerModal extends Modal {
+  private vaults: RemoteVault[];
+  private chosen: (vault: RemoteVault) => void;
+
+  constructor(app: App, vaults: RemoteVault[], chosen: (vault: RemoteVault) => void) {
+    super(app);
+    this.vaults = vaults;
+    this.chosen = chosen;
+  }
+
+  onOpen(): void {
+    this.setTitle("Which vault?");
+    this.contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Choose the vault on the server that this Obsidian vault syncs with. You are asked to confirm before anything is sent.",
+    });
+
+    for (const vault of this.vaults) {
+      new Setting(this.contentEl)
+        .setName(vault.name)
+        .setDesc(vault.files === undefined ? "" : count(vault.files))
+        .addButton((button) =>
+          button.setButtonText("Choose").onClick(() => {
+            this.close();
+            this.chosen(vault);
+          }),
+        );
+    }
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
 export class DisconnectModal extends Modal {
   private plugin: BabelSyncPlugin;
   private done: () => void;
@@ -134,23 +170,24 @@ export class DisconnectModal extends Modal {
 
   onOpen(): void {
     const { vaultName, serverUrl } = this.plugin.settings;
-    this.setTitle("Stop syncing this vault?");
+    this.setTitle("Sign out and stop syncing?");
     this.contentEl.createEl("p", {
       text: `This Obsidian vault will no longer sync with ${vaultName ? `“${vaultName}”` : "its vault"} on ${hostOf(serverUrl)}. Your notes stay here and on the server; nothing is deleted.`,
     });
     this.contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "Connecting again later compares everything afresh.",
+      text: "This device is signed out of the server. Signing in again later compares everything afresh.",
     });
 
     new Setting(this.contentEl)
       .addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()))
       .addButton((button) =>
         button
-          .setButtonText("Stop syncing")
+          .setButtonText("Sign out")
           .setWarning()
           .onClick(async () => {
             await this.plugin.disconnect();
+            await this.plugin.signOut();
             this.close();
           }),
       );
