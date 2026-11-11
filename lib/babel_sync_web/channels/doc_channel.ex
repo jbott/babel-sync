@@ -50,8 +50,14 @@ defmodule BabelSyncWeb.DocChannel do
     end
   end
 
-  def handle_in("awareness", {:binary, _state} = frame, socket) do
-    broadcast_from!(socket, "awareness", frame)
+  def handle_in("awareness", {:binary, state}, socket) do
+    Phoenix.PubSub.broadcast_from(
+      BabelSync.PubSub,
+      self(),
+      Sync.topic(socket.assigns.entry_id),
+      {:awareness, state}
+    )
+
     {:noreply, socket}
   end
 
@@ -66,6 +72,11 @@ defmodule BabelSyncWeb.DocChannel do
 
   def handle_info({:doc_update, _entry_id, update, _origin}, socket) do
     push(socket, "update", {:binary, update})
+    {:noreply, socket}
+  end
+
+  def handle_info({:awareness, state}, socket) do
+    push(socket, "awareness", {:binary, state})
     {:noreply, socket}
   end
 

@@ -77,10 +77,11 @@ defmodule BabelSyncWeb.DocChannelTest do
   test "cursor state is relayed to others and not echoed", ctx do
     {doc, _} = client_doc(1)
     {:ok, _, socket} = join_doc(ctx.owner, ctx.note, doc)
+    :ok = Sync.subscribe(ctx.note.id)
 
     push(socket, "awareness", {:binary, <<1, 2, 3>>})
 
-    assert_broadcast "awareness", {:binary, <<1, 2, 3>>}
+    assert_receive {:awareness, <<1, 2, 3>>}
     refute_push "awareness", _
   end
 
