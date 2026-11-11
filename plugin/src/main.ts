@@ -142,9 +142,28 @@ export default class BabelSyncPlugin extends Plugin {
       void revokeTokens(nativeFetch, serverUrl, tokens.refreshToken).catch(() => {});
     }
 
+    if (this.settings.vaultId && (serverUrl !== server || this.settings.vaultId !== vaultId)) await this.forgetSyncState();
+
     Object.assign(this.settings, { serverUrl: server, vaultId, vaultName });
     await this.saveSettings();
     await this.restart();
+  }
+
+  async disconnect(): Promise<void> {
+    await this.forgetSyncState();
+    Object.assign(this.settings, { vaultId: "", vaultName: "" });
+    await this.saveSettings();
+    await this.restart(true);
+  }
+
+  private forgetSyncState(): Promise<void> {
+    return this.serial(async () => {
+      await this.halt();
+      if (!this.settings.vaultId) return;
+      const store = new IdbStore(this.storeName());
+      await store.clear();
+      await store.close();
+    });
   }
 
   async remoteVaults(): Promise<VaultsReply> {

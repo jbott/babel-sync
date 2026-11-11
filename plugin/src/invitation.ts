@@ -1,4 +1,4 @@
-export type Invitation = { server: string; vaultId: string; vaultName: string };
+export type Invitation = { server: string; vaultId: string; vaultName: string; files?: number };
 
 export function normalizeServer(value: string): string | null {
   const trimmed = value.trim().replace(/\/+$/, "");

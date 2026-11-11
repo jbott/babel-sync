@@ -23,6 +23,13 @@ defmodule BabelSyncWeb.VaultControllerTest do
 
     assert {id, name} == {mine.id, mine.name}
 
+    entry(mine, "a.md")
+    entry(mine, "Folder", %{kind: :folder})
+    entry(mine, ".obsidian/app.json")
+
+    assert %{"vaults" => [%{"files" => 1}]} =
+             conn |> as(owner) |> get("/api/vaults") |> json_response(200)
+
     assert %{"vaults" => [%{"id" => ^id, "role" => "viewer"}]} =
              conn |> as(guest) |> get("/api/vaults") |> json_response(200)
   end

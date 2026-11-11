@@ -143,6 +143,10 @@ async function signIn(device, vaultId) {
     select.value = vaultId;
     select.dispatchEvent(new Event("change"));
   }, vaultId);
+  await eventually(`${name}: choosing a vault asks first and says what will happen`, () =>
+    page.evaluate(() => [...document.querySelectorAll(".modal-container .modal")].some((modal) => modal.innerText.includes("Sync this Obsidian vault"))),
+  );
+  await page.evaluate(() => [...document.querySelectorAll(".modal-container .modal button")].find((button) => button.innerText === "Connect").click());
   await eventually(`${name}: settings tab says what it is syncing with`, () =>
     page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.startsWith("Syncing with ")),
   );
@@ -213,6 +217,29 @@ async function followLink(device, vaultId) {
     name,
   );
   await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("Babel Sync: synced")));
+
+  await page.evaluate((server) => window.OBS_ACT({ action: "babelsync-connect", server, id: "00000000-0000-4000-8000-000000000000", name: "Other" }), server);
+  await eventually(`${name}: pointing a synced vault at another one is warned against`, () =>
+    page.evaluate(() => {
+      const modal = document.querySelector(".modal-container .modal");
+      return !!modal?.innerText.includes("Mix two vaults?") && !!modal.querySelector("button.mod-cta")?.innerText.includes("Cancel");
+    }),
+  );
+  await page.evaluate(() => document.querySelector(".modal-container .modal button.mod-cta").click());
+  check(`${name}: cancelling leaves the vault where it was`, await page.evaluate((id) => app.plugins.plugins.babelsync.settings.vaultId === id, vaultId));
+
+  await page.evaluate(() => {
+    app.setting.open();
+    app.setting.openTabById("babelsync");
+  });
+  await eventually(`${name}: a synced vault offers to stop syncing and no way to switch`, () =>
+    page.evaluate(() => {
+      const tab = document.querySelector(".vertical-tab-content");
+      return !tab.querySelector("select") && [...tab.querySelectorAll("button")].some((button) => button.innerText === "Stop syncing");
+    }),
+  );
+  if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `settings-${name}-bound.png`) });
+  await page.evaluate(() => app.setting.close());
 }
 
 const read = (device, path) => device.page.evaluate(async (path) => ((await app.vault.adapter.exists(path)) ? app.vault.adapter.read(path) : null), path);

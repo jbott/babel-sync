@@ -36,6 +36,17 @@ defmodule BabelSync.Vaults do
     )
   end
 
+  @spec count_files(Ecto.UUID.t()) :: non_neg_integer()
+  def count_files(vault_id) do
+    Repo.aggregate(
+      from(e in Entry,
+        where: e.vault_id == ^vault_id and is_nil(e.deleted_at) and e.kind != :folder,
+        where: not like(e.path, ".obsidian/%")
+      ),
+      :count
+    )
+  end
+
   @spec get_vault(Ecto.UUID.t()) :: Vault.t() | nil
   def get_vault(id), do: Repo.get(Vault, id)
 

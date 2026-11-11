@@ -1,4 +1,5 @@
 import { type App, type ButtonComponent, Platform, PluginSettingTab, Setting } from "obsidian";
+import { ConnectModal, DisconnectModal } from "./connect.ts";
 import { hostOf, normalizeServer } from "./invitation.ts";
 import type BabelSyncPlugin from "./main.ts";
 import type { Pending, Tokens } from "./oauth.ts";
@@ -39,7 +40,7 @@ export function maxBlobBytes(settings: Settings): number | undefined {
   return settings.maxFileMebibytes > 0 ? settings.maxFileMebibytes * MEBIBYTE : undefined;
 }
 
-export type RemoteVault = { id: string; name: string; role: string };
+export type RemoteVault = { id: string; name: string; role: string; files?: number };
 
 type Reach = "unknown" | "checking" | "open" | "signed-out" | "failed";
 
@@ -86,9 +87,13 @@ export class SettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Server")
-      .setDesc("Address of your Babel Sync server, for example notes.example.com")
+      .setDesc(
+        settings.vaultId
+          ? "Stop syncing with the vault below before changing the server."
+          : "Address of your Babel Sync server, for example notes.example.com",
+      )
       .addText((text) => {
-        text.setPlaceholder("https://").setValue(settings.serverUrl);
+        text.setPlaceholder("https://").setValue(settings.serverUrl).setDisabled(settings.vaultId !== "");
         text.inputEl.addEventListener("change", () => void this.changeServer(text.getValue()));
       });
 
@@ -99,18 +104,25 @@ export class SettingsTab extends PluginSettingTab {
         .addButton((button) => this.accountButton(button));
     }
 
-    if (this.reach === "open") {
+    if (settings.vaultId) {
+      new Setting(containerEl)
+        .setName("Vault")
+        .setDesc(`This Obsidian vault is synced with ${settings.vaultName || "a vault"} on ${hostOf(settings.serverUrl)}. One Obsidian vault syncs with one server vault; to use another, make a new Obsidian vault for it.`)
+        .addButton((button) =>
+          button.setButtonText("Stop syncing").onClick(() => new DisconnectModal(this.app, this.plugin, () => void this.check()).open()),
+        );
+    } else if (this.reach === "open") {
       new Setting(containerEl)
         .setName("Vault")
         .setDesc(
           this.vaults.length === 0
             ? "There are no vaults on the server yet. Create one in the web app, then come back."
-            : "The server vault this Obsidian vault syncs with. Notes already here are merged into it.",
+            : "The server vault this Obsidian vault syncs with. You are asked to confirm before anything is sent.",
         )
         .addDropdown((dropdown) => {
           dropdown.addOption("", "Choose a vault");
-          for (const vault of this.options()) dropdown.addOption(vault.id, vault.name);
-          dropdown.setValue(settings.vaultId).onChange((value) => this.chooseVault(value));
+          for (const vault of this.vaults) dropdown.addOption(vault.id, vault.name);
+          dropdown.setValue("").onChange((value) => this.chooseVault(value));
         });
     }
 
@@ -244,7 +256,6 @@ export class SettingsTab extends PluginSettingTab {
     if (reply.kind === "vaults") {
       this.vaults = reply.vaults;
       this.reach = "open";
-      if (!this.plugin.settings.vaultId && reply.vaults.length === 1) return this.chooseVault(reply.vaults[0]!.id);
     } else if (reply.kind === "signed-out") {
       this.reach = "signed-out";
     } else {
@@ -267,11 +278,12 @@ export class SettingsTab extends PluginSettingTab {
     await this.check();
   }
 
-  private async chooseVault(vaultId: string): Promise<void> {
-    const vaultName = this.vaults.find((vault) => vault.id === vaultId)?.name ?? "";
-    await this.save({ vaultId, vaultName });
-    await this.plugin.restart();
-    this.draw();
+  private chooseVault(vaultId: string): void {
+    const vault = this.vaults.find((candidate) => candidate.id === vaultId);
+    if (!vault) return;
+
+    const invitation = { server: this.plugin.settings.serverUrl, vaultId, vaultName: vault.name, files: vault.files };
+    new ConnectModal(this.app, this.plugin, invitation, () => this.draw()).open();
   }
 
   private accountDescription(): string {
@@ -303,12 +315,6 @@ export class SettingsTab extends PluginSettingTab {
           this.draw();
         });
     }
-  }
-
-  private options(): RemoteVault[] {
-    const { vaultId, vaultName } = this.plugin.settings;
-    if (!vaultId || this.vaults.some((vault) => vault.id === vaultId)) return this.vaults;
-    return [...this.vaults, { id: vaultId, name: vaultName || "Current vault", role: "current" }];
   }
 
   private async save(changes: Partial<Settings>): Promise<void> {

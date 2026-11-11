@@ -8,7 +8,12 @@ defmodule BabelSyncWeb.VaultController do
 
     vaults =
       for vault <- Vaults.list_vaults(user) do
-        %{id: vault.id, name: vault.name, role: Vaults.role(user, vault.id)}
+        %{
+          id: vault.id,
+          name: vault.name,
+          role: Vaults.role(user, vault.id),
+          files: Vaults.count_files(vault.id)
+        }
       end
 
     json(conn, %{vaults: vaults})
