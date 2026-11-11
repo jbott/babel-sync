@@ -133,4 +133,30 @@ defmodule BabelSyncWeb.DocChannelTest do
     assert {:error, %{reason: "forbidden"}} = join_doc(ctx.owner, attachment, doc)
     assert {:error, %{reason: "forbidden"}} = join_doc(ctx.owner, ctx.note, doc)
   end
+
+  test "viewers cannot ask for a note to be settled, and unknown requests are refused", ctx do
+    viewer = user()
+    {:ok, _} = Vaults.put_member(ctx.vault, viewer, :viewer)
+    {doc, _text} = client_doc(1)
+    {:ok, _reply, socket} = join_doc(viewer, ctx.note, doc)
+
+    assert_reply push(socket, "flush", %{}), :error, %{reason: "forbidden"}
+    assert_reply push(socket, "nonsense", %{}), :error, %{reason: "bad_request"}
+  end
+
+  test "a join without a state vector receives the whole note, a broken one is refused", ctx do
+    assert {:ok, reply, _socket} =
+             ctx.owner |> connect_as() |> subscribe_and_join("doc:" <> ctx.note.id, %{})
+
+    {doc, text} = client_doc(2)
+    :ok = Yex.apply_update(doc, Base.decode64!(reply.update))
+    assert Yex.Text.to_string(text) == "server text"
+
+    for bad <- ["not base64!", 42] do
+      assert {:error, _reason} =
+               ctx.owner
+               |> connect_as()
+               |> subscribe_and_join("doc:" <> ctx.note.id, %{"sv" => bad})
+    end
+  end
 end

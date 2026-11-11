@@ -186,4 +186,180 @@ defmodule BabelSyncWeb.Auth.LoginTest do
       refute has_element?(view, "#passkey-#{laptop.id} button")
     end
   end
+
+  describe "less common paths" do
+    test "allowed addresses can be exact or anyone, and nonsense is ignored", %{conn: conn} do
+      with_mode(:multi)
+      with_auth([:magic_link])
+      with_allowed(["boss@example.com"])
+
+      assert Auth.MagicLink.permitted?("boss@example.com")
+      refute Auth.MagicLink.permitted?("other@example.com")
+      refute Auth.MagicLink.permitted?("not an address")
+
+      with_allowed(["*"])
+      assert Auth.MagicLink.permitted?("anyone@anywhere.test")
+
+      {:ok, view, _html} = live(conn, ~p"/login")
+      render_submit(view, "request_link", %{"link" => %{"email" => "not an address"}})
+      assert_no_email_sent()
+    end
+
+    test "on a single-user server a link goes only to the allowed address and signs in the owner",
+         %{conn: conn} do
+      with_auth([:magic_link])
+      with_allowed(["me@example.com"])
+      owner = Accounts.single_user!()
+
+      {:ok, view, _html} = live(conn, ~p"/login")
+      view |> form("#link-form", link: %{email: "intruder@example.com"}) |> render_submit()
+      assert_no_email_sent()
+
+      {:ok, view, _html} = live(conn, ~p"/login")
+      view |> form("#link-form", link: %{email: "me@example.com"}) |> render_submit()
+      signed_in = post(conn, ~p"/login/link", %{token: link_token()})
+      assert redirected_to(signed_in) == "/"
+      assert [%{id: id}] = BabelSync.Repo.all(Accounts.User)
+      assert id == owner.id
+    end
+
+    test "expired links are pruned and cannot be used", %{conn: conn} do
+      with_mode(:multi)
+      with_auth([:magic_link])
+      user(%{email: "ada@example.com"})
+      :ok = Auth.MagicLink.request("ada@example.com", &("http://x/login/link/" <> &1))
+      token = link_token()
+
+      BabelSync.Repo.update_all(Auth.LoginLink,
+        set: [expires_at: DateTime.add(DateTime.utc_now(), -1, :second)]
+      )
+
+      assert :error = Auth.MagicLink.peek(token)
+      assert conn |> post(~p"/login/link", %{token: token}) |> redirected_to() == "/login"
+      assert :ok = Auth.MagicLink.prune()
+      assert BabelSync.Repo.aggregate(Auth.LoginLink, :count) == 0
+    end
+
+    test "methods that are switched off cannot be used through their addresses", %{conn: conn} do
+      with_auth([:passkey])
+      owner = Accounts.single_user!()
+
+      assert conn |> get(~p"/login/oidc") |> redirected_to() == "/login"
+
+      assert conn |> get(~p"/login/oidc/callback", %{code: "x", state: "y"}) |> redirected_to() ==
+               "/login"
+
+      assert conn |> get(~p"/login/oidc/callback", %{error: "access_denied"}) |> redirected_to() ==
+               "/login"
+
+      assert conn |> post(~p"/login/link", %{token: "whatever"}) |> redirected_to() == "/login"
+
+      {:ok, view, _html} = live(conn, ~p"/login/link/whatever")
+      assert has_element?(view, "#link-expired")
+
+      conn = sign_in(conn, owner)
+      assert {:error, {:redirect, %{to: "/"}}} = live(conn, ~p"/login")
+    end
+
+    test "a tampered or stale session is treated as signed out", %{conn: conn} do
+      with_auth([:passkey])
+
+      forged =
+        Plug.Test.init_test_session(conn, %{BabelSyncWeb.Plugs.Scope.session_key() => "forged"})
+
+      assert {:error, {:redirect, %{to: "/login"}}} = live(forged, ~p"/")
+
+      ghost = %Accounts.User{id: Ecto.UUID.generate()}
+      assert {:error, {:redirect, %{to: "/login"}}} = conn |> sign_in(ghost) |> live(~p"/")
+      assert :error = Auth.scope_from_token(Auth.socket_token(Accounts.Scope.for_user(ghost)))
+    end
+
+    test "a wrong or dismissed passkey is reported and signs nobody in", %{conn: conn} do
+      with_auth([:passkey])
+      owner = Accounts.single_user!()
+      {challenge, options} = Passkeys.registration(owner)
+
+      {:ok, _passkey} =
+        Passkeys.register(
+          owner,
+          challenge,
+          TestAuthenticator.attest(TestAuthenticator.new(), options, BabelSyncWeb.Endpoint.url()),
+          ""
+        )
+
+      assert [%{name: "Passkey"}] = Passkeys.list(owner)
+
+      {:ok, view, _html} = live(conn, ~p"/login")
+      render_hook(view, "passkey_result", %{"id" => "early"})
+      render_hook(view, "passkey_options", %{})
+      assert_reply view, %{get: options}
+
+      {_stranger, response} =
+        TestAuthenticator.assert(TestAuthenticator.new(), options, BabelSyncWeb.Endpoint.url())
+
+      assert render_hook(view, "passkey_result", response) =~ "not accepted"
+
+      render_hook(view, "passkey_options", %{})
+      assert render_hook(view, "passkey_failed", %{}) =~ "dismissed"
+      assert render_hook(view, "passkey_result", %{}) =~ "dismissed"
+
+      {challenge, _options} = Passkeys.authentication()
+      assert {:error, :invalid} = Passkeys.authenticate(challenge, %{})
+      assert {:error, :invalid} = Passkeys.register(owner, challenge, %{}, "x")
+    end
+
+    test "the account page saves a name and reports passkey problems", %{conn: conn} do
+      with_auth([:passkey])
+      owner = Accounts.single_user!()
+      {:ok, view, _html} = conn |> sign_in(owner) |> live(~p"/account")
+
+      view |> form("#profile-form", user: %{name: "Ada"}) |> render_submit()
+      assert Accounts.get_user(owner.id).name == "Ada"
+      view |> form("#profile-form", user: %{name: String.duplicate("x", 200)}) |> render_submit()
+      assert Accounts.get_user(owner.id).name == "Ada"
+
+      render_hook(view, "passkey_result", %{})
+      render_hook(view, "passkey_options", %{})
+
+      assert render_hook(view, "passkey_result", %{
+               "attestationObject" => "AA",
+               "clientDataJSON" => "AA"
+             }) =~ "not accepted"
+
+      assert render_hook(view, "passkey_failed", %{}) =~ "dismissed"
+      assert Passkeys.list(owner) == []
+    end
+
+    test "without passkeys enabled the account page offers none", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/account")
+      refute has_element?(view, "#passkeys")
+      refute has_element?(view, "#sign-out")
+      render_hook(view, "passkey_options", %{})
+      assert_reply view, reply
+      assert reply == %{}
+    end
+
+    test "the setup notice is logged only while no passkey exists" do
+      with_auth([:passkey])
+
+      assert ExUnit.CaptureLog.capture_log(fn -> Setup.announce() end) =~
+               "/login?setup=" <> Setup.code()
+
+      refute Setup.valid?(nil)
+      refute Setup.valid?("wrong")
+
+      owner = Accounts.single_user!()
+      {challenge, options} = Passkeys.registration(owner)
+
+      {:ok, _} =
+        Passkeys.register(
+          owner,
+          challenge,
+          TestAuthenticator.attest(TestAuthenticator.new(), options, BabelSyncWeb.Endpoint.url()),
+          "k"
+        )
+
+      assert ExUnit.CaptureLog.capture_log(fn -> Setup.announce() end) == ""
+    end
+  end
 end

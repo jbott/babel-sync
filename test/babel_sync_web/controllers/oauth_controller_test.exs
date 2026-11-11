@@ -212,4 +212,62 @@ defmodule BabelSyncWeb.OAuthControllerTest do
       assert conn |> get(~p"/api/vaults") |> get_resp_header("access-control-allow-origin") == []
     end
   end
+
+  describe "less common requests" do
+    test "a request the app got wrong is sent back to the app with the error", %{conn: conn} do
+      %{"client_id" => client_id} = register(conn)
+
+      for extra <- [%{response_type: "token"}, %{code_challenge_method: "plain"}] do
+        refused = get(conn, ~p"/oauth/authorize", authorize_params(client_id, extra))
+        assert String.starts_with?(redirected_to(refused), @redirect)
+        assert %{"error" => _error, "state" => "st"} = query_of(refused)
+      end
+    end
+
+    test "a decision for a request that is not valid is refused", %{conn: conn} do
+      %{"client_id" => client_id} = register(conn)
+
+      for params <- [
+            authorize_params(Ecto.UUID.generate()),
+            authorize_params(client_id, %{response_type: "token"})
+          ] do
+        refused = post(conn, ~p"/oauth/authorize", Map.put(params, :decision, "approve"))
+        assert html_response(refused, 400)
+      end
+    end
+
+    test "a decision needs someone signed in", %{conn: conn} do
+      with_auth([:passkey])
+      %{"client_id" => client_id} = register(conn)
+      params = Map.put(authorize_params(client_id), :decision, "approve")
+
+      refused = post(conn, ~p"/oauth/authorize", params)
+      assert refused.status in [302, 400]
+      assert BabelSync.Repo.aggregate(BabelSync.OAuth.Code, :count) == 0
+
+      waiting = get(conn, ~p"/oauth/authorize", authorize_params(client_id))
+      assert redirected_to(waiting) == "/login"
+    end
+
+    test "registration without a name gets one, and without addresses is refused", %{conn: conn} do
+      assert %{"client_name" => "Unnamed app"} =
+               conn
+               |> post(~p"/oauth/register", %{redirect_uris: [@redirect]})
+               |> json_response(201)
+
+      assert %{"error" => "invalid_redirect_uri"} =
+               conn |> post(~p"/oauth/register", %{client_name: "x"}) |> json_response(400)
+
+      assert %{"error" => "invalid_redirect_uri"} =
+               conn
+               |> post(~p"/oauth/register", %{redirect_uris: "not a list"})
+               |> json_response(400)
+    end
+
+    test "revoking nothing, or something unknown, still succeeds", %{conn: conn} do
+      assert conn |> post(~p"/oauth/revoke", %{}) |> response(200) == ""
+      assert conn |> post(~p"/oauth/revoke", %{token: "bsa_unknown"}) |> response(200) == ""
+      assert conn |> post(~p"/oauth/revoke", %{token: %{nested: "x"}}) |> response(200) == ""
+    end
+  end
 end

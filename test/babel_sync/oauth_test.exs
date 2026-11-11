@@ -208,4 +208,91 @@ defmodule BabelSync.OAuthTest do
       assert :error = OAuth.scope_from_access_token(tokens.access_token)
     end
   end
+
+  describe "less common requests" do
+    test "a client with one redirect address may leave it out, and state is optional" do
+      client = client()
+      params = client |> params() |> Map.drop(["redirect_uri", "state"])
+
+      assert {:ok, request} = OAuth.request(params)
+      assert request.redirect_uri == @redirect
+      assert OAuth.deny(request) == "obsidian://babelsync?error=access_denied"
+
+      destination = OAuth.approve(request, Scope.for_user(user()))
+
+      assert %{"code" => "bsc_" <> _code} =
+               destination |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query()
+
+      refute destination =~ "state="
+    end
+
+    test "a client with several redirect addresses must say which" do
+      client = client([@redirect, "https://app.example/cb"])
+
+      assert {:error, :bad_redirect_uri} =
+               OAuth.request(client |> params() |> Map.delete("redirect_uri"))
+
+      assert {:error, :unknown_client} = OAuth.request(%{})
+    end
+
+    test "anything but the code flow is sent back as unsupported" do
+      assert {:error, {:redirect, @redirect, [error: "unsupported_response_type", state: "xyz"]}} =
+               OAuth.request(params(client(), %{"response_type" => "token"}))
+    end
+
+    test "a redirect address that already has a query keeps it" do
+      client = client(["https://app.example/cb?tenant=a"])
+      {:ok, request} = OAuth.request(params(client))
+      assert OAuth.deny(request) =~ "tenant=a"
+      assert OAuth.deny(request) =~ "error=access_denied"
+    end
+
+    test "a read-only session cannot mint a read-write token" do
+      user = user()
+      client = client()
+      {:ok, request} = OAuth.request(params(client))
+      destination = OAuth.approve(request, Scope.for_user(user, read_only: true))
+      %{"code" => code} = destination |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query()
+
+      assert {:ok, %{scope: "vault:read", access_token: access}} = exchange(client, code)
+      assert {:ok, %Scope{read_only: true}} = OAuth.scope_from_access_token(access)
+    end
+
+    test "an expired code or access token is worthless, and expired codes are pruned" do
+      user = user()
+      client = client()
+      code = code_for(client, user)
+      past = DateTime.add(DateTime.utc_now(), -10, :second)
+      BabelSync.Repo.update_all(OAuth.Code, set: [expires_at: past])
+      assert :ok = OAuth.prune()
+      assert BabelSync.Repo.aggregate(OAuth.Code, :count) == 0
+      assert {:error, "invalid_grant"} = exchange(client, code)
+
+      {:ok, tokens} = exchange(client, code_for(client, user))
+      BabelSync.Repo.update_all(OAuth.Grant, set: [access_expires_at: past])
+      assert :error = OAuth.scope_from_access_token(tokens.access_token)
+
+      assert {:error, "invalid_request"} = OAuth.token(%{})
+      assert {:error, "invalid_grant"} = OAuth.token(%{"grant_type" => "authorization_code"})
+      assert :ok = OAuth.revoke_token("bsr_unknown")
+    end
+
+    test "a refresh token from before the grace period is dead, and one from another client is refused" do
+      user = user()
+      client = client()
+      {:ok, first} = exchange(client, code_for(client, user))
+
+      refresh =
+        &OAuth.token(%{"grant_type" => "refresh_token", "refresh_token" => &1, "client_id" => &2})
+
+      assert {:error, "invalid_grant"} = refresh.(first.refresh_token, client().id)
+      assert {:ok, _second} = refresh.(first.refresh_token, client.id)
+
+      BabelSync.Repo.update_all(OAuth.Grant,
+        set: [rotated_at: DateTime.add(DateTime.utc_now(), -600, :second)]
+      )
+
+      assert {:error, "invalid_grant"} = refresh.(first.refresh_token, client.id)
+    end
+  end
 end

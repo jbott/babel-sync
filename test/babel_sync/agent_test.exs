@@ -137,4 +137,35 @@ defmodule BabelSync.AgentTest do
     assert Agent.list_vaults(stranger) == []
     assert {:ok, "secret"} = Agent.read_note(ctx.scope, nil, "a.md")
   end
+
+  test "less common refusals are reported precisely", %{scope: scope, vault: vault} do
+    entry(vault, "photo.png")
+    {:ok, :created} = Agent.write_note(scope, "", "a.md", "x")
+
+    assert {:error, :not_a_note} = Agent.append_note(scope, nil, "photo.png", "x")
+    assert {:error, :not_a_note} = Agent.edit_note(scope, nil, "photo.png", "x", "y")
+    assert {:error, :not_a_note} = Agent.history(scope, nil, "photo.png")
+    assert {:error, :not_found} = Agent.move_file(scope, nil, "missing.md", "b.md")
+    assert {:error, :invalid_path} = Agent.move_file(scope, nil, "a.md", "../b.md")
+    assert {:error, :invalid_path} = Agent.append_note(scope, nil, "../b.md", "x")
+    assert {:error, :ambiguous_match} = Agent.edit_note(scope, nil, "a.md", "", "y")
+    assert {:error, :not_found} = Agent.read_version(scope, nil, "a.md", 0)
+    assert {:error, :not_found} = Agent.read_version(scope, nil, "missing.md", 1)
+    assert {:error, :vault_not_found} = Agent.list_files(scope, "No such vault")
+  end
+
+  test "files can be listed by folder, and search treats wildcards as text", %{scope: scope} do
+    {:ok, :created} = Agent.write_note(scope, nil, "Projects/plan.md", "100% done_ish")
+    {:ok, :created} = Agent.write_note(scope, nil, "Projects/Deep/more.md", "nothing")
+    {:ok, :created} = Agent.write_note(scope, nil, "top.md", "100 done ish")
+
+    assert {:ok, files} = Agent.list_files(scope, nil, "Projects/")
+    assert Enum.map(files, & &1.path) == ["Projects/Deep/more.md", "Projects/plan.md"]
+    assert {:ok, all} = Agent.list_files(scope, nil, "/")
+    assert length(all) == 3
+
+    assert {:ok, [%{path: "Projects/plan.md"}]} = Agent.search_notes(scope, nil, "100%")
+    assert {:ok, [%{path: "Projects/plan.md"}]} = Agent.search_notes(scope, nil, "done_ish")
+    assert {:ok, []} = Agent.search_notes(scope, nil, "back\\slash")
+  end
 end

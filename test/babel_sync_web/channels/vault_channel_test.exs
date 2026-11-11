@@ -142,4 +142,68 @@ defmodule BabelSyncWeb.VaultChannelTest do
     assert_reply push(read_only, "create", %{"path" => "a.md"}), :error, %{reason: "forbidden"}
     assert Vaults.list_entries(ctx.vault.id) == []
   end
+
+  test "malformed requests get a reason and change nothing", %{owner: owner, vault: vault} do
+    note = entry(vault, "note.md")
+    {:ok, blob} = Blobs.put(vault.id, "bytes")
+    {:ok, _, socket} = join_vault(owner, vault)
+
+    assert_reply push(socket, "explode", %{}), :error, %{reason: "bad_request"}
+    assert_reply push(socket, "create", %{"path" => "../escape.md"}), :error, %{reason: "invalid"}
+
+    assert_reply push(socket, "create", %{"path" => "x.png", "kind" => "blob"}), :error, %{
+      reason: "bad_request"
+    }
+
+    assert_reply push(socket, "set_blob", %{"id" => note.id, "blob_hash" => blob.hash}),
+                 :error,
+                 %{
+                   reason: "not_a_blob"
+                 }
+
+    assert_reply push(socket, "delete", %{"id" => "not-a-uuid"}), :error, %{reason: "not_found"}
+
+    assert_reply push(socket, "rename", %{"id" => Ecto.UUID.generate(), "path" => "b.md"}),
+                 :error,
+                 %{reason: "not_found"}
+
+    assert [%{path: "note.md"}] = Vaults.list_entries(vault.id)
+  end
+
+  test "a kind can be given explicitly, and folders can be created", %{owner: owner, vault: vault} do
+    {:ok, _, socket} = join_vault(owner, vault)
+
+    assert_reply push(socket, "create", %{"path" => "Empty", "kind" => "folder"}), :ok, %{
+      entry: %{kind: :folder}
+    }
+
+    assert_reply push(socket, "create", %{"path" => "LICENSE", "kind" => "doc"}), :ok, %{
+      entry: %{kind: :doc}
+    }
+  end
+
+  test "an entry in another vault cannot be touched through this one", %{
+    owner: owner,
+    vault: vault
+  } do
+    foreign = entry(vault(owner), "theirs.md")
+    {:ok, _, socket} = join_vault(owner, vault)
+
+    assert_reply push(socket, "delete", %{"id" => foreign.id}), :error, %{reason: "not_found"}
+    assert Vaults.get_entry(foreign.id).deleted_at == nil
+  end
+
+  test "a viewer's requests to change the tree are refused", %{vault: vault} do
+    viewer = user()
+    {:ok, _} = Vaults.put_member(vault, viewer, :viewer)
+    note = entry(vault, "note.md")
+    {:ok, %{writable: false}, socket} = join_vault(viewer, vault)
+
+    assert_reply push(socket, "create", %{"path" => "new.md"}), :error, %{reason: "forbidden"}
+    assert_reply push(socket, "delete", %{"id" => note.id}), :error, %{reason: "forbidden"}
+
+    assert_reply push(socket, "rename", %{"id" => note.id, "path" => "b.md"}), :error, %{
+      reason: "forbidden"
+    }
+  end
 end

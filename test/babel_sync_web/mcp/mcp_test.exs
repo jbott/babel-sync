@@ -178,4 +178,40 @@ defmodule BabelSyncWeb.MCPTest do
 
     assert json_response(response, 401)
   end
+
+  test "an agent reads a note's history and an old version, lists by folder, moves and deletes",
+       %{
+         session: session
+       } do
+    {:ok, _} = call(session, "write_note", %{path: "Log/a.md", content: "first"})
+    {:ok, _} = call(session, "write_note", %{path: "Log/a.md", content: "second"})
+    {:ok, _} = call(session, "append_note", %{path: "Log/a.md", content: "third"})
+
+    assert {:ok, history} = call(session, "note_history", %{path: "Log/a.md"})
+
+    assert [%{"version" => newest} | _older] = Jason.decode!(history)
+
+    assert {:ok, "second\nthird"} =
+             call(session, "note_history", %{path: "Log/a.md", version: newest})
+
+    assert {:error, _} = call(session, "note_history", %{path: "Log/a.md", version: 0})
+
+    assert {:ok, listing} = call(session, "list_files", %{folder: "Log"})
+    assert listing =~ "Log/a.md"
+    assert {:ok, moved} = call(session, "move_file", %{from: "Log/a.md", to: "Done/a.md"})
+    assert moved =~ "Done/a.md"
+    assert {:error, _} = call(session, "move_file", %{from: "Log/a.md", to: "x.md"})
+    assert {:ok, _} = call(session, "delete_file", %{path: "Done/a.md"})
+    assert {:error, _} = call(session, "append_note", %{path: "../x.md", content: "x"})
+    assert {:error, _} = call(session, "write_note", %{path: "pic.png", content: "x"})
+    assert {:error, message} = call(session, "read_note", %{path: "a.md", vault: "Nope"})
+    assert message =~ "list_vaults"
+  end
+
+  test "a tool run without a signed-in caller says so" do
+    assert {:reply, response, %{assigns: %{}}} =
+             BabelSync.MCP.Reply.run(%{assigns: %{}}, fn _scope -> {:ok, "x"} end)
+
+    assert response.isError
+  end
 end

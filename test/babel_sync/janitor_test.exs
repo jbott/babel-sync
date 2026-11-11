@@ -163,4 +163,30 @@ defmodule BabelSync.JanitorTest do
       assert Repo.aggregate(Vaults.Entry, :count) == 2
     end
   end
+
+  describe "the process" do
+    test "runs when its timer fires" do
+      previous = Application.fetch_env!(:babel_sync, Janitor)
+
+      Application.put_env(:babel_sync, Janitor,
+        enabled: true,
+        retention_days: 30,
+        interval: 3_600_000
+      )
+
+      on_exit(fn -> Application.put_env(:babel_sync, Janitor, previous) end)
+
+      vault = vault()
+
+      {:ok, upload, [1]} =
+        Blobs.begin_upload(vault.id, %{hash: String.duplicate("cd", 32), size: 10})
+
+      Repo.update_all(Blobs.Upload, set: [updated_at: DateTime.add(DateTime.utc_now(), -3, :day)])
+
+      pid = start_supervised!(Janitor)
+      send(pid, :run)
+      _ = :sys.get_state(pid)
+      refute Blobs.get_upload(upload.id)
+    end
+  end
 end

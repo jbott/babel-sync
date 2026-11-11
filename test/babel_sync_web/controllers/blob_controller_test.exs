@@ -154,4 +154,81 @@ defmodule BabelSyncWeb.BlobControllerTest do
            |> post("/api/vaults/#{vault.id}/uploads/#{upload.id}/complete")
            |> json_response(404)
   end
+
+  test "malformed and oversized uploads are refused up front", %{conn: conn, vault: vault} do
+    base = "/api/vaults/#{vault.id}/uploads"
+    hash = String.duplicate("a", 64)
+
+    assert conn |> post(base, %{}) |> json_response(422)
+    assert conn |> post(base, %{hash: "short", size: 3}) |> json_response(422)
+    assert conn |> post(base, %{hash: hash, size: -1}) |> json_response(422)
+    assert conn |> post(base, %{hash: hash, size: Blobs.max_size() + 1}) |> json_response(413)
+  end
+
+  test "parts and completions for unknown uploads, and bad part numbers, are refused", %{
+    conn: conn,
+    vault: vault
+  } do
+    {:ok, upload, _} = Blobs.begin_upload(vault.id, %{hash: String.duplicate("a", 64), size: 4})
+    other = vault(user())
+    {:ok, foreign, _} = Blobs.begin_upload(other.id, %{hash: String.duplicate("b", 64), size: 4})
+
+    assert conn |> upload_part(vault, Ecto.UUID.generate(), 1, "data") |> json_response(404)
+    assert conn |> upload_part(vault, foreign.id, 1, "data") |> json_response(404)
+    assert conn |> upload_part(vault, upload.id, "x", "data") |> json_response(422)
+    assert conn |> upload_part(vault, upload.id, 2, "data") |> json_response(422)
+
+    assert conn
+           |> post("/api/vaults/#{vault.id}/uploads/#{foreign.id}/complete")
+           |> json_response(404)
+  end
+
+  test "unknown blobs are not found and empty ones are served", %{conn: conn, vault: vault} do
+    assert conn
+           |> get("/api/vaults/#{vault.id}/blobs/#{String.duplicate("c", 64)}")
+           |> json_response(404)
+
+    {:ok, empty} = Blobs.put(vault.id, "")
+    path = "/api/vaults/#{vault.id}/blobs/#{empty.hash}"
+    assert conn |> get(path) |> response(200) == ""
+    assert conn |> put_req_header("range", "bytes=-5") |> get(path) |> response(416)
+  end
+
+  test "odd range headers are unsatisfiable, not a crash", %{conn: conn, vault: vault} do
+    {:ok, blob} = Blobs.put(vault.id, "0123456789")
+    path = "/api/vaults/#{vault.id}/blobs/#{blob.hash}"
+
+    for spec <- ["bytes=5-2", "bytes=1-2-3", "bytes=3-z", "bytes=-0", "bytes=-x", "bytes="] do
+      assert conn |> put_req_header("range", spec) |> get(path) |> response(416), spec
+    end
+
+    assert conn |> put_req_header("range", "items=0-1") |> get(path) |> response(200) ==
+             "0123456789"
+  end
+
+  test "another vault's blobs and uploads are out of reach", %{conn: conn} do
+    other = vault(user())
+    {:ok, blob} = Blobs.put(other.id, "secret")
+
+    assert conn |> get("/api/vaults/#{other.id}/blobs/#{blob.hash}") |> json_response(403)
+
+    assert conn
+           |> post("/api/vaults/#{other.id}/uploads", %{hash: blob.hash, size: 6})
+           |> json_response(403)
+  end
+
+  test "a read-only credential can download but not upload", %{
+    bare: bare,
+    owner: owner,
+    vault: vault
+  } do
+    {:ok, blob} = Blobs.put(vault.id, "data")
+    reader = as(bare, owner, read_only: true)
+
+    assert reader |> get("/api/vaults/#{vault.id}/blobs/#{blob.hash}") |> response(200) == "data"
+
+    assert reader
+           |> post("/api/vaults/#{vault.id}/uploads", %{hash: blob.hash, size: 4})
+           |> json_response(403)
+  end
 end

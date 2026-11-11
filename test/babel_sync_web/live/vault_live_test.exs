@@ -297,4 +297,176 @@ defmodule BabelSyncWeb.VaultLiveTest do
                "No account uses"
     end
   end
+
+  describe "edge cases in the vault view" do
+    test "a path that does not exist says so", %{conn: conn, vault: vault} do
+      {:ok, view, _html} = live(conn, "/v/#{vault.id}/f/missing.md")
+      assert render(view) =~ "missing.md does not exist"
+      refute has_element?(view, "#entry-path")
+    end
+
+    test "creating an existing or invalid note does not clobber anything", %{
+      conn: conn,
+      vault: vault
+    } do
+      existing = entry(vault, "idea.md")
+      :ok = Sync.replace_text(existing.id, "precious")
+      {:ok, view, _html} = live(conn, Paths.vault(vault.id))
+
+      view |> form("#new-note", note: %{path: "idea"}) |> render_submit()
+      assert_patch(view, "/v/#{vault.id}/f/idea.md")
+      assert Sync.text(existing.id) == "precious"
+
+      html = view |> form("#new-note", note: %{path: "../outside"}) |> render_submit()
+      assert html =~ "not a valid path"
+      assert [_only] = Vaults.list_entries(vault.id)
+    end
+
+    test "renaming onto another file or an invalid path is refused, and can be cancelled", %{
+      conn: conn,
+      vault: vault
+    } do
+      note = entry(vault, "a.md")
+      entry(vault, "b.md")
+      {:ok, view, _html} = live(conn, Paths.entry(note))
+
+      view |> element("#rename-button") |> render_click()
+
+      assert view |> form("#rename-form", rename: %{path: "b.md"}) |> render_submit() =~
+               "already exists"
+
+      assert view |> form("#rename-form", rename: %{path: "../x.md"}) |> render_submit() =~
+               "not a valid path"
+
+      assert Vaults.get_entry(note.id).path == "a.md"
+
+      render_click(view, "cancel_rename", %{})
+      refute has_element?(view, "#rename-form")
+    end
+
+    test "the open note follows a rename and a delete made elsewhere", %{conn: conn, vault: vault} do
+      note = entry(vault, "a.md")
+      {:ok, view, _html} = live(conn, Paths.entry(note))
+
+      {:ok, _moved} = Vaults.rename_entry(note, "Moved/a.md")
+      assert_patch(view, "/v/#{vault.id}/f/Moved/a.md")
+      assert has_element?(view, "#entry-path", "Moved/a.md")
+
+      {:ok, _deleted} = Vaults.delete_entry(Vaults.get_entry(note.id))
+      assert_patch(view, "/v/#{vault.id}")
+      assert render(view) =~ "was deleted"
+
+      render_click(view, "rename", %{"rename" => %{"path" => "ghost.md"}})
+      refute Vaults.get_entry_by_path(vault.id, "ghost.md")
+    end
+
+    test "attaching replaces a file of the same name and reports failures", %{
+      conn: conn,
+      vault: vault
+    } do
+      {:ok, first} = Blobs.put(vault.id, "first")
+      {:ok, second} = Blobs.put(vault.id, "second")
+      {:ok, view, _html} = live(conn, Paths.vault(vault.id))
+
+      render_hook(view, "attach", %{"name" => "photo.jpg", "hash" => first.hash})
+      render_hook(view, "attach", %{"name" => "photo.jpg", "hash" => second.hash})
+      photo = Vaults.get_entry_by_path(vault.id, "photo.jpg")
+      assert photo.blob_hash == second.hash
+      assert length(Vaults.list_blob_versions(photo.id)) == 2
+
+      assert render_hook(view, "attach", %{"name" => "x.jpg", "hash" => String.duplicate("0", 64)}) =~
+               "Could not attach"
+
+      assert render_hook(view, "upload_failed", %{"name" => "big.mov"}) =~
+               "Uploading big.mov failed"
+    end
+
+    test "attachments show by type and sizes are readable", %{conn: conn, vault: vault} do
+      {:ok, clip} = Blobs.put(vault.id, :binary.copy("v", 2048))
+
+      {:ok, video} =
+        Vaults.create_entry(vault.id, %{
+          path: "Clips/clip.mp4",
+          blob_hash: clip.hash,
+          size: clip.size
+        })
+
+      {:ok, sound} =
+        Vaults.create_entry(vault.id, %{
+          path: "sound.mp3",
+          blob_hash: clip.hash,
+          size: 3 * 1024 * 1024
+        })
+
+      {:ok, other} =
+        Vaults.create_entry(vault.id, %{path: "data.zip", blob_hash: clip.hash, size: 10})
+
+      {:ok, folder} = Vaults.create_entry(vault.id, %{path: "Clips", kind: :folder})
+
+      {:ok, view, _html} = live(conn, Paths.entry(video))
+      assert has_element?(view, "#attachment video")
+      assert render(view) =~ "2.0 KB"
+
+      {:ok, view, _html} = live(conn, Paths.entry(sound))
+      assert has_element?(view, "#attachment audio")
+      assert render(view) =~ "3.0 MB"
+
+      {:ok, view, _html} = live(conn, Paths.entry(other))
+      assert has_element?(view, "#attachment a[download]")
+
+      {:ok, view, _html} = live(conn, Paths.entry(folder))
+      {:ok, blob} = Blobs.put(vault.id, "in folder")
+      render_hook(view, "attach", %{"name" => "inside.png", "hash" => blob.hash})
+      assert Vaults.get_entry_by_path(vault.id, "Clips/inside.png")
+    end
+
+    test "history can be closed and a vanished attachment version is reported", %{
+      conn: conn,
+      vault: vault
+    } do
+      {:ok, blob} = Blobs.put(vault.id, "one")
+      {:ok, file} = Vaults.create_entry(vault.id, %{path: "f.bin", blob_hash: blob.hash, size: 3})
+      {:ok, view, _html} = live(conn, Paths.entry(file))
+
+      view |> element("#history-button") |> render_click()
+      assert render_click(view, "restore_blob", %{"id" => "999999"}) =~ "no longer available"
+      render_click(view, "close_history", %{})
+      refute has_element?(view, "#blob-history")
+    end
+
+    test "an empty vault name is rejected on both forms", %{conn: conn, vault: vault} do
+      {:ok, index, _html} = live(conn, ~p"/")
+      index |> form("#new-vault", vault: %{name: ""}) |> render_submit()
+      assert [_only] = Vaults.list_vaults(Vaults.list_members(vault) |> hd() |> Map.fetch!(:user))
+
+      {:ok, settings, _html} = live(conn, Paths.settings(vault.id))
+      settings |> form("#rename-vault", vault: %{name: ""}) |> render_submit()
+      assert Vaults.get_vault(vault.id).name == "Research"
+    end
+  end
+
+  describe "raw files, edge cases" do
+    test "missing files, folders and malformed vault ids are not found", %{
+      conn: conn,
+      vault: vault
+    } do
+      {:ok, _folder} = Vaults.create_entry(vault.id, %{path: "Dir", kind: :folder})
+
+      {:ok, _dangling} =
+        Vaults.create_entry(vault.id, %{
+          path: "lost.bin",
+          blob_hash: String.duplicate("e", 64),
+          size: 1
+        })
+
+      for path <- [
+            "/v/#{vault.id}/raw/nope.png",
+            "/v/#{vault.id}/raw/Dir",
+            "/v/#{vault.id}/raw/lost.bin",
+            "/v/not-a-uuid/raw/x"
+          ] do
+        assert conn |> get(path) |> response(404), path
+      end
+    end
+  end
 end
