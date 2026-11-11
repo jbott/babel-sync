@@ -58,6 +58,28 @@ config :babel_sync, BabelSync.Repo.SQLite,
 
 config :babel_sync, BabelSync.Repo.Postgres, priv: "priv/repo"
 
+if storage == :remote do
+  s3_env = fn name, dev_default ->
+    System.get_env(name) ||
+      if config_env() == :prod,
+        do: raise("environment variable #{name} is missing"),
+        else: dev_default
+  end
+
+  config :babel_sync, BabelSync.Blobs.Store.S3,
+    endpoint: s3_env.("BABELSYNC_S3_ENDPOINT", "http://127.0.0.1:7070"),
+    bucket: s3_env.("BABELSYNC_S3_BUCKET", "babelsync-#{config_env()}"),
+    region: s3_env.("BABELSYNC_S3_REGION", "us-east-1"),
+    access_key_id: s3_env.("BABELSYNC_S3_ACCESS_KEY_ID", "babel_sync"),
+    secret_access_key: s3_env.("BABELSYNC_S3_SECRET_ACCESS_KEY", "babelsyncsecret")
+end
+
+if max_blob = System.get_env("BABELSYNC_MAX_BLOB_BYTES") do
+  config :babel_sync, BabelSync.Blobs,
+    part_size: 8 * 1024 * 1024,
+    max_size: String.to_integer(max_blob)
+end
+
 if System.get_env("PHX_SERVER") do
   config :babel_sync, BabelSyncWeb.Endpoint, server: true
 end

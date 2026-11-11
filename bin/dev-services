@@ -4,10 +4,16 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 export PGDATA="$root/.dev/postgres"
 export PGPORT="${PGPORT:-54329}"
+s3_port="${BABELSYNC_S3_PORT:-7070}"
+s3_pid="$root/.dev/versitygw.pid"
+
+s3_running() {
+  [ -f "$s3_pid" ] && kill -0 "$(cat "$s3_pid")" 2>/dev/null
+}
 
 case "${1:-}" in
   up)
-    mkdir -p "$root/.dev"
+    mkdir -p "$root/.dev/s3/babelsync-dev" "$root/.dev/s3/babelsync-test"
     if [ ! -d "$PGDATA" ]; then
       initdb --username=postgres --auth=trust --no-locale --encoding=UTF8 >/dev/null
     fi
@@ -15,9 +21,17 @@ case "${1:-}" in
       pg_ctl start --wait --log="$root/.dev/postgres.log" \
         --options="-p $PGPORT -c listen_addresses=localhost -c unix_socket_directories=$root/.dev"
     echo "postgres listening on localhost:$PGPORT"
+    if ! s3_running; then
+      nohup versitygw --access babel_sync --secret babelsyncsecret --port "127.0.0.1:$s3_port" \
+        posix "$root/.dev/s3" >"$root/.dev/versitygw.log" 2>&1 &
+      echo $! >"$s3_pid"
+    fi
+    echo "s3 listening on 127.0.0.1:$s3_port"
     ;;
   down)
     pg_ctl status >/dev/null 2>&1 && pg_ctl stop --wait
+    if s3_running; then kill "$(cat "$s3_pid")"; fi
+    rm -f "$s3_pid"
     ;;
   *)
     echo "usage: bin/dev-services up|down" >&2
