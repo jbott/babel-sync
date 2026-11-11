@@ -40,10 +40,20 @@ data_dir =
       :test -> Path.expand("../tmp/test#{System.get_env("MIX_TEST_PARTITION")}", __DIR__)
     end
 
+auth =
+  case System.get_env("BABELSYNC_AUTH", if(mode == :single, do: "none", else: "oidc")) do
+    "none" when mode == :single -> :none
+    "none" -> raise "BABELSYNC_AUTH=none is only allowed with BABELSYNC_MODE=single"
+    "passkey" -> :passkey
+    "oidc" -> :oidc
+    other -> raise "BABELSYNC_AUTH must be none, passkey or oidc, got: #{inspect(other)}"
+  end
+
 if storage == :local, do: File.mkdir_p!(data_dir)
 
 config :babel_sync,
   mode: mode,
+  auth: auth,
   storage: storage,
   repo: repo,
   data_dir: data_dir,

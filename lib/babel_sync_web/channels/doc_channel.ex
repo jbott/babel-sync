@@ -1,0 +1,82 @@
+defmodule BabelSyncWeb.DocChannel do
+  @moduledoc """
+  Live editing of one note.
+
+  The client joins with its Yjs state vector and receives what it is
+  missing together with the server's state vector, from which it sends
+  back what the server is missing. After that both sides exchange updates
+  as binary frames. Cursor and selection state ("awareness") is relayed
+  between clients and never stored.
+  """
+
+  use BabelSyncWeb, :channel
+
+  alias BabelSync.Accounts.Scope
+  alias BabelSync.{Sync, Vaults}
+  alias BabelSync.Vaults.Entry
+
+  @impl true
+  def join("doc:" <> entry_id, params, socket) do
+    scope = socket.assigns.scope
+
+    with {:ok, entry_id} <- Ecto.UUID.cast(entry_id),
+         %Entry{kind: :doc, deleted_at: nil} = entry <- Vaults.get_entry(entry_id),
+         :ok <- Scope.authorize(scope, entry.vault_id, :read),
+         {:ok, client_vector} <- decode_vector(params["sv"]),
+         :ok = Sync.subscribe(entry_id),
+         {:ok, missing} <- Sync.diff(entry_id, client_vector) do
+      reply = %{
+        update: Base.encode64(missing),
+        sv: Base.encode64(Sync.state_vector(entry_id)),
+        writable: Scope.authorize(scope, entry.vault_id, :write) == :ok
+      }
+
+      {:ok, reply, assign(socket, entry_id: entry_id, vault_id: entry.vault_id)}
+    else
+      _denied -> {:error, %{reason: "forbidden"}}
+    end
+  end
+
+  @impl true
+  def handle_in("update", {:binary, update}, socket) do
+    %{scope: scope, entry_id: entry_id, vault_id: vault_id} = socket.assigns
+
+    with :ok <- Scope.authorize(scope, vault_id, :write),
+         :ok <- Sync.apply_update(entry_id, update, origin: self(), author_id: scope.user.id) do
+      {:reply, :ok, socket}
+    else
+      {:error, :forbidden} -> {:reply, {:error, %{reason: "forbidden"}}, socket}
+      {:error, _invalid} -> {:reply, {:error, %{reason: "invalid"}}, socket}
+    end
+  end
+
+  def handle_in("awareness", {:binary, _state} = frame, socket) do
+    broadcast_from!(socket, "awareness", frame)
+    {:noreply, socket}
+  end
+
+  def handle_in(_event, _payload, socket) do
+    {:reply, {:error, %{reason: "bad_request"}}, socket}
+  end
+
+  @impl true
+  def handle_info({:doc_update, _entry_id, _update, origin}, socket) when origin == self() do
+    {:noreply, socket}
+  end
+
+  def handle_info({:doc_update, _entry_id, update, _origin}, socket) do
+    push(socket, "update", {:binary, update})
+    {:noreply, socket}
+  end
+
+  defp decode_vector(nil), do: {:ok, nil}
+
+  defp decode_vector(encoded) when is_binary(encoded) do
+    with {:ok, vector} <- Base.decode64(encoded),
+         {:ok, _clocks} <- Yex.decode_state_vector(vector) do
+      {:ok, vector}
+    end
+  end
+
+  defp decode_vector(_other), do: :error
+end

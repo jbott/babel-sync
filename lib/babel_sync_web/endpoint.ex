@@ -11,6 +11,10 @@ defmodule BabelSyncWeb.Endpoint do
     same_site: "Lax"
   ]
 
+  socket "/socket", BabelSyncWeb.UserSocket,
+    websocket: [max_frame_size: 16 * 1024 * 1024],
+    longpoll: false
+
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
