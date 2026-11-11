@@ -1,0 +1,9 @@
+{
+  "id": "babelsync",
+  "name": "BabelSync",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Live sync and collaborative editing of your vault through a self-hosted BabelSync server.",
+  "author": "John Ott",
+  "isDesktopOnly": false
+}
