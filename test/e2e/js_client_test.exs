@@ -69,4 +69,21 @@ defmodule BabelSync.E2E.JsClientTest do
 
     assert status == 0, output
   end
+
+  test "the plugin signs a device in through the oauth flow" do
+    vault = vault(BabelSync.Accounts.single_user!())
+
+    {output, status} =
+      System.cmd(
+        "node",
+        ["--test", "--test-force-exit", "--test-timeout=30000", "plugin/test/oauth.test.ts"],
+        stderr_to_stdout: true,
+        env: [
+          {"BABELSYNC_URL", BabelSyncWeb.Endpoint.url()},
+          {"BABELSYNC_VAULT_IDS", vault.id}
+        ]
+      )
+
+    assert status == 0, output
+  end
 end

@@ -1,11 +1,14 @@
 import { type App, Platform, PluginSettingTab, Setting, requestUrl } from "obsidian";
 import type BabelSyncPlugin from "./main.ts";
+import type { Tokens } from "./oauth.ts";
 
 const MEBIBYTE = 1024 * 1024;
 
 export type Settings = {
   serverUrl: string;
-  token: string;
+  clientId: string;
+  clientServer: string;
+  tokens: Tokens | null;
   vaultId: string;
   deviceName: string;
   userName: string;
@@ -16,7 +19,9 @@ export type Settings = {
 
 export const DEFAULT_SETTINGS: Settings = {
   serverUrl: "",
-  token: "",
+  clientId: "",
+  clientServer: "",
+  tokens: null,
   vaultId: "",
   deviceName: Platform.isMobile ? "Phone" : "Desktop",
   userName: "",
@@ -57,12 +62,23 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Access token")
-      .setDesc("Leave empty when the server runs without sign-in.")
-      .addText((text) => {
-        text.inputEl.type = "password";
-        text.setValue(settings.token).onChange((value) => this.save({ token: value.trim() }));
-      });
+      .setName("Account")
+      .setDesc(
+        settings.tokens
+          ? "This device is signed in."
+          : "Not signed in. A server that runs without sign-in works as it is.",
+      )
+      .addButton((button) =>
+        settings.tokens
+          ? button.setButtonText("Sign out").onClick(async () => {
+              await this.plugin.signOut();
+              this.display();
+            })
+          : button
+              .setButtonText("Sign in")
+              .setCta()
+              .onClick(() => this.plugin.signIn()),
+      );
 
     new Setting(containerEl)
       .setName("Vault")
@@ -130,9 +146,10 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private async loadVaults(): Promise<void> {
-    const { serverUrl, token } = this.plugin.settings;
+    const { serverUrl } = this.plugin.settings;
 
     try {
+      const token = await this.plugin.accessToken();
       const response = await requestUrl({
         url: `${serverUrl}/api/vaults`,
         headers: token ? { authorization: `Bearer ${token}` } : {},
@@ -143,7 +160,7 @@ export class SettingsTab extends PluginSettingTab {
         this.vaults = response.json.vaults;
         this.notice = this.vaults.length === 0 ? "No vaults yet. Create one in the web app." : "";
       } else {
-        this.notice = response.status === 401 ? "The server rejected the access token." : `Server answered ${response.status}.`;
+        this.notice = response.status === 401 ? "Sign in first." : `Server answered ${response.status}.`;
       }
     } catch {
       this.notice = "Could not reach the server.";

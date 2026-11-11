@@ -4,10 +4,21 @@ import { Collab } from "./collab.ts";
 import { type Status, SyncEngine } from "./engine.ts";
 import { IdbStore } from "./idb-store.ts";
 import { nativeFetch } from "./native-fetch.ts";
+import {
+  type Callback,
+  type Pending,
+  beginAuthorization,
+  finishAuthorization,
+  needsRefresh,
+  refreshTokens,
+  registerClient,
+  revokeTokens,
+} from "./oauth.ts";
 import { ObsidianFs } from "./obsidian-fs.ts";
 import { DEFAULT_SETTINGS, type Settings, SettingsTab, maxBlobBytes } from "./settings.ts";
 
 const CONFIG_SCAN_MS = 30_000;
+const TOKEN_CHECK_MS = 60_000;
 const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\/data\.json$/, /^\.obsidian\/cache$/, /^\.trash\//];
 
 const LABELS: Record<Status, string> = {
@@ -27,6 +38,7 @@ export default class BabelSyncPlugin extends Plugin {
   private collab!: Collab;
   private statusBar: HTMLElement | null = null;
   private running = "";
+  private pendingSignIn: Pending | null = null;
   private transition: Promise<void> = Promise.resolve();
 
   async onload(): Promise<void> {
@@ -60,7 +72,75 @@ export default class BabelSyncPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.rebind()));
     this.registerInterval(window.setInterval(() => this.settings.syncConfig && this.engine?.rescan(), CONFIG_SCAN_MS));
 
+    this.registerInterval(window.setInterval(() => void this.accessToken().catch(() => {}), TOKEN_CHECK_MS));
+    this.registerObsidianProtocolHandler("babelsync", ({ code, state, error }) => void this.finishSignIn({ code, state, error }));
+
     this.app.workspace.onLayoutReady(() => void this.restart());
+  }
+
+  async signIn(): Promise<void> {
+    const { serverUrl, deviceName } = this.settings;
+    if (!serverUrl) return void new Notice("Enter the server address first.");
+
+    try {
+      if (!this.settings.clientId || this.settings.clientServer !== serverUrl) {
+        this.settings.clientId = await registerClient(nativeFetch, serverUrl, `Obsidian (${deviceName})`);
+        this.settings.clientServer = serverUrl;
+        await this.saveSettings();
+      }
+
+      const { url, pending } = await beginAuthorization(serverUrl, this.settings.clientId);
+      this.pendingSignIn = pending;
+      window.open(url);
+    } catch (error) {
+      new Notice(`BabelSync: ${describe(error)}`);
+    }
+  }
+
+  async signOut(): Promise<void> {
+    const { tokens, serverUrl } = this.settings;
+    if (!tokens) return;
+
+    this.settings.tokens = null;
+    await this.saveSettings();
+    await revokeTokens(nativeFetch, serverUrl, tokens.refreshToken).catch(() => {});
+    await this.restart(true);
+  }
+
+  async accessToken(): Promise<string | undefined> {
+    const { tokens, serverUrl, clientId } = this.settings;
+    if (!tokens) return undefined;
+    if (!needsRefresh(tokens)) return tokens.accessToken;
+
+    this.refreshing ??= refreshTokens(nativeFetch, serverUrl, clientId, tokens.refreshToken)
+      .then(async (fresh) => {
+        this.settings.tokens = fresh;
+        await this.saveSettings();
+        if (!fresh) new Notice("BabelSync was signed out. Sign in again from its settings.");
+      })
+      .finally(() => {
+        this.refreshing = null;
+      });
+
+    await this.refreshing;
+    return this.settings.tokens?.accessToken;
+  }
+
+  private refreshing: Promise<void> | null = null;
+
+  private async finishSignIn(params: Callback): Promise<void> {
+    const pending = this.pendingSignIn;
+    this.pendingSignIn = null;
+    if (!pending) return void new Notice("BabelSync: no sign-in is in progress.");
+
+    try {
+      this.settings.tokens = await finishAuthorization(nativeFetch, pending, params);
+      await this.saveSettings();
+      new Notice("BabelSync is signed in.");
+      await this.restart(true);
+    } catch (error) {
+      new Notice(`BabelSync: ${describe(error)}`);
+    }
   }
 
   onunload(): void {
@@ -104,11 +184,16 @@ export default class BabelSyncPlugin extends Plugin {
   }
 
   private async launch(): Promise<void> {
-    const { serverUrl, vaultId, token, deviceName } = this.settings;
+    const { serverUrl, vaultId, deviceName } = this.settings;
     this.running = this.fingerprint();
     if (!serverUrl || !vaultId) return this.show("offline");
 
-    const client = new BabelSyncClient({ baseUrl: serverUrl, token: () => token || undefined, fetch: nativeFetch });
+    await this.accessToken().catch(() => {});
+    const client = new BabelSyncClient({
+      baseUrl: serverUrl,
+      token: () => this.settings.tokens?.accessToken,
+      fetch: nativeFetch,
+    });
     const store = new IdbStore(this.storeName());
     const engine = new SyncEngine({
       client,
@@ -156,8 +241,8 @@ export default class BabelSyncPlugin extends Plugin {
   }
 
   private fingerprint(): string {
-    const { serverUrl, vaultId, token, deviceName, syncConfig, maxFileMebibytes } = this.settings;
-    return JSON.stringify([serverUrl, vaultId, token, deviceName, syncConfig, maxFileMebibytes]);
+    const { serverUrl, vaultId, deviceName, syncConfig, maxFileMebibytes } = this.settings;
+    return JSON.stringify([serverUrl, vaultId, deviceName, syncConfig, maxFileMebibytes]);
   }
 
   private storeName(): string {
@@ -167,4 +252,8 @@ export default class BabelSyncPlugin extends Plugin {
   private show(status: Status): void {
     this.statusBar?.setText(LABELS[status]);
   }
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
