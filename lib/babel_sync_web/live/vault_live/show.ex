@@ -202,6 +202,8 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end)
   end
 
+  def handle_event(_event_for_an_entry_no_longer_open, _params, socket), do: {:noreply, socket}
+
   @impl true
   def handle_info({:entry_changed, %Entry{} = changed}, socket) do
     if Map.get(socket.assigns.latest, changed.id, -1) >= changed.seq,
