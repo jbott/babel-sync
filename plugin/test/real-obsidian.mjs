@@ -376,6 +376,20 @@ async function run() {
   await laptop.page.evaluate(() => app.vault.modify(app.vault.getAbstractFileByPath("Food.base"), "views:\n  - type: table\n    name: Renamed\n"));
   await eventually("an edit to a base file is merged into the other Obsidian", async () => (await read(desk, "Food.base")) === "views:\n  - type: table\n    name: Renamed\n");
 
+  await desk.page.evaluate(() => app.vault.createFolder("Made on purpose"));
+  await eventually("an empty folder made in one Obsidian appears in the other", () => exists(laptop, "Made on purpose"));
+  await laptop.page.evaluate(async () => {
+    await app.plugins.disablePlugin("babelsync");
+    await app.vault.adapter.mkdir("Leftover");
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await app.plugins.enablePlugin("babelsync");
+  });
+  await eventually("an empty folder left from before the plugin started is cleared away, and the made one stays", async () => !(await exists(laptop, "Leftover")) && (await exists(laptop, "Made on purpose")), 15000);
+  await desk.page.evaluate(() => app.fileManager.trashFile(app.vault.getAbstractFileByPath("Made on purpose")));
+  await eventually("deleting the empty folder in one Obsidian removes it from the other", async () => !(await exists(laptop, "Made on purpose")), 12000);
+  const build = await laptop.page.evaluate(() => app.plugins.plugins.babelsync.build);
+  check("the plugin knows which build it is running", /^[0-9a-f]{8}$/.test(build), build);
+
   await laptop.page.evaluate(() => app.vault.setConfig("readableLineLength", false));
   await laptop.page.evaluate(() => app.plugins.plugins.babelsync.engine.rescan());
   await eventually(

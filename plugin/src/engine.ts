@@ -109,15 +109,24 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     this.run(() => this.renameLocal(from, to));
   }
 
+  localFolderCreated(folder: string): void {
+    this.run(() => this.pushFolder(folder));
+  }
+
   localFolderDeleted(folder: string): void {
     this.run(async () => {
-      for (const path of this.under(folder)) await this.deleteLocal(path);
+      for (const path of this.under(folder, "files")) await this.deleteLocal(path);
+      for (const path of this.under(folder, "folders")) await this.deleteFolder(path);
+      await this.pushFolder(parentOf(folder));
     });
   }
 
   localFolderRenamed(from: string, to: string): void {
     this.run(async () => {
-      for (const path of this.under(from)) await this.renameLocal(path, to + path.slice(from.length));
+      for (const path of [...this.under(from, "files"), ...this.under(from, "folders")]) {
+        await this.renameLocal(path, to + path.slice(from.length));
+      }
+      await this.pushFolder(parentOf(from));
     });
   }
 
@@ -237,6 +246,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       if (entry.kind === "doc" && entry.dirty) await this.syncDoc(entry.id);
     }
 
+    await this.tidyFolders();
     await this.options.store.setSeq(this.vault!.seq);
   }
 
@@ -246,7 +256,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     if (remote.deleted) {
       if (local) await this.removeLocally(local);
-      else if (remote.kind === "folder") await this.options.fs.prune(remote.path);
+      else if (remote.kind === "folder") await this.prune(remote.path);
     } else if (!local) {
       await this.adopt(remote);
     } else {
@@ -262,20 +272,89 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     this.forget(local);
     await this.options.store.remove(local.id);
 
-    if (local.kind === "folder") return;
+    if (local.kind === "folder") return this.prune(local.path);
     if (!unchanged) return this.pushLocal(local.path);
 
     await fs.remove(local.path);
-    await fs.prune(parentOf(local.path));
+    await this.prune(parentOf(local.path));
   }
 
-  private under(folder: string): string[] {
-    return [...this.byPath.keys()].filter((path) => path.startsWith(folder + "/"));
+  private prune(folder: string): Promise<void> {
+    return this.options.fs.prune(folder, (path) => this.folderAt(path) !== undefined);
+  }
+
+  private folderAt(path: string): LocalEntry | undefined {
+    const id = this.byPath.get(path);
+    const entry = id ? this.byId.get(id) : undefined;
+    return entry?.kind === "folder" ? entry : undefined;
+  }
+
+  private async keepFolder(remote: Entry): Promise<void> {
+    const entry: LocalEntry = {
+      id: remote.id,
+      path: remote.path,
+      kind: "folder",
+      hash: null,
+      size: 0,
+      mtime: 0,
+      dirty: false,
+      moved: false,
+    };
+    this.remember(entry);
+    await this.options.store.put(entry);
+  }
+
+  private async pushFolder(folder: string): Promise<void> {
+    if (folder === "" || this.ignored(folder + "/") || this.byPath.has(folder) || !this.online) return;
+    if ((await this.options.fs.folderState(folder)) !== "empty") return;
+
+    try {
+      await this.keepFolder(await this.vault!.create(folder, { kind: "folder" }));
+    } catch (error) {
+      if (!(error instanceof RequestError) || error.reason !== "exists" || !error.entry) throw error;
+      if (error.entry.kind === "folder") await this.keepFolder(error.entry);
+    }
+  }
+
+  private async deleteFolder(folder: string): Promise<void> {
+    const entry = this.folderAt(folder);
+    if (!entry || !this.online) return;
+    if ((await this.options.fs.folderState(folder)) !== "missing") return;
+
+    try {
+      await this.vault!.remove(entry.id);
+    } catch (error) {
+      if (!(error instanceof RequestError) || error.reason !== "not_found") throw error;
+    }
+
+    this.forget(entry);
+    await this.options.store.remove(entry.id);
+  }
+
+  private async tidyFolders(): Promise<void> {
+    const { fs } = this.options;
+
+    for (const entry of [...this.byId.values()]) {
+      if (entry.kind === "folder" && (await fs.folderState(entry.path)) === "missing") await fs.makeFolder(entry.path);
+    }
+    for (const folder of await fs.emptyFolders()) {
+      if (!this.ignored(folder + "/")) await this.prune(folder);
+    }
+  }
+
+  private under(folder: string, kind: "files" | "folders"): string[] {
+    const wanted = (path: string) => (this.folderAt(path) !== undefined) === (kind === "folders");
+    const paths = [...this.byPath.keys()].filter((path) => (path === folder || path.startsWith(folder + "/")) && wanted(path));
+    return paths.sort((a, b) => b.length - a.length);
   }
 
   private async adopt(remote: Entry): Promise<void> {
     const { fs } = this.options;
-    if (remote.kind === "folder") return;
+    if (remote.kind === "folder") {
+      await this.keepFolder(remote);
+      if (!(await fs.stat(remote.path))) await fs.makeFolder(remote.path);
+      return;
+    }
 
     await this.vacate(remote.path);
 
@@ -326,14 +405,20 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (remote.path !== local.path && !local.moved) {
       await this.vacate(remote.path);
       if (await fs.stat(remote.path)) await this.pushLocal(await this.setAside(remote.path));
-      if (await fs.stat(local.path)) {
-        await fs.rename(local.path, remote.path);
-        await fs.prune(parentOf(local.path));
-      }
-      this.byPath.delete(local.path);
+      const left = local.path;
+      const moved = (await fs.stat(left)) !== null;
+      if (moved) await fs.rename(left, remote.path);
+      this.byPath.delete(left);
       local.path = remote.path;
       this.byPath.set(local.path, local.id);
       await this.options.store.put(local);
+
+      if (local.kind === "folder") {
+        await fs.makeFolder(local.path);
+        await this.prune(left);
+      } else if (moved) {
+        await this.prune(parentOf(left));
+      }
     }
 
     if (remote.kind === "doc" && local.kind === "blob") {
@@ -344,8 +429,10 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       await this.options.store.put(local);
     }
 
+    const missing = local.kind !== "folder" && (await fs.stat(local.path)) === null;
+    if (missing && local.hash !== null) return;
+
     if (remote.kind === "doc") {
-      const missing = (await fs.stat(local.path)) === null;
       if (missing || (remote.content_hash !== null && remote.content_hash !== local.hash)) {
         await this.syncDoc(local.id);
       }
@@ -469,6 +556,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     this.forget(entry);
     await this.options.store.remove(entry.id);
+    await this.pushFolder(parentOf(path));
   }
 
   private async renameLocal(from: string, to: string): Promise<void> {
@@ -483,6 +571,8 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     this.byPath.set(to, entry.id);
     await this.options.store.put(entry);
     if (this.online) await this.pushRename(entry);
+    if (entry.kind === "doc") await this.syncDoc(entry.id);
+    await this.pushFolder(parentOf(from));
   }
 
   private async pushRename(entry: LocalEntry): Promise<void> {
@@ -490,6 +580,10 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       await this.vault!.rename(entry.id, entry.path);
     } catch (error) {
       if (!(error instanceof RequestError) || error.reason !== "exists") throw error;
+      if (entry.kind === "folder") {
+        this.forget(entry);
+        return this.options.store.remove(entry.id);
+      }
       const aside = await this.setAside(entry.path);
       this.byPath.delete(entry.path);
       entry.path = aside;

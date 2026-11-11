@@ -1,5 +1,5 @@
 import { BabelSyncClient } from "@babelsync/core";
-import { Notice, Plugin, TFile, debounce, requestUrl } from "obsidian";
+import { Notice, Plugin, TFile, TFolder, debounce, requestUrl } from "obsidian";
 import { Collab } from "./collab.ts";
 import { ConnectModal } from "./connect.ts";
 import { type Progress, type Status, SyncEngine } from "./engine.ts";
@@ -353,6 +353,7 @@ export default class BabelSyncPlugin extends Plugin {
 
   private changed(file: unknown): void {
     if (file instanceof TFile) this.engine?.localChanged(file.path);
+    else if (file instanceof TFolder) this.engine?.localFolderCreated(file.path);
   }
 
   private ignored(path: string): boolean {

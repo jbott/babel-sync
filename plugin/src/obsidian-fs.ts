@@ -1,5 +1,5 @@
 import { type App, TFile, TFolder, normalizePath } from "obsidian";
-import { type FileInfo, type VaultFs, parentOf } from "./fs.ts";
+import { type FileInfo, type FolderState, type VaultFs, parentOf } from "./fs.ts";
 
 const SHARED_CONFIG = ".obsidian";
 
@@ -99,11 +99,26 @@ export class ObsidianFs implements VaultFs {
     else await this.app.vault.adapter.rename(this.toLocal(from), this.toLocal(to));
   }
 
-  async prune(folder: string): Promise<void> {
+  async folderState(folder: string): Promise<FolderState> {
+    const adapter = this.app.vault.adapter;
+    const local = this.toLocal(folder);
+    const stat = await adapter.stat(local);
+    if (!stat || stat.type !== "folder") return "missing";
+
+    const listing = await adapter.list(local);
+    return listing.files.length > 0 || listing.folders.length > 0 ? "occupied" : "empty";
+  }
+
+  async makeFolder(folder: string): Promise<void> {
+    await this.ensureFolder(folder + "/placeholder");
+  }
+
+  async prune(folder: string, kept: (folder: string) => boolean): Promise<void> {
     const adapter = this.app.vault.adapter;
     const config = this.app.vault.configDir;
+    const stops = (local: string) => local === "" || local === "/" || local === config || kept(this.toShared(local));
 
-    for (let local = this.toLocal(folder); local !== "" && local !== "/" && local !== config; local = parentOf(local)) {
+    for (let local = this.toLocal(folder); !stops(local); local = parentOf(local)) {
       if (!(await adapter.exists(local))) continue;
 
       const listing = await adapter.list(local);
@@ -113,6 +128,16 @@ export class ObsidianFs implements VaultFs {
       if (known instanceof TFolder) await this.app.vault.delete(known);
       else await adapter.rmdir(local, false);
     }
+  }
+
+  async emptyFolders(): Promise<string[]> {
+    const config = this.app.vault.configDir;
+
+    return this.app.vault
+      .getAllLoadedFiles()
+      .filter((file): file is TFolder => file instanceof TFolder && !file.isRoot() && file.children.length === 0)
+      .map((folder) => folder.path)
+      .filter((path) => path !== config && !path.startsWith(config + "/") && !path.startsWith(".trash"));
   }
 
   private inConfig(path: string): boolean {

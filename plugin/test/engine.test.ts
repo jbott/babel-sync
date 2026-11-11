@@ -181,6 +181,7 @@ test("a folder deleted or renamed on one device goes, with nothing left behind, 
   await eventually(() => paths(phone).length === 4, "all four notes on the phone");
 
   for (const path of ["Trip/Days/one.md", "Trip/Days/two.md"]) await laptop.fs.rename(path, path.replace("Trip/Days", "Trip/Log"));
+  laptop.fs.folders.delete("Trip/Days");
   laptop.engine.localFolderRenamed("Trip/Days", "Trip/Log");
   await eventually(
     () => paths(phone).join() === "Trip/Log/one.md,Trip/Log/two.md,Trip/plan.md,keep.md" && !phone.fs.folders.has("Trip/Days"),
@@ -188,11 +189,47 @@ test("a folder deleted or renamed on one device goes, with nothing left behind, 
   );
 
   for (const path of paths(laptop).filter((path) => path.startsWith("Trip/"))) await laptop.fs.remove(path);
+  laptop.fs.folders.clear();
   laptop.engine.localFolderDeleted("Trip");
   await eventually(
     () => paths(phone).join() === "keep.md" && phone.fs.folders.size === 0,
     () => `the phone to drop the folder, it has ${paths(phone).join()} in ${[...phone.fs.folders].join()}`,
   );
+});
+
+test("an empty folder someone made is kept everywhere, and one nobody made is cleared away", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  await edit(laptop, "Old/note.md", "note\n");
+  await laptop.fs.makeFolder("Inbox");
+  laptop.engine.localFolderCreated("Inbox");
+
+  const fs = new MemoryFs();
+  await fs.makeFolder("Leftover/From before");
+  const phone = await boot("phone", vault, { fs, store: new MemoryStore() });
+  await eventually(
+    () => [...phone.fs.folders].sort().join() === "Inbox,Old" && paths(phone).join() === "Old/note.md",
+    () => `the phone to have the made folder and not the leftover, it has ${[...phone.fs.folders].sort().join()}`,
+  );
+
+  await laptop.fs.rename("Old/note.md", "note.md");
+  laptop.engine.localRenamed("Old/note.md", "note.md");
+  await eventually(() => paths(phone).join() === "note.md", "the note to move on the phone");
+  await eventually(
+    () => [...phone.fs.folders].sort().join() === "Inbox,Old",
+    () => `a folder emptied by hand to still be a folder, the phone has ${[...phone.fs.folders].sort().join()}`,
+  );
+
+  phone.fs.folders.delete("Inbox");
+  phone.fs.folders.add("Box");
+  phone.engine.localFolderRenamed("Inbox", "Box");
+  await eventually(() => [...laptop.fs.folders].sort().join() === "Box,Old", () => `the laptop to follow the rename, it has ${[...laptop.fs.folders].join()}`);
+
+  for (const folder of ["Box", "Old"]) {
+    laptop.fs.folders.delete(folder);
+    laptop.engine.localFolderDeleted(folder);
+  }
+  await eventually(() => phone.fs.folders.size === 0, () => `the deleted folders to go, the phone has ${[...phone.fs.folders].join()}`);
 });
 
 test("changes made while a device was off are caught up on return", async () => {

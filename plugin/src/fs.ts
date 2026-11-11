@@ -5,6 +5,8 @@ export function parentOf(path: string): string {
   return slash === -1 ? "" : path.slice(0, slash);
 }
 
+export type FolderState = "missing" | "empty" | "occupied";
+
 export interface VaultFs {
   list(): Promise<FileInfo[]>;
   stat(path: string): Promise<FileInfo | null>;
@@ -14,7 +16,10 @@ export interface VaultFs {
   writeBinary(path: string, data: Uint8Array): Promise<void>;
   remove(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
-  prune(folder: string): Promise<void>;
+  prune(folder: string, kept: (folder: string) => boolean): Promise<void>;
+  folderState(folder: string): Promise<FolderState>;
+  makeFolder(folder: string): Promise<void>;
+  emptyFolders(): Promise<string[]>;
 }
 
 export type LocalEntry = {
@@ -106,13 +111,28 @@ export class MemoryFs implements VaultFs {
     this.keepFolders(to);
   }
 
-  async prune(folder: string) {
-    for (let at = folder; at !== ""; at = parentOf(at)) {
-      const inside = at + "/";
-      const occupied = [...this.files.keys(), ...this.folders].some((path) => path.startsWith(inside));
-      if (occupied) return;
+  async prune(folder: string, kept: (folder: string) => boolean) {
+    for (let at = folder; at !== "" && !kept(at); at = parentOf(at)) {
+      if (this.occupied(at)) return;
       this.folders.delete(at);
     }
+  }
+
+  async emptyFolders() {
+    return [...this.folders].filter((folder) => !this.occupied(folder));
+  }
+
+  async folderState(folder: string): Promise<FolderState> {
+    if (!this.folders.has(folder)) return "missing";
+    return this.occupied(folder) ? "occupied" : "empty";
+  }
+
+  async makeFolder(folder: string) {
+    this.keepFolders(folder + "/");
+  }
+
+  private occupied(folder: string): boolean {
+    return [...this.files.keys(), ...this.folders].some((path) => path.startsWith(folder + "/"));
   }
 
   private keepFolders(path: string) {
