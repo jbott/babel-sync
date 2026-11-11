@@ -32,6 +32,8 @@ export type LocalEntry = {
   dirty: boolean;
   moved: boolean;
   doc?: Uint8Array;
+  seq?: number;
+  unwanted?: boolean;
 };
 
 export interface StateStore {

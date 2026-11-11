@@ -129,6 +129,46 @@ defmodule BabelSyncWeb.VaultChannelTest do
     assert Vaults.get_entry(foreign.id).deleted_at == nil
   end
 
+  test "a client can compare what it holds with the vault, even read-only", ctx do
+    same = entry(ctx.vault, "same.md")
+    stale = entry(ctx.vault, "stale.md")
+    {:ok, [renamed]} = Vaults.rename_entry(stale, "renamed.md")
+    unseen = entry(ctx.vault, "unseen.md")
+    {:ok, [gone]} = Vaults.delete_entry(entry(ctx.vault, "gone.md"))
+    {:ok, reply, socket} = join_vault(ctx.owner, ctx.vault, %{}, read_only: true)
+
+    assert reply.digest == Vaults.digest(ctx.vault.id)
+    have = %{same.id => same.seq, stale.id => stale.seq, gone.id => gone.seq - 1}
+
+    assert_reply push(socket, "audit", %{"have" => have}), :ok, %{entries: differing, gone: lost}
+    assert Enum.map(differing, & &1.id) == [renamed.id, unseen.id]
+    assert lost == [gone.id]
+  end
+
+  test "a client can ask whether content is an earlier version of an attachment", ctx do
+    {:ok, v1} = Blobs.put(ctx.vault.id, "one")
+    {:ok, v2} = Blobs.put(ctx.vault.id, "two")
+    {:ok, other} = Blobs.put(ctx.vault.id, "other")
+    {:ok, _, socket} = join_vault(ctx.owner, ctx.vault)
+
+    assert_reply push(socket, "create", %{"path" => "x.png", "blob_hash" => v1.hash}), :ok, %{
+      entry: %{id: id}
+    }
+
+    assert_reply push(socket, "set_blob", %{
+                   "id" => id,
+                   "blob_hash" => v2.hash,
+                   "base_hash" => v1.hash
+                 }),
+                 :ok,
+                 _
+
+    ask = &push(socket, "known_version", %{"id" => id, "hash" => &1})
+    assert_reply ask.(v1.hash), :ok, %{known: true}
+    assert_reply ask.(v2.hash), :ok, %{known: true}
+    assert_reply ask.(other.hash), :ok, %{known: false}
+  end
+
   test "viewers and read-only credentials can watch but not change", ctx do
     viewer = user()
     {:ok, _} = Vaults.put_member(ctx.vault, viewer, :viewer)

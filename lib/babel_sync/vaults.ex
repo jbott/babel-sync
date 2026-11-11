@@ -47,13 +47,49 @@ defmodule BabelSync.Vaults do
     )
   end
 
-  @spec count_entries(Ecto.UUID.t()) :: non_neg_integer()
-  def count_entries(vault_id) do
-    Repo.aggregate(
-      from(e in Entry, where: e.vault_id == ^vault_id and is_nil(e.deleted_at)),
-      :count
+  @spec digest(Ecto.UUID.t()) :: String.t()
+  def digest(vault_id) do
+    lines =
+      from(e in Entry,
+        where: e.vault_id == ^vault_id and is_nil(e.deleted_at),
+        select: {e.id, e.seq}
+      )
+      |> Repo.all()
+      |> Enum.sort()
+      |> Enum.map(fn {id, seq} -> [id, ?:, Integer.to_string(seq), ?\n] end)
+
+    :crypto.hash(:sha256, lines) |> Base.encode16(case: :lower)
+  end
+
+  @spec audit(Ecto.UUID.t(), %{optional(String.t()) => integer()}) ::
+          {[Entry.t()], [String.t()]}
+  def audit(vault_id, have) do
+    live =
+      Repo.all(
+        from e in Entry,
+          where: e.vault_id == ^vault_id and is_nil(e.deleted_at),
+          order_by: e.seq
+      )
+
+    alive = MapSet.new(live, & &1.id)
+
+    {Enum.reject(live, &(Map.get(have, &1.id) == &1.seq)),
+     have |> Map.keys() |> Enum.reject(&MapSet.member?(alive, &1))}
+  end
+
+  @spec known_version?(Entry.t(), String.t()) :: boolean()
+  def known_version?(%Entry{kind: :doc, id: id}, hash) do
+    Repo.exists?(
+      from v in BabelSync.Sync.Version, where: v.entry_id == ^id and v.content_hash == ^hash
     )
   end
+
+  def known_version?(%Entry{kind: :blob, id: id, blob_hash: current}, hash) do
+    current == hash or
+      Repo.exists?(from v in BlobVersion, where: v.entry_id == ^id and v.blob_hash == ^hash)
+  end
+
+  def known_version?(%Entry{}, _hash), do: false
 
   @spec get_vault(Ecto.UUID.t()) :: Vault.t() | nil
   def get_vault(id), do: Repo.get(Vault, id)

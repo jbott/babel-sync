@@ -15,11 +15,12 @@ export type Entry = {
   updated_at: string;
 };
 
-type JoinReply = { seq: number; count?: number; name: string; writable: boolean; complete: boolean; entries: Entry[] };
+type JoinReply = { seq: number; digest?: string; name: string; writable: boolean; complete: boolean; entries: Entry[] };
 
 type VaultEvents = {
   entry: Entry;
-  joined: { entries: Entry[]; seq: number; complete: boolean; count?: number };
+  joined: { entries: Entry[]; seq: number; complete: boolean; digest?: string };
+  acknowledged: Entry;
   left: undefined;
   error: string;
 };
@@ -64,7 +65,7 @@ export class VaultSession extends Emitter<VaultEvents> {
         if (reply.complete) this.entries.clear();
         for (const entry of reply.entries) this.apply(entry, false);
         this.seq = Math.max(this.seq, reply.seq);
-        this.emit("joined", { entries: reply.entries, seq: reply.seq, complete: reply.complete, count: reply.count });
+        this.emit("joined", { entries: reply.entries, seq: reply.seq, complete: reply.complete, digest: reply.digest });
       })
       .receive("error", (reply: { reason?: string }) => this.emit("error", reply.reason ?? "error"));
   }
@@ -102,27 +103,35 @@ export class VaultSession extends Emitter<VaultEvents> {
       text: content.text,
       blob_hash: content.blobHash,
     });
-    this.apply(reply.entry, false);
+    this.acknowledge(reply.entry);
     return reply.entry;
   }
 
   async rename(id: string, path: string): Promise<Entry[]> {
     const reply = await this.request<{ entries: Entry[] }>("rename", { id, path });
-    for (const entry of reply.entries) this.apply(entry, false);
+    for (const entry of reply.entries) this.acknowledge(entry);
     return reply.entries;
   }
 
   async remove(id: string): Promise<Entry[]> {
     const reply = await this.request<{ entries: Entry[] }>("delete", { id });
-    for (const entry of reply.entries) this.apply(entry, false);
+    for (const entry of reply.entries) this.acknowledge(entry);
     return reply.entries;
+  }
+
+  async audit(have: Record<string, number>): Promise<{ entries: Entry[]; gone: string[] }> {
+    return this.request<{ entries: Entry[]; gone: string[] }>("audit", { have });
+  }
+
+  async knownVersion(id: string, hash: string): Promise<boolean> {
+    return (await this.request<{ known: boolean }>("known_version", { id, hash })).known;
   }
 
   async setBlob(id: string, blobHash: string, baseHash?: string | null): Promise<Entry> {
     const payload: Record<string, unknown> = { id, blob_hash: blobHash };
     if (baseHash !== undefined) payload.base_hash = baseHash;
     const reply = await this.request<{ entry: Entry }>("set_blob", payload);
-    this.apply(reply.entry, false);
+    this.acknowledge(reply.entry);
     return reply.entry;
   }
 
@@ -151,6 +160,11 @@ export class VaultSession extends Emitter<VaultEvents> {
 
     this.seq = Math.max(this.seq, entry.seq);
     if (announce) this.emit("entry", entry);
+  }
+
+  private acknowledge(entry: Entry): void {
+    this.apply(entry, false);
+    this.emit("acknowledged", entry);
   }
 
   private left(): void {

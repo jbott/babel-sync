@@ -438,6 +438,7 @@ async function run() {
   await eventually("deleting the empty folder in one Obsidian removes it from the other", async () => !(await exists(laptop, "Made on purpose")), 12000);
   const build = await laptop.page.evaluate(() => app.plugins.plugins.babelsync.build);
   check("the plugin knows which build it is running", /^[0-9a-f]{8}$/.test(build), build);
+  await eventually("the laptop settles once nothing is left to send", () => laptop.page.evaluate(() => app.plugins.plugins.babelsync.engine.status === "synced"), 15000);
   const stamp = await laptop.page.evaluate(() => {
     const plugin = app.plugins.plugins.babelsync;
     return { revision: plugin.revision, log: plugin.debugLog() };
@@ -446,7 +447,7 @@ async function run() {
   check(
     "the debug log names the build and what the plugin did, and holds no token",
     stamp.log.includes(`commit ${stamp.revision}, build ${build}`) && stamp.log.includes("status: synced") && !/accessToken|refreshToken|Bearer/.test(stamp.log),
-    stamp.log.split("\n").slice(0, 3).join(" | "),
+    stamp.log.split("\n").slice(-30).join(" | "),
   );
 
   await laptop.page.evaluate(() => app.vault.setConfig("readableLineLength", false));

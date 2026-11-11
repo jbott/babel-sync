@@ -36,7 +36,7 @@ defmodule BabelSyncWeb.VaultChannel do
 
       reply = %{
         seq: vault.seq,
-        count: Vaults.count_entries(vault_id),
+        digest: Vaults.digest(vault_id),
         complete: complete,
         name: vault.name,
         writable: Scope.authorize(scope, vault_id, :write) == :ok,
@@ -50,6 +50,21 @@ defmodule BabelSyncWeb.VaultChannel do
   end
 
   @impl true
+  def handle_in("audit", %{"have" => have}, socket) when is_map(have) do
+    {entries, gone} = Vaults.audit(socket.assigns.vault_id, have)
+    {:reply, {:ok, %{entries: Enum.map(entries, &EntryJSON.entry/1), gone: gone}}, socket}
+  end
+
+  def handle_in("known_version", %{"id" => id, "hash" => hash}, socket) when is_binary(hash) do
+    known =
+      case fetch(id, socket) do
+        {:ok, entry} -> Vaults.known_version?(entry, hash)
+        {:error, :not_found} -> false
+      end
+
+    {:reply, {:ok, %{known: known}}, socket}
+  end
+
   def handle_in(event, params, socket) do
     with :ok <- Scope.authorize(socket.assigns.scope, socket.assigns.vault_id, :write),
          {:ok, reply} <- handle(event, params, socket) do

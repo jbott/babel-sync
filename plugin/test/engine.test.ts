@@ -41,6 +41,7 @@ async function boot(
     store,
     device: name,
     sessionIdleMs: 50,
+    settleMs: 50,
     now: () => new Date("2026-11-10T12:00:00Z"),
     ignore: (path) => path.startsWith(".trash/"),
     ...options,
@@ -323,6 +324,43 @@ test("an attachment replaced on two devices keeps both versions", async () => {
   await eventually(async () => (await laptop.fs.stat(copy)) !== null, "the conflict copy on the laptop");
   assert.deepEqual(await back.fs.readBinary("logo.png"), new Uint8Array([2, 2, 2]));
   assert.deepEqual(await laptop.fs.readBinary(copy), new Uint8Array([3, 3, 3]));
+});
+
+test("an older version of an attachment on a device with no sync history is replaced, not kept as a conflict", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  await laptop.fs.writeBinary("logo.png", new Uint8Array([1, 1, 1]));
+  laptop.engine.localChanged("logo.png");
+  await laptop.engine.idle();
+  await laptop.fs.writeBinary("logo.png", new Uint8Array([2, 2, 2]));
+  laptop.engine.localChanged("logo.png");
+  await laptop.engine.idle();
+
+  const fs = new MemoryFs();
+  await fs.writeBinary("logo.png", new Uint8Array([1, 1, 1]));
+  const phone = await boot("phone", vault, { fs, store: new MemoryStore() });
+
+  assert.deepEqual(await phone.fs.readBinary("logo.png"), new Uint8Array([2, 2, 2]));
+  assert.deepEqual(paths(phone), ["logo.png"]);
+  assert.deepEqual(paths(laptop), ["logo.png"]);
+});
+
+test("a note renamed over one that was deleted while the device was off replaces it everywhere", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "old.md", "old\n");
+  await edit(laptop, "draft.md", "draft\n");
+  await eventually(async () => (await text(phone, "draft.md")) === "draft\n", "both notes on the phone");
+  await shutdown(phone);
+
+  await phone.fs.remove("old.md");
+  await phone.fs.rename("draft.md", "old.md");
+  const back = await boot("phone", vault, phone);
+
+  await eventually(() => paths(laptop).join() === "old.md", () => `the laptop to hold only old.md, it has ${paths(laptop).join()}`);
+  assert.equal(await text(laptop, "old.md"), "draft\n");
+  assert.deepEqual(paths(back), ["old.md"]);
 });
 
 test("attachments over the device's size limit are skipped without being deleted", async () => {
