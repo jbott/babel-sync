@@ -40,7 +40,7 @@ let
     pname = "babel_sync-mix-deps";
     inherit version;
     src = sources manifest;
-    hash = "sha256-/z3gqwiFIhe7RVHQpd2NKgdCcLQq9MKQ1jgO8MbttsU=";
+    hash = "sha256-JhrzLRYxfjoJToCPtFWfdeBFyVbnY0TmIoiSlpMOSEA=";
   };
 
   crates =
@@ -105,7 +105,7 @@ beamPackages.mixRelease {
   npmDeps = fetchNpmDeps {
     name = "babel_sync-npm-deps";
     src = sources packages;
-    hash = "sha256-7kcR/jiQXG2DBMXq5OqcDmemxndr/aEm+hHolCoHHYc=";
+    hash = "sha256-daz6iO9vE0bMmfbk5EDZgWdbEQS3qdFg8Or7+KRFrHc=";
   };
 
   nativeBuildInputs = [
