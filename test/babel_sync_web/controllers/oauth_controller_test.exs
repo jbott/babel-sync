@@ -214,14 +214,49 @@ defmodule BabelSyncWeb.OAuthControllerTest do
   end
 
   describe "less common requests" do
-    test "a request the app got wrong is sent back to the app with the error", %{conn: conn} do
+    test "a request an unapproved app got wrong is shown an error and sent nowhere", %{conn: conn} do
       %{"client_id" => client_id} = register(conn)
 
       for extra <- [%{response_type: "token"}, %{code_challenge_method: "plain"}] do
         refused = get(conn, ~p"/oauth/authorize", authorize_params(client_id, extra))
-        assert String.starts_with?(redirected_to(refused), @redirect)
-        assert %{"error" => _error, "state" => "st"} = query_of(refused)
+        assert html_response(refused, 400) =~ "could not be connected"
       end
+    end
+
+    test "registration is limited per address, as reported by a local proxy", %{conn: conn} do
+      settings = Application.fetch_env!(:babel_sync, BabelSync.OAuth)
+
+      Application.put_env(
+        :babel_sync,
+        BabelSync.OAuth,
+        Keyword.put(settings, :registrations_per_hour, 2)
+      )
+
+      on_exit(fn -> Application.put_env(:babel_sync, BabelSync.OAuth, settings) end)
+
+      from = fn address -> put_req_header(conn, "cf-connecting-ip", address) end
+      register(from.("203.0.113.7"))
+      register(from.("203.0.113.7"))
+
+      refused =
+        post(from.("203.0.113.7"), ~p"/oauth/register", %{
+          client_name: "x",
+          redirect_uris: [@redirect]
+        })
+
+      assert %{"error" => "too_many_requests"} = json_response(refused, 429)
+      assert [_seconds] = get_resp_header(refused, "retry-after")
+
+      register(from.("203.0.113.8"))
+    end
+
+    test "an oversized redirect address is refused", %{conn: conn} do
+      long = "https://app.example/" <> String.duplicate("a", 2000)
+
+      assert %{"error" => "invalid_redirect_uri"} =
+               conn
+               |> post(~p"/oauth/register", %{client_name: "x", redirect_uris: [long]})
+               |> json_response(400)
     end
 
     test "a decision for a request that is not valid is refused", %{conn: conn} do

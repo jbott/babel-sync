@@ -3,9 +3,14 @@ defmodule BabelSyncWeb.OAuthController do
 
   alias BabelSync.OAuth
   alias BabelSync.OAuth.Request
+  alias BabelSync.RateLimit
+  alias BabelSyncWeb.ClientAddress
   alias BabelSyncWeb.SessionController
 
   @request_params ~w(client_id redirect_uri response_type state scope code_challenge code_challenge_method)
+  @hour 3600
+
+  plug :limit_registrations when action == :register
 
   def server_metadata(conn, _params) do
     issuer = BabelSyncWeb.Endpoint.url()
@@ -59,7 +64,8 @@ defmodule BabelSyncWeb.OAuthController do
         |> put_status(:bad_request)
         |> json(%{
           error: "invalid_redirect_uri",
-          error_description: "redirect_uris must be https, loopback http, or an app scheme"
+          error_description:
+            "redirect_uris must be 1 to 10 addresses of at most 2000 bytes: https, loopback http, or an app scheme"
         })
     end
   end
@@ -105,6 +111,25 @@ defmodule BabelSyncWeb.OAuthController do
         conn
         |> put_status(:bad_request)
         |> render(:invalid, reason: :unknown_client, page_title: "Cannot connect")
+    end
+  end
+
+  defp limit_registrations(conn, _opts) do
+    limit = Application.fetch_env!(:babel_sync, OAuth)[:registrations_per_hour]
+
+    case RateLimit.hit({:register, ClientAddress.of(conn)}, limit, @hour) do
+      :ok ->
+        conn
+
+      {:error, retry_after} ->
+        conn
+        |> put_resp_header("retry-after", Integer.to_string(retry_after))
+        |> put_status(:too_many_requests)
+        |> json(%{
+          error: "too_many_requests",
+          error_description: "Too many apps were registered from this address. Try again later."
+        })
+        |> halt()
     end
   end
 

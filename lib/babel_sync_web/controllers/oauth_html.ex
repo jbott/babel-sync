@@ -93,6 +93,9 @@ defmodule BabelSyncWeb.OAuthHTML do
         <p :if={@reason == :bad_redirect_uri} class="text-sm text-base-content/60">
           The app asked to be sent back to an address it did not register.
         </p>
+        <p :if={@reason == :malformed_request} class="text-sm text-base-content/60">
+          The app sent a request this server does not understand. Start again from the app.
+        </p>
       </div>
     </Layouts.app>
     """

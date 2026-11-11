@@ -4,6 +4,9 @@ defmodule BabelSync.OAuth do
   user: the Obsidian plugin on each device, and agents that connect over
   MCP. Clients are public, register themselves, and use the authorization
   code flow with PKCE. Each approval is a grant the user can revoke.
+
+  Registering needs no sign-in, so a registration nobody has approved is
+  kept only for a day, and only the newest of them are kept at all.
   """
 
   import Ecto.Query
@@ -19,6 +22,8 @@ defmodule BabelSync.OAuth do
   @code_lifetime 300
   @access_lifetime 3600
   @rotation_grace 120
+  @unapproved_lifetime 86_400
+  @excess_batch 500
   @full_scope "vault"
   @read_scope "vault:read"
 
@@ -38,7 +43,10 @@ defmodule BabelSync.OAuth do
 
   @spec register_client(map()) :: {:ok, Client.t()} | {:error, Ecto.Changeset.t()}
   def register_client(attrs) do
-    %Client{} |> Client.changeset(attrs) |> Repo.insert()
+    with {:ok, client} <- %Client{} |> Client.changeset(attrs) |> Repo.insert() do
+      drop_unapproved_beyond(config(:unapproved_clients))
+      {:ok, client}
+    end
   end
 
   @spec get_client(String.t()) :: Client.t() | nil
@@ -51,7 +59,7 @@ defmodule BabelSync.OAuth do
 
   @spec request(map()) ::
           {:ok, Request.t()}
-          | {:error, :unknown_client | :bad_redirect_uri}
+          | {:error, :unknown_client | :bad_redirect_uri | :malformed_request}
           | {:error, {:redirect, String.t(), keyword()}}
   def request(params) do
     with {:ok, client} <- fetch_client(params["client_id"]),
@@ -60,10 +68,10 @@ defmodule BabelSync.OAuth do
 
       cond do
         params["response_type"] != "code" ->
-          {:error, {:redirect, redirect_uri, error_query("unsupported_response_type", state)}}
+          malformed(client, redirect_uri, error_query("unsupported_response_type", state))
 
         params["code_challenge_method"] != "S256" or params["code_challenge"] in [nil, ""] ->
-          {:error, {:redirect, redirect_uri, error_query("invalid_request", state)}}
+          malformed(client, redirect_uri, error_query("invalid_request", state))
 
         true ->
           {:ok,
@@ -81,6 +89,11 @@ defmodule BabelSync.OAuth do
   @spec approve(Request.t(), Scope.t()) :: String.t()
   def approve(%Request{} = request, %Scope{user: user, read_only: scope_read_only}) do
     code = secret(@code_prefix)
+
+    Repo.update_all(
+      from(c in Client, where: c.id == ^request.client.id and is_nil(c.approved_at)),
+      set: [approved_at: DateTime.utc_now()]
+    )
 
     Repo.insert!(%Code{
       client_id: request.client.id,
@@ -198,8 +211,31 @@ defmodule BabelSync.OAuth do
   @spec prune(DateTime.t()) :: :ok
   def prune(now \\ DateTime.utc_now()) do
     Repo.delete_all(from c in Code, where: c.expires_at < ^now)
+    stale = DateTime.add(now, -@unapproved_lifetime, :second)
+    Repo.delete_all(from c in Client, where: is_nil(c.approved_at) and c.inserted_at < ^stale)
     :ok
   end
+
+  defp drop_unapproved_beyond(kept) do
+    excess =
+      Repo.all(
+        from c in Client,
+          where: is_nil(c.approved_at),
+          order_by: [desc: c.inserted_at, desc: c.id],
+          offset: ^kept,
+          limit: @excess_batch,
+          select: c.id
+      )
+
+    Repo.delete_all(from c in Client, where: c.id in ^excess)
+  end
+
+  defp malformed(%Client{approved_at: nil}, _redirect_uri, _query),
+    do: {:error, :malformed_request}
+
+  defp malformed(%Client{}, redirect_uri, query), do: {:error, {:redirect, redirect_uri, query}}
+
+  defp config(key), do: Application.fetch_env!(:babel_sync, __MODULE__)[key]
 
   defp drop(%Grant{} = grant) do
     Repo.delete!(grant)

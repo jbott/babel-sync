@@ -32,6 +32,10 @@ config :babel_sync, BabelSync.Janitor,
   retention_days: 30,
   interval: :timer.hours(1)
 
+config :babel_sync, BabelSync.OAuth,
+  unapproved_clients: 1000,
+  registrations_per_hour: 30
+
 config :babel_sync, BabelSync.Blobs, max_size: 5 * 1024 * 1024 * 1024
 
 # Configure the endpoint

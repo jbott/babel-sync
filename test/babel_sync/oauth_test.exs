@@ -2,6 +2,7 @@ defmodule BabelSync.OAuthTest do
   use BabelSync.DataCase, async: false
 
   import BabelSync.Fixtures
+  import Ecto.Query
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.OAuth
@@ -64,6 +65,7 @@ defmodule BabelSync.OAuthTest do
             "https://app.example/cb",
             "http://127.0.0.1:8123/cb",
             "http://localhost/cb",
+            "com.example.app:/cb",
             @redirect
           ] do
         assert Client.redirect_uri?(uri), uri
@@ -76,12 +78,58 @@ defmodule BabelSync.OAuthTest do
             "javascript:alert(1)",
             "data:text/html,x",
             "https://a.example/#x",
+            "ms-msdt:/id",
+            "tel:5551234",
+            "smb://files.example/share",
+            "https://app.example/" <> String.duplicate("a", 2000),
             "nope"
           ] do
         refute Client.redirect_uri?(uri), uri
       end
 
       assert {:error, _changeset} = OAuth.register_client(%{name: "x", redirect_uris: []})
+    end
+
+    test "a registration nobody approved is forgotten after a day, an approved one is kept" do
+      approved = client()
+      code_for(approved, user())
+      forgotten = client()
+      recent = client()
+
+      two_days_ago = DateTime.add(DateTime.utc_now(), -2 * 86_400, :second)
+
+      BabelSync.Repo.update_all(
+        from(c in Client, where: c.id in ^[approved.id, forgotten.id]),
+        set: [inserted_at: two_days_ago]
+      )
+
+      assert :ok = OAuth.prune()
+      assert OAuth.get_client(approved.id)
+      assert OAuth.get_client(recent.id)
+      refute OAuth.get_client(forgotten.id)
+    end
+
+    test "only the newest unapproved registrations are kept" do
+      settings = Application.fetch_env!(:babel_sync, OAuth)
+      Application.put_env(:babel_sync, OAuth, Keyword.put(settings, :unapproved_clients, 2))
+      on_exit(fn -> Application.put_env(:babel_sync, OAuth, settings) end)
+
+      approved = client()
+      code_for(approved, user())
+      long_ago = DateTime.add(DateTime.utc_now(), -3600, :second)
+      BabelSync.Repo.update_all(Client, set: [inserted_at: long_ago])
+
+      oldest = client()
+
+      BabelSync.Repo.update_all(from(c in Client, where: c.id == ^oldest.id),
+        set: [inserted_at: DateTime.add(long_ago, 60, :second)]
+      )
+
+      kept = [client(), client()]
+
+      assert OAuth.get_client(approved.id)
+      refute OAuth.get_client(oldest.id)
+      assert Enum.all?(kept, &OAuth.get_client(&1.id))
     end
   end
 
@@ -108,9 +156,18 @@ defmodule BabelSync.OAuthTest do
                OAuth.request(params(client, %{"redirect_uri" => "http://127.0.0.1:53211/other"}))
     end
 
-    test "a request without PKCE is sent back with an error" do
+    test "a request without PKCE is sent back with an error once the app has been approved" do
+      client = client()
+
+      assert {:error, :malformed_request} =
+               OAuth.request(params(client, %{"code_challenge_method" => "plain"}))
+
+      code_for(client, user())
+
       assert {:error, {:redirect, @redirect, query}} =
-               OAuth.request(params(client(), %{"code_challenge_method" => "plain"}))
+               OAuth.request(
+                 params(OAuth.get_client(client.id), %{"code_challenge_method" => "plain"})
+               )
 
       assert query == [error: "invalid_request", state: "xyz"]
     end
@@ -236,8 +293,11 @@ defmodule BabelSync.OAuthTest do
     end
 
     test "anything but the code flow is sent back as unsupported" do
+      client = client()
+      code_for(client, user())
+
       assert {:error, {:redirect, @redirect, [error: "unsupported_response_type", state: "xyz"]}} =
-               OAuth.request(params(client(), %{"response_type" => "token"}))
+               OAuth.request(params(client, %{"response_type" => "token"}))
     end
 
     test "a redirect address that already has a query keeps it" do

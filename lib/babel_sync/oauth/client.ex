@@ -3,12 +3,14 @@ defmodule BabelSync.OAuth.Client do
 
   @type t :: %__MODULE__{}
 
-  @forbidden_schemes ~w(javascript data vbscript file blob about)
+  @app_schemes ~w(obsidian vscode vscode-insiders cursor windsurf claude)
+  @uri_bytes 2000
   @loopback ~w(localhost 127.0.0.1 ::1)
 
   schema "oauth_clients" do
     field :name, :string
     field :redirect_uris, {:array, :string}
+    field :approved_at, :utc_datetime_usec
     timestamps()
   end
 
@@ -24,6 +26,8 @@ defmodule BabelSync.OAuth.Client do
   end
 
   @spec redirect_uri?(String.t()) :: boolean()
+  def redirect_uri?(uri) when byte_size(uri) > @uri_bytes, do: false
+
   def redirect_uri?(uri) do
     case URI.new(uri) do
       {:ok, %URI{scheme: scheme, fragment: nil} = parsed} when is_binary(scheme) ->
@@ -40,5 +44,5 @@ defmodule BabelSync.OAuth.Client do
 
   defp allowed_scheme?("https", %URI{host: host}), do: host not in [nil, ""]
   defp allowed_scheme?("http", uri), do: loopback?(uri)
-  defp allowed_scheme?(scheme, _uri), do: scheme not in @forbidden_schemes
+  defp allowed_scheme?(scheme, _uri), do: scheme in @app_schemes or String.contains?(scheme, ".")
 end

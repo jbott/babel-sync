@@ -91,10 +91,8 @@ export default class BabelSyncPlugin extends Plugin {
     }
 
     try {
-      if (!this.settings.clientId || this.settings.clientServer !== serverUrl) {
-        this.settings.clientId = await registerClient(nativeFetch, serverUrl, `Obsidian (${deviceName})`);
-        this.settings.clientServer = serverUrl;
-      }
+      this.settings.clientId = await registerClient(nativeFetch, serverUrl, `Obsidian (${deviceName})`);
+      this.settings.clientServer = serverUrl;
 
       const { url, pending } = await beginAuthorization(serverUrl, this.settings.clientId);
       this.settings.pendingSignIn = pending;

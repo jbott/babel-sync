@@ -97,6 +97,8 @@ Notes sync as you type. Themes, snippets, hotkeys and plugins under `.obsidian` 
 
 Add `$BABELSYNC_URL/mcp` to an MCP client as a Streamable HTTP server. The client registers itself and sends you to the consent page; approved agents are listed on the account page, where each can be disconnected. An agent that asks for the `vault:read` scope cannot change anything.
 
+Apps register themselves without signing in, so registration is bounded: a redirect address is at most 2000 bytes and must be `https`, loopback `http` or an app scheme such as `obsidian://`; one address may register 30 apps an hour; and a registration nobody approves is forgotten after a day.
+
 The agent gets the vault as a file system:
 
 | Tool | What it does |

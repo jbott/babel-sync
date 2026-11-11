@@ -16,6 +16,7 @@ defmodule BabelSync.Application do
       {DNSCluster, query: Application.get_env(:babel_sync, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: BabelSync.PubSub},
       {Registry, keys: :unique, name: BabelSync.Sync.Registry},
+      BabelSync.RateLimit,
       {DynamicSupervisor, name: BabelSync.Sync.Supervisor, strategy: :one_for_one},
       {BabelSync.MCP.Server, transport: {:streamable_http, start: true}},
       BabelSyncWeb.Endpoint
