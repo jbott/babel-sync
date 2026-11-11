@@ -168,4 +168,32 @@ defmodule BabelSync.AgentTest do
     assert {:ok, [%{path: "Projects/plan.md"}]} = Agent.search_notes(scope, nil, "done_ish")
     assert {:ok, []} = Agent.search_notes(scope, nil, "back\\slash")
   end
+
+  test "an edit or append is worked out from the text as it is when applied", %{
+    scope: scope,
+    vault: vault
+  } do
+    {:ok, :created} = Agent.write_note(scope, nil, "busy.md", "alpha\nomega\n")
+    note = Vaults.get_entry_by_path(vault.id, "busy.md")
+
+    typing =
+      Task.async(fn ->
+        for n <- 1..200 do
+          :ok = Sync.rewrite_text(note.id, &{:ok, &1 <> "typed #{n}\n"})
+        end
+      end)
+
+    for n <- 1..50 do
+      {:ok, :updated} = Agent.append_note(scope, nil, "busy.md", "appended #{n}\n")
+    end
+
+    {:ok, :updated} = Agent.edit_note(scope, nil, "busy.md", "alpha", "ALPHA")
+    Task.await(typing)
+
+    {:ok, text} = Agent.read_note(scope, nil, "busy.md")
+    lines = String.split(text, "\n", trim: true)
+    assert "ALPHA" in lines
+    assert Enum.count(lines, &String.starts_with?(&1, "typed ")) == 200
+    assert Enum.count(lines, &String.starts_with?(&1, "appended ")) == 50
+  end
 end

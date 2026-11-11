@@ -73,20 +73,25 @@ defmodule BabelSync.Sync.DocServer do
     end
   end
 
-  def handle_call({:replace_text, new_text, origin, author_id}, _from, server) do
+  def handle_call({:rewrite_text, rewrite, origin, author_id}, _from, server) do
     old_text = Yex.Text.to_string(server.text)
 
-    if old_text == new_text do
-      {:reply, :ok, server, idle_timeout()}
-    else
-      before = Yex.encode_state_vector!(server.doc)
+    case rewrite.(old_text) do
+      {:ok, ^old_text} ->
+        {:reply, :ok, server, idle_timeout()}
 
-      Yex.Doc.transaction(server.doc, fn ->
-        old_text |> TextDiff.ops(new_text) |> apply_ops(server.text)
-      end)
+      {:ok, new_text} ->
+        before = Yex.encode_state_vector!(server.doc)
 
-      {:ok, update} = Yex.encode_state_as_update(server.doc, before)
-      {:reply, :ok, record(server, update, origin, author_id), idle_timeout()}
+        Yex.Doc.transaction(server.doc, fn ->
+          old_text |> TextDiff.ops(new_text) |> apply_ops(server.text)
+        end)
+
+        {:ok, update} = Yex.encode_state_as_update(server.doc, before)
+        {:reply, :ok, record(server, update, origin, author_id), idle_timeout()}
+
+      {:error, _reason} = refused ->
+        {:reply, refused, server, idle_timeout()}
     end
   end
 

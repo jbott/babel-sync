@@ -87,20 +87,19 @@ defmodule BabelSync.Agent do
   def edit_note(scope, vault, path, old_text, new_text) do
     with {:ok, vault} <- vault(scope, vault, :write),
          {:ok, entry} <- note(vault, path) do
-      current = Sync.text(entry.id)
       old_text = Sync.normalize(old_text)
+      new_text = Sync.normalize(new_text)
 
-      case old_text != "" && String.split(current, old_text) do
-        [before, rest] ->
-          replace(scope, entry, before <> Sync.normalize(new_text) <> rest)
-          {:ok, :updated}
+      rewritten =
+        rewrite(scope, entry, fn current ->
+          case old_text != "" && String.split(current, old_text) do
+            [before, rest] -> {:ok, before <> new_text <> rest}
+            [_whole] -> {:error, :no_match}
+            _many_or_empty -> {:error, :ambiguous_match}
+          end
+        end)
 
-        [_whole] ->
-          {:error, :no_match}
-
-        _many_or_empty ->
-          {:error, :ambiguous_match}
-      end
+      with :ok <- rewritten, do: {:ok, :updated}
     end
   end
 
@@ -110,9 +109,14 @@ defmodule BabelSync.Agent do
     with {:ok, vault} <- vault(scope, vault, :write) do
       case Vaults.get_entry_by_path(vault.id, path) do
         %Entry{kind: :doc} = entry ->
-          current = Sync.text(entry.id)
-          separator = if current == "" or String.ends_with?(current, "\n"), do: "", else: "\n"
-          replace(scope, entry, current <> separator <> content)
+          content = Sync.normalize(content)
+
+          :ok =
+            rewrite(scope, entry, fn current ->
+              separator = if current == "" or String.ends_with?(current, "\n"), do: "", else: "\n"
+              {:ok, current <> separator <> content}
+            end)
+
           {:ok, :updated}
 
         %Entry{} ->
@@ -253,9 +257,14 @@ defmodule BabelSync.Agent do
     end
   end
 
-  defp replace(%Scope{user: user}, %Entry{id: id}, content) do
-    :ok = Sync.replace_text(id, content, author_id: user.id, origin: :agent)
-    :ok = Sync.flush(id)
+  defp replace(scope, entry, content) do
+    :ok = rewrite(scope, entry, fn _current -> {:ok, Sync.normalize(content)} end)
+  end
+
+  defp rewrite(%Scope{user: user}, %Entry{id: id}, rewrite) do
+    with :ok <- Sync.rewrite_text(id, rewrite, author_id: user.id, origin: :agent) do
+      Sync.flush(id)
+    end
   end
 
   defp escape_like(text) do
