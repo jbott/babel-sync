@@ -21,9 +21,12 @@ config :babel_sync, BabelSync.Repo.SQLite,
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :babel_sync, BabelSyncWeb.Endpoint,
-  http: [ip: {127, 0, 0, 1}, port: 4002],
+  http: [
+    ip: {127, 0, 0, 1},
+    port: 4002 + String.to_integer(System.get_env("MIX_TEST_PARTITION", "0"))
+  ],
   secret_key_base: "sj+jwuZO/j3G9eYuaaSWTWGHcYCNANkZLsa0qNLAAEcVRApOnQ5NxTWShL+eAKCT",
-  server: false
+  server: true
 
 # In test we don't send emails
 config :babel_sync, BabelSync.Mailer, adapter: Swoosh.Adapters.Test
@@ -50,6 +53,4 @@ config :babel_sync, BabelSync.Sync,
   settle_after: :timer.minutes(5),
   compact_after: 20
 
-config :babel_sync, BabelSync.Blobs,
-  part_size: 5 * 1024 * 1024,
-  max_size: 64 * 1024 * 1024
+config :babel_sync, BabelSync.Blobs, max_size: 64 * 1024 * 1024

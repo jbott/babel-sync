@@ -6,7 +6,7 @@ defmodule BabelSyncWeb.BlobControllerTest do
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Auth, Blobs, Vaults}
 
-  @part 5 * 1024 * 1024
+  @part 8 * 1024 * 1024
 
   setup %{conn: conn} do
     owner = user()

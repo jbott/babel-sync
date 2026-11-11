@@ -16,8 +16,10 @@ defmodule BabelSync.Blobs do
 
   @type hash :: String.t()
 
+  @part_size 8 * 1024 * 1024
+
   @spec part_size() :: pos_integer()
-  def part_size, do: Application.fetch_env!(:babel_sync, __MODULE__)[:part_size]
+  def part_size, do: @part_size
 
   @spec max_size() :: pos_integer()
   def max_size, do: Application.fetch_env!(:babel_sync, __MODULE__)[:max_size]

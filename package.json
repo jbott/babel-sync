@@ -1,0 +1,5 @@
+{
+  "name": "babelsync-workspace",
+  "private": true,
+  "workspaces": ["js/core", "assets", "plugin"]
+}

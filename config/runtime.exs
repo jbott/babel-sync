@@ -85,9 +85,7 @@ if storage == :remote do
 end
 
 if max_blob = System.get_env("BABELSYNC_MAX_BLOB_BYTES") do
-  config :babel_sync, BabelSync.Blobs,
-    part_size: 8 * 1024 * 1024,
-    max_size: String.to_integer(max_blob)
+  config :babel_sync, BabelSync.Blobs, max_size: String.to_integer(max_blob)
 end
 
 if System.get_env("PHX_SERVER") do

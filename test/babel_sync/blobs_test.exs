@@ -5,7 +5,7 @@ defmodule BabelSync.BlobsTest do
 
   alias BabelSync.Blobs
 
-  @part 5 * 1024 * 1024
+  @part 8 * 1024 * 1024
 
   setup do
     %{vault: vault()}
