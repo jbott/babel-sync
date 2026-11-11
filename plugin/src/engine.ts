@@ -45,7 +45,7 @@ const MAX_RESTING_SESSIONS = 16;
 
 export type Progress = { direction: "receiving" | "sending"; done: number; total: number };
 
-export class SyncEngine extends Emitter<{ status: Status; error: string; progress: Progress | null }> {
+export class SyncEngine extends Emitter<{ status: Status; error: string; progress: Progress | null; log: string }> {
   status: Status = "offline";
   progress: Progress | null = null;
 
@@ -142,7 +142,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       if (!entry || entry.kind !== "doc" || !this.online) return null;
 
       const live = this.hold(entry.id);
-      await live.session.whenSynced();
+      if (!(await this.reached(entry.id, live))) return null;
       await this.settle(entry.id);
       this.open.add(entry.id);
 
@@ -174,6 +174,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     this.queue = result.then(
       () => this.finished(),
       (error: unknown) => {
+        this.emit("log", `failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
         this.emit("error", error instanceof Error ? error.message : String(error));
         this.finished(true);
       },
@@ -206,6 +207,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   }
 
   private async reconcile(changes: Entry[], complete = false): Promise<void> {
+    this.emit("log", `reconcile: ${changes.length} changes${complete ? ", complete listing" : ""}, ${this.byId.size} known`);
     if (complete) {
       const alive = new Set(changes.map((change) => change.id));
       for (const entry of [...this.byId.values()]) {
@@ -600,20 +602,46 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (!entry || this.open.has(id)) return;
 
     await this.absorb(entry);
-    if (this.online) await this.exchange(id, entry.dirty);
+    if (this.online && !(await this.exchange(id, entry.dirty))) return;
     await this.settle(id);
   }
 
-  private async exchange(id: string, announce = false): Promise<void> {
+  private async exchange(id: string, announce = false): Promise<boolean> {
     const live = this.hold(id);
+    if (!(await this.reached(id, live))) return false;
+
     try {
-      await live.session.whenSynced();
       if (announce && live.session.writable) await live.session.flush();
       const entry = this.byId.get(id);
       if (entry && live.session.writable) entry.dirty = false;
     } finally {
       this.release(id);
     }
+    return true;
+  }
+
+  private async reached(id: string, live: Live): Promise<boolean> {
+    try {
+      await live.session.whenSynced();
+      return true;
+    } catch (error) {
+      this.release(id);
+      if (!(error instanceof Error) || error.message !== "not_found") throw error;
+      this.retire(id, live);
+      await this.lose(id);
+      return false;
+    }
+  }
+
+  private async lose(id: string): Promise<void> {
+    const entry = this.byId.get(id);
+    if (!entry) return;
+    this.emit("log", `the server no longer has ${entry.path}`);
+    if (!entry.dirty) return this.removeLocally(entry);
+
+    this.forget(entry);
+    await this.options.store.remove(id);
+    await this.pushLocal(entry.path);
   }
 
   private async settle(id: string): Promise<void> {
@@ -621,7 +649,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (!entry || this.open.has(id)) return;
 
     const absorbed = await this.absorb(entry);
-    if (absorbed && this.online) await this.exchange(id, true);
+    if (absorbed && this.online && !(await this.exchange(id, true))) return;
     await this.writeBack(entry, this.doc(id).getText("content").toString());
   }
 

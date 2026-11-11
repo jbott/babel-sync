@@ -130,8 +130,8 @@ defmodule BabelSyncWeb.DocChannelTest do
     {:ok, _} = Vaults.delete_entry(ctx.note)
 
     assert {:error, %{reason: "forbidden"}} = join_doc(user(), ctx.note, doc)
-    assert {:error, %{reason: "forbidden"}} = join_doc(ctx.owner, attachment, doc)
-    assert {:error, %{reason: "forbidden"}} = join_doc(ctx.owner, ctx.note, doc)
+    assert {:error, %{reason: "not_a_note"}} = join_doc(ctx.owner, attachment, doc)
+    assert {:error, %{reason: "not_found"}} = join_doc(ctx.owner, ctx.note, doc)
   end
 
   test "viewers cannot ask for a note to be settled, and unknown requests are refused", ctx do

@@ -20,8 +20,9 @@ defmodule BabelSyncWeb.DocChannel do
     scope = socket.assigns.scope
 
     with {:ok, entry_id} <- Ecto.UUID.cast(entry_id),
-         %Entry{kind: :doc, deleted_at: nil} = entry <- Vaults.get_entry(entry_id),
+         %Entry{} = entry <- Vaults.get_entry(entry_id),
          :ok <- Scope.authorize(scope, entry.vault_id, :read),
+         %Entry{kind: :doc, deleted_at: nil} <- entry,
          {:ok, client_vector} <- decode_vector(params["sv"]),
          :ok = Sync.subscribe(entry_id),
          {:ok, missing} <- Sync.diff(entry_id, client_vector) do
@@ -33,6 +34,9 @@ defmodule BabelSyncWeb.DocChannel do
 
       {:ok, reply, assign(socket, entry_id: entry_id, vault_id: entry.vault_id)}
     else
+      nil -> {:error, %{reason: "not_found"}}
+      %Entry{deleted_at: nil} -> {:error, %{reason: "not_a_note"}}
+      %Entry{} -> {:error, %{reason: "not_found"}}
       _denied -> {:error, %{reason: "forbidden"}}
     end
   end

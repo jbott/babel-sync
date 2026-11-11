@@ -375,6 +375,36 @@ test("hundreds of notes created at once all arrive", async () => {
   assert.equal(await text(phone, "Import/note 249.md"), "note 249\n");
 });
 
+test("a note the server deleted without this device hearing of it is cleared away, not an error", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "old.md", "finished\n");
+  await edit(laptop, "kept.md", "draft\n");
+  await eventually(async () => (await text(phone, "kept.md")) === "draft\n", "both notes on the phone");
+
+  await shutdown(phone);
+  await laptop.fs.remove("old.md");
+  laptop.engine.localDeleted("old.md");
+  await laptop.fs.remove("kept.md");
+  laptop.engine.localDeleted("kept.md");
+  await edit(laptop, "later.md", "newer\n");
+  await laptop.engine.idle();
+  await phone.fs.writeText("kept.md", "draft, with more written offline\n");
+  phone.store.seq = laptop.store.seq;
+
+  const back = await boot("phone", vault, phone);
+  assert.equal(await back.engine.openDoc("old.md"), null);
+  back.engine.localChanged("kept.md");
+
+  await eventually(async () => (await text(back, "old.md")) === null, "the deleted note to leave the phone");
+  await eventually(
+    async () => (await text(laptop, "kept.md")) === "draft, with more written offline\n",
+    "the note edited offline to come back as a new note",
+  );
+  assert.deepEqual(back.errors, []);
+});
+
 test("ignored paths never leave the device", async () => {
   const vault = freshVault();
   const laptop = await boot("laptop", vault);
