@@ -17,6 +17,7 @@ defmodule BabelSync.Application do
       # Start a worker by calling: BabelSync.Worker.start_link(arg)
       # {BabelSync.Worker, arg},
       # Start to serve requests, typically the last entry
+      {BabelSync.MCP.Server, transport: {:streamable_http, start: true}},
       BabelSyncWeb.Endpoint
     ]
 

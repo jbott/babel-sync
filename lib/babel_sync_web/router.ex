@@ -19,6 +19,17 @@ defmodule BabelSyncWeb.Router do
     plug :require_scope
   end
 
+  pipeline :mcp do
+    plug :fetch_scope
+    plug :require_scope
+  end
+
+  scope "/mcp" do
+    pipe_through :mcp
+
+    forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: BabelSync.MCP.Server
+  end
+
   scope "/api/vaults/:vault_id", BabelSyncWeb do
     pipe_through :api
 
