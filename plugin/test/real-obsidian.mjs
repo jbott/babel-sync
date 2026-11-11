@@ -354,6 +354,23 @@ async function run() {
   await desk.page.evaluate(() => app.vault.delete(app.vault.getAbstractFileByPath("Scratch.md")));
   await eventually("a deletion in one Obsidian is followed by the other", async () => !(await exists(laptop, "Scratch.md")));
 
+  await desk.page.evaluate(async () => {
+    await app.vault.createFolder("Box/Inner");
+    await app.vault.create("Box/a.md", "a\n");
+    await app.vault.create("Box/Inner/b.md", "b\n");
+  });
+  await eventually("notes in nested folders reach the other Obsidian", async () => (await exists(laptop, "Box/a.md")) && (await exists(laptop, "Box/Inner/b.md")));
+  await desk.page.evaluate(() => app.fileManager.renameFile(app.vault.getAbstractFileByPath("Box"), "Crate"));
+  await eventually(
+    "a folder renamed in one Obsidian is renamed in the other, leaving no empty folder",
+    async () => (await exists(laptop, "Crate/a.md")) && (await exists(laptop, "Crate/Inner/b.md")) && !(await exists(laptop, "Box")),
+    12000,
+  );
+  await desk.page.evaluate(() => app.fileManager.trashFile(app.vault.getAbstractFileByPath("Crate")));
+  await eventually("a folder deleted in one Obsidian is gone from the other, folder and all", async () => !(await exists(laptop, "Crate")), 12000);
+  const leftovers = await (await fetch(`${server}/api/vaults/${vaultId}/entries`)).json().catch(() => null);
+  if (leftovers?.entries) check("the server keeps nothing of the deleted folder", !leftovers.entries.some((entry) => !entry.deleted && entry.path.startsWith("Crate/")));
+
   await laptop.page.evaluate(() => app.vault.setConfig("readableLineLength", false));
   await laptop.page.evaluate(() => app.plugins.plugins.babelsync.engine.rescan());
   await eventually(

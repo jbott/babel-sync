@@ -170,6 +170,31 @@ test("renames and deletions follow, and a note keeps its identity when moved", a
   await eventually(async () => (await text(laptop, "Final/done.md")) === "v1\nv2\n", "an edit after the move");
 });
 
+test("a folder deleted or renamed on one device goes, with nothing left behind, on the other", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "Trip/Days/one.md", "one\n");
+  await edit(laptop, "Trip/Days/two.md", "two\n");
+  await edit(laptop, "Trip/plan.md", "plan\n");
+  await edit(laptop, "keep.md", "keep\n");
+  await eventually(() => paths(phone).length === 4, "all four notes on the phone");
+
+  for (const path of ["Trip/Days/one.md", "Trip/Days/two.md"]) await laptop.fs.rename(path, path.replace("Trip/Days", "Trip/Log"));
+  laptop.engine.localFolderRenamed("Trip/Days", "Trip/Log");
+  await eventually(
+    () => paths(phone).join() === "Trip/Log/one.md,Trip/Log/two.md,Trip/plan.md,keep.md" && !phone.fs.folders.has("Trip/Days"),
+    () => `the phone to follow the folder rename, it has ${paths(phone).join()} in ${[...phone.fs.folders].join()}`,
+  );
+
+  for (const path of paths(laptop).filter((path) => path.startsWith("Trip/"))) await laptop.fs.remove(path);
+  laptop.engine.localFolderDeleted("Trip");
+  await eventually(
+    () => paths(phone).join() === "keep.md" && phone.fs.folders.size === 0,
+    () => `the phone to drop the folder, it has ${paths(phone).join()} in ${[...phone.fs.folders].join()}`,
+  );
+});
+
 test("changes made while a device was off are caught up on return", async () => {
   const vault = freshVault();
   const laptop = await boot("laptop", vault);

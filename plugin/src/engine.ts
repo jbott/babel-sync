@@ -9,7 +9,7 @@ import {
   RequestError,
   blobHash,
 } from "@babelsync/core";
-import type { LocalEntry, StateStore, VaultFs } from "./fs.ts";
+import { type LocalEntry, type StateStore, type VaultFs, parentOf } from "./fs.ts";
 import { applyTextChange, conflictPath, kindFor, normalize, textHash } from "./text.ts";
 
 export type Status = "offline" | "syncing" | "synced" | "error";
@@ -104,6 +104,18 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
 
   localRenamed(from: string, to: string): void {
     this.run(() => this.renameLocal(from, to));
+  }
+
+  localFolderDeleted(folder: string): void {
+    this.run(async () => {
+      for (const path of this.under(folder)) await this.deleteLocal(path);
+    });
+  }
+
+  localFolderRenamed(from: string, to: string): void {
+    this.run(async () => {
+      for (const path of this.under(from)) await this.renameLocal(path, to + path.slice(from.length));
+    });
   }
 
   rescan(): void {
@@ -214,6 +226,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
 
     if (remote.deleted) {
       if (local) await this.removeLocally(local);
+      else if (remote.kind === "folder") await this.options.fs.prune(remote.path);
     } else if (!local) {
       await this.adopt(remote);
     } else {
@@ -230,8 +243,14 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
     await this.options.store.remove(local.id);
 
     if (local.kind === "folder") return;
-    if (unchanged) await fs.remove(local.path);
-    else await this.pushLocal(local.path);
+    if (!unchanged) return this.pushLocal(local.path);
+
+    await fs.remove(local.path);
+    await fs.prune(parentOf(local.path));
+  }
+
+  private under(folder: string): string[] {
+    return [...this.byPath.keys()].filter((path) => path.startsWith(folder + "/"));
   }
 
   private async adopt(remote: Entry): Promise<void> {
@@ -287,7 +306,10 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
     if (remote.path !== local.path && !local.moved) {
       await this.vacate(remote.path);
       if (await fs.stat(remote.path)) await this.pushLocal(await this.setAside(remote.path));
-      if (await fs.stat(local.path)) await fs.rename(local.path, remote.path);
+      if (await fs.stat(local.path)) {
+        await fs.rename(local.path, remote.path);
+        await fs.prune(parentOf(local.path));
+      }
       this.byPath.delete(local.path);
       local.path = remote.path;
       this.byPath.set(local.path, local.id);

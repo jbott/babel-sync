@@ -1,5 +1,10 @@
 export type FileInfo = { path: string; size: number; mtime: number };
 
+export function parentOf(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "" : path.slice(0, slash);
+}
+
 export interface VaultFs {
   list(): Promise<FileInfo[]>;
   stat(path: string): Promise<FileInfo | null>;
@@ -9,6 +14,7 @@ export interface VaultFs {
   writeBinary(path: string, data: Uint8Array): Promise<void>;
   remove(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
+  prune(folder: string): Promise<void>;
 }
 
 export type LocalEntry = {
@@ -53,6 +59,7 @@ export class MemoryStore implements StateStore {
 
 export class MemoryFs implements VaultFs {
   files = new Map<string, { data: Uint8Array; mtime: number }>();
+  folders = new Set<string>();
   private clock = 1;
 
   async list() {
@@ -84,6 +91,7 @@ export class MemoryFs implements VaultFs {
 
   async writeBinary(path: string, data: Uint8Array) {
     this.files.set(path, { data, mtime: this.clock++ });
+    this.keepFolders(path);
   }
 
   async remove(path: string) {
@@ -95,5 +103,19 @@ export class MemoryFs implements VaultFs {
     if (!file) throw new Error(`no such file: ${from}`);
     this.files.delete(from);
     this.files.set(to, file);
+    this.keepFolders(to);
+  }
+
+  async prune(folder: string) {
+    for (let at = folder; at !== ""; at = parentOf(at)) {
+      const inside = at + "/";
+      const occupied = [...this.files.keys(), ...this.folders].some((path) => path.startsWith(inside));
+      if (occupied) return;
+      this.folders.delete(at);
+    }
+  }
+
+  private keepFolders(path: string) {
+    for (let at = parentOf(path); at !== ""; at = parentOf(at)) this.folders.add(at);
   }
 }

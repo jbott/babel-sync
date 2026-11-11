@@ -1,5 +1,5 @@
-import { type App, TFile, normalizePath } from "obsidian";
-import type { FileInfo, VaultFs } from "./fs.ts";
+import { type App, TFile, TFolder, normalizePath } from "obsidian";
+import { type FileInfo, type VaultFs, parentOf } from "./fs.ts";
 
 const SHARED_CONFIG = ".obsidian";
 
@@ -97,6 +97,22 @@ export class ObsidianFs implements VaultFs {
     const file = this.file(from);
     if (file) await this.app.vault.rename(file, this.toLocal(to));
     else await this.app.vault.adapter.rename(this.toLocal(from), this.toLocal(to));
+  }
+
+  async prune(folder: string): Promise<void> {
+    const adapter = this.app.vault.adapter;
+    const config = this.app.vault.configDir;
+
+    for (let local = this.toLocal(folder); local !== "" && local !== "/" && local !== config; local = parentOf(local)) {
+      if (!(await adapter.exists(local))) continue;
+
+      const listing = await adapter.list(local);
+      if (listing.files.length > 0 || listing.folders.length > 0) return;
+
+      const known = this.app.vault.getAbstractFileByPath(local);
+      if (known instanceof TFolder) await this.app.vault.delete(known);
+      else await adapter.rmdir(local, false);
+    }
   }
 
   private inConfig(path: string): boolean {

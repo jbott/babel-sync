@@ -68,10 +68,16 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.registerEvent(this.app.vault.on("create", (file) => this.changed(file)));
     this.registerEvent(this.app.vault.on("modify", (file) => this.changed(file)));
-    this.registerEvent(this.app.vault.on("delete", (file) => file instanceof TFile && this.engine?.localDeleted(file.path)));
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (file instanceof TFile) this.engine?.localDeleted(file.path);
+        else this.engine?.localFolderDeleted(file.path);
+      }),
+    );
     this.registerEvent(
       this.app.vault.on("rename", (file, from) => {
         if (file instanceof TFile) this.engine?.localRenamed(from, file.path);
+        else this.engine?.localFolderRenamed(from, file.path);
         this.rebind();
       }),
     );
