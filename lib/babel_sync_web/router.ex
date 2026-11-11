@@ -30,6 +30,12 @@ defmodule BabelSyncWeb.Router do
     forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: BabelSync.MCP.Server
   end
 
+  scope "/api", BabelSyncWeb do
+    pipe_through :api
+
+    get "/vaults", VaultController, :index
+  end
+
   scope "/api/vaults/:vault_id", BabelSyncWeb do
     pipe_through :api
 
@@ -51,11 +57,6 @@ defmodule BabelSyncWeb.Router do
       live "/v/:vault_id/f/*path", VaultLive.Show
     end
   end
-
-  # Other scopes may use custom stacks.
-  # scope "/api", BabelSyncWeb do
-  #   pipe_through :api
-  # end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:babel_sync, :dev_routes) do
