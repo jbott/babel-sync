@@ -20,11 +20,13 @@ defmodule BabelSync.MCP.Server do
   Deleted files go to the trash (list_trash, restore_file) and every note keeps its saved \
   versions (file_history). list_changes shows what happened in a vault since a cursor.
 
-  Every file that holds text can be read, searched, edited and written, whatever its \
-  extension: Markdown notes, .base and .canvas files, .csv, .json and the like. Markdown, \
-  .txt, .base and .canvas files are merged with what people type as described above; any \
-  other text file is replaced as a whole on each change. Images are shown; other binary \
-  files can only be listed, moved and deleted.
+  Every file that holds text works with every tool, whatever its extension: Markdown notes, \
+  .base and .canvas files, .csv, .json, code and the like. edit_file and append_file change \
+  just the passage you name in all of them. The one difference is what happens when a \
+  person changes the same file at the same moment: in Markdown, .txt, .base and .canvas \
+  files both changes are kept; in other text files pass if_rev to be refused instead of \
+  overwriting theirs. Images are shown; other binary files can only be listed, moved and \
+  deleted.
 
   Notes use Obsidian Markdown: [[wikilinks]], #tags, and YAML properties between --- lines \
   at the top.
