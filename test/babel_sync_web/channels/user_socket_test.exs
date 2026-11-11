@@ -14,8 +14,8 @@ defmodule BabelSyncWeb.UserSocketTest do
   end
 
   test "no token is refused when sign-in is required" do
-    Application.put_env(:babel_sync, :auth, :passkey)
-    on_exit(fn -> Application.put_env(:babel_sync, :auth, :none) end)
+    Application.put_env(:babel_sync, :auth, [:passkey])
+    on_exit(fn -> Application.put_env(:babel_sync, :auth, []) end)
 
     assert :error = connect(UserSocket, %{})
   end

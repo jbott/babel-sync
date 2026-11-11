@@ -168,8 +168,8 @@ defmodule BabelSyncWeb.MCPTest do
   end
 
   test "requests without a credential are refused", %{bare: conn} do
-    Application.put_env(:babel_sync, :auth, :passkey)
-    on_exit(fn -> Application.put_env(:babel_sync, :auth, :none) end)
+    Application.put_env(:babel_sync, :auth, [:passkey])
+    on_exit(fn -> Application.put_env(:babel_sync, :auth, []) end)
 
     response =
       conn

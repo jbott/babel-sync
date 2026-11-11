@@ -43,7 +43,18 @@ defmodule BabelSyncWeb.Layouts do
           <.icon name="hero-square-3-stack-3d" class="size-5 text-primary" /> BabelSync
         </.link>
       </div>
-      <div class="flex-none"><.theme_toggle /></div>
+      <div class="flex flex-none items-center gap-2">
+        <.link
+          :if={@current_scope}
+          id="account-link"
+          navigate={~p"/account"}
+          class="btn btn-ghost btn-sm btn-circle"
+          title="Account"
+        >
+          <.icon name="hero-user-circle" class="size-5" />
+        </.link>
+        <.theme_toggle />
+      </div>
     </header>
 
     <main class={[not @wide && "px-4 sm:px-6 lg:px-8"]}>

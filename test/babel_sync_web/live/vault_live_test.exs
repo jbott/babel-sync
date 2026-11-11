@@ -4,14 +4,8 @@ defmodule BabelSyncWeb.VaultLiveTest do
   import BabelSync.Fixtures
   import Phoenix.LiveViewTest
 
-  alias BabelSync.Accounts.Scope
-  alias BabelSync.{Auth, Blobs, Sync, Vaults}
+  alias BabelSync.{Blobs, Sync, Vaults}
   alias BabelSyncWeb.Paths
-
-  defp sign_in(conn, user) do
-    token = user |> Scope.for_user() |> Auth.socket_token()
-    Plug.Test.init_test_session(conn, %{BabelSyncWeb.Plugs.Scope.session_key() => token})
-  end
 
   setup %{conn: conn} do
     owner = user()
@@ -21,8 +15,8 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
   describe "sign-in" do
     test "is required when it is enabled", %{anonymous: conn} do
-      Application.put_env(:babel_sync, :auth, :passkey)
-      on_exit(fn -> Application.put_env(:babel_sync, :auth, :none) end)
+      Application.put_env(:babel_sync, :auth, [:passkey])
+      on_exit(fn -> Application.put_env(:babel_sync, :auth, []) end)
 
       assert {:error, {:redirect, %{to: "/login"}}} = live(conn, ~p"/")
     end

@@ -35,4 +35,20 @@ defmodule BabelSyncWeb.ConnCase do
     BabelSync.DataCase.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
+
+  def sign_in(conn, user) do
+    Plug.Test.init_test_session(conn, %{
+      BabelSyncWeb.Plugs.Scope.session_key() => BabelSync.Auth.session_token(user)
+    })
+  end
+
+  def bearer(conn, user, opts \\ []) do
+    token = user |> BabelSync.Accounts.Scope.for_user(opts) |> BabelSync.Auth.socket_token()
+    Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> token)
+  end
+
+  def with_auth(methods) do
+    Application.put_env(:babel_sync, :auth, methods)
+    ExUnit.Callbacks.on_exit(fn -> Application.put_env(:babel_sync, :auth, []) end)
+  end
 end

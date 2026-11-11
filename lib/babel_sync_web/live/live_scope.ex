@@ -7,16 +7,27 @@ defmodule BabelSyncWeb.LiveScope do
   alias BabelSyncWeb.Plugs.Scope
 
   def on_mount(:require, _params, session, socket) do
-    socket =
-      assign_new(socket, :current_scope, fn ->
-        case Auth.scope_from_token(session[Scope.session_key()]) do
-          {:ok, scope} -> scope
-          :error -> nil
-        end
-      end)
+    socket = fetch(socket, session)
 
     if socket.assigns.current_scope,
       do: {:cont, socket},
       else: {:halt, Phoenix.LiveView.redirect(socket, to: "/login")}
+  end
+
+  def on_mount(:signed_out, _params, session, socket) do
+    socket = fetch(socket, session)
+
+    if socket.assigns.current_scope,
+      do: {:halt, Phoenix.LiveView.redirect(socket, to: "/")},
+      else: {:cont, socket}
+  end
+
+  defp fetch(socket, session) do
+    assign_new(socket, :current_scope, fn ->
+      case Auth.scope_from_session(session[Scope.session_key()]) do
+        {:ok, scope} -> scope
+        :error -> nil
+      end
+    end)
   end
 end

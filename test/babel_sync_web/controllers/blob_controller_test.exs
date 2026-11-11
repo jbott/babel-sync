@@ -102,8 +102,8 @@ defmodule BabelSyncWeb.BlobControllerTest do
   end
 
   test "requests without a valid credential are refused", %{bare: bare, vault: vault} do
-    Application.put_env(:babel_sync, :auth, :passkey)
-    on_exit(fn -> Application.put_env(:babel_sync, :auth, :none) end)
+    Application.put_env(:babel_sync, :auth, [:passkey])
+    on_exit(fn -> Application.put_env(:babel_sync, :auth, []) end)
 
     assert bare |> get("/api/vaults/#{vault.id}/blobs/abc") |> json_response(401)
 

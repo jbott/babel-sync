@@ -14,17 +14,20 @@ defmodule BabelSync.Application do
       {Phoenix.PubSub, name: BabelSync.PubSub},
       {Registry, keys: :unique, name: BabelSync.Sync.Registry},
       {DynamicSupervisor, name: BabelSync.Sync.Supervisor, strategy: :one_for_one},
-      # Start a worker by calling: BabelSync.Worker.start_link(arg)
-      # {BabelSync.Worker, arg},
-      # Start to serve requests, typically the last entry
       {BabelSync.MCP.Server, transport: {:streamable_http, start: true}},
       BabelSyncWeb.Endpoint
     ]
 
-    # See https://elixir.hexdocs.pm/Supervisor.html
-    # for other strategies and supported options
     opts = [strategy: :one_for_one, name: BabelSync.Supervisor]
-    Supervisor.start_link(children, opts)
+
+    with {:ok, supervisor} <- Supervisor.start_link(children ++ sign_in_children(), opts) do
+      BabelSync.Auth.Setup.announce()
+      {:ok, supervisor}
+    end
+  end
+
+  defp sign_in_children do
+    if BabelSync.Auth.enabled?(:oidc), do: [BabelSync.Auth.OIDC], else: []
   end
 
   # Tell Phoenix to update the endpoint configuration

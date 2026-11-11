@@ -1,0 +1,211 @@
+defmodule BabelSync.OAuthTest do
+  use BabelSync.DataCase, async: false
+
+  import BabelSync.Fixtures
+
+  alias BabelSync.Accounts.Scope
+  alias BabelSync.OAuth
+  alias BabelSync.OAuth.Client
+
+  @verifier "a-verifier-that-is-long-enough-to-be-plausible-0123456789"
+  @redirect "obsidian://babelsync"
+
+  defp challenge, do: Base.url_encode64(:crypto.hash(:sha256, @verifier), padding: false)
+
+  defp client(redirect_uris \\ [@redirect]) do
+    {:ok, client} =
+      OAuth.register_client(%{name: "Obsidian on Laptop", redirect_uris: redirect_uris})
+
+    client
+  end
+
+  defp params(client, extra \\ %{}) do
+    Map.merge(
+      %{
+        "client_id" => client.id,
+        "redirect_uri" => hd(client.redirect_uris),
+        "response_type" => "code",
+        "state" => "xyz",
+        "code_challenge" => challenge(),
+        "code_challenge_method" => "S256"
+      },
+      extra
+    )
+  end
+
+  defp code_for(client, user, extra \\ %{}) do
+    {:ok, request} = OAuth.request(params(client, extra))
+    destination = OAuth.approve(request, Scope.for_user(user))
+
+    %{"code" => code, "state" => "xyz"} =
+      destination |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query()
+
+    code
+  end
+
+  defp exchange(client, code, extra \\ %{}) do
+    OAuth.token(
+      Map.merge(
+        %{
+          "grant_type" => "authorization_code",
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => hd(client.redirect_uris),
+          "code_verifier" => @verifier
+        },
+        extra
+      )
+    )
+  end
+
+  describe "client registration" do
+    test "accepts https, loopback http and app schemes" do
+      for uri <- [
+            "https://app.example/cb",
+            "http://127.0.0.1:8123/cb",
+            "http://localhost/cb",
+            @redirect
+          ] do
+        assert Client.redirect_uri?(uri), uri
+      end
+    end
+
+    test "rejects plain http elsewhere, script schemes and fragments" do
+      for uri <- [
+            "http://example.com/cb",
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "https://a.example/#x",
+            "nope"
+          ] do
+        refute Client.redirect_uri?(uri), uri
+      end
+
+      assert {:error, _changeset} = OAuth.register_client(%{name: "x", redirect_uris: []})
+    end
+  end
+
+  describe "authorization requests" do
+    test "an unknown client or unregistered redirect is refused without redirecting" do
+      assert {:error, :unknown_client} = OAuth.request(%{"client_id" => Ecto.UUID.generate()})
+      assert {:error, :unknown_client} = OAuth.request(%{"client_id" => "not-a-uuid"})
+
+      assert {:error, :bad_redirect_uri} =
+               OAuth.request(params(client(), %{"redirect_uri" => "https://evil.example/cb"}))
+    end
+
+    test "a loopback redirect may use any port" do
+      client = client(["http://127.0.0.1/callback"])
+
+      assert {:ok, request} =
+               OAuth.request(
+                 params(client, %{"redirect_uri" => "http://127.0.0.1:53211/callback"})
+               )
+
+      assert request.redirect_uri == "http://127.0.0.1:53211/callback"
+
+      assert {:error, :bad_redirect_uri} =
+               OAuth.request(params(client, %{"redirect_uri" => "http://127.0.0.1:53211/other"}))
+    end
+
+    test "a request without PKCE is sent back with an error" do
+      assert {:error, {:redirect, @redirect, query}} =
+               OAuth.request(params(client(), %{"code_challenge_method" => "plain"}))
+
+      assert query == [error: "invalid_request", state: "xyz"]
+    end
+
+    test "denying sends the user back with access_denied" do
+      {:ok, request} = OAuth.request(params(client()))
+      assert OAuth.deny(request) == "obsidian://babelsync?error=access_denied&state=xyz"
+    end
+  end
+
+  describe "tokens" do
+    setup do
+      %{user: user(), client: client()}
+    end
+
+    test "a code is exchanged once for tokens that identify the user", %{
+      user: user,
+      client: client
+    } do
+      code = code_for(client, user)
+
+      assert {:ok,
+              %{
+                access_token: access,
+                refresh_token: _refresh,
+                token_type: "Bearer",
+                scope: "vault"
+              }} =
+               exchange(client, code)
+
+      assert {:ok, %Scope{user: %{id: id}, read_only: false}} =
+               OAuth.scope_from_access_token(access)
+
+      assert id == user.id
+      assert {:error, "invalid_grant"} = exchange(client, code)
+    end
+
+    test "the wrong verifier, client or redirect is refused", %{user: user, client: client} do
+      assert {:error, "invalid_grant"} =
+               exchange(client, code_for(client, user), %{"code_verifier" => "something-else"})
+
+      assert {:error, "invalid_grant"} =
+               exchange(client, code_for(client, user), %{"client_id" => client().id})
+
+      assert {:error, "invalid_grant"} =
+               exchange(client, code_for(client, user), %{"redirect_uri" => "obsidian://other"})
+    end
+
+    test "asking for vault:read gives a read-only scope", %{user: user, client: client} do
+      code = code_for(client, user, %{"scope" => "vault:read"})
+      assert {:ok, %{access_token: access, scope: "vault:read"}} = exchange(client, code)
+      assert {:ok, %Scope{read_only: true}} = OAuth.scope_from_access_token(access)
+    end
+
+    test "refreshing rotates both tokens and forgives one lost reply", %{
+      user: user,
+      client: client
+    } do
+      {:ok, first} = exchange(client, code_for(client, user))
+
+      refresh = fn token ->
+        OAuth.token(%{
+          "grant_type" => "refresh_token",
+          "refresh_token" => token,
+          "client_id" => client.id
+        })
+      end
+
+      assert {:ok, second} = refresh.(first.refresh_token)
+      assert :error = OAuth.scope_from_access_token(first.access_token)
+      assert {:ok, _scope} = OAuth.scope_from_access_token(second.access_token)
+
+      assert {:ok, third} = refresh.(first.refresh_token)
+      assert {:ok, _scope} = OAuth.scope_from_access_token(third.access_token)
+      assert {:error, "invalid_grant"} = refresh.(first.refresh_token)
+      assert {:error, "invalid_grant"} = refresh.("bsr_unknown")
+    end
+
+    test "a grant can be listed and revoked", %{user: user, client: client} do
+      {:ok, tokens} = exchange(client, code_for(client, user))
+      assert [grant] = OAuth.list_grants(user)
+      assert grant.client.name == "Obsidian on Laptop"
+
+      assert :ok = OAuth.revoke_grant(user(), grant.id)
+      assert {:ok, _scope} = OAuth.scope_from_access_token(tokens.access_token)
+
+      assert :ok = OAuth.revoke_grant(user, grant.id)
+      assert :error = OAuth.scope_from_access_token(tokens.access_token)
+      assert [] = OAuth.list_grants(user)
+    end
+
+    test "revoking by token drops the grant", %{user: user, client: client} do
+      {:ok, tokens} = exchange(client, code_for(client, user))
+      assert :ok = OAuth.revoke_token(tokens.refresh_token)
+      assert :error = OAuth.scope_from_access_token(tokens.access_token)
+    end
+  end
+end

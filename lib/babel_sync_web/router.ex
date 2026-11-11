@@ -24,10 +24,26 @@ defmodule BabelSyncWeb.Router do
     plug :require_scope
   end
 
+  pipeline :open_api do
+    plug :accepts, ["json"]
+  end
+
   scope "/mcp" do
     pipe_through :mcp
 
     forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: BabelSync.MCP.Server
+  end
+
+  scope "/", BabelSyncWeb do
+    pipe_through :open_api
+
+    get "/.well-known/oauth-authorization-server", OAuthController, :server_metadata
+    get "/.well-known/oauth-authorization-server/*rest", OAuthController, :server_metadata
+    get "/.well-known/oauth-protected-resource", OAuthController, :resource_metadata
+    get "/.well-known/oauth-protected-resource/*rest", OAuthController, :resource_metadata
+    post "/oauth/register", OAuthController, :register
+    post "/oauth/token", OAuthController, :token
+    post "/oauth/revoke", OAuthController, :revoke
   end
 
   scope "/api", BabelSyncWeb do
@@ -50,15 +66,29 @@ defmodule BabelSyncWeb.Router do
 
     get "/v/:vault_id/raw/*path", FileController, :raw
 
+    get "/oauth/authorize", OAuthController, :authorize
+    post "/oauth/authorize", OAuthController, :decide
+
+    get "/login/complete", SessionController, :complete
+    get "/login/oidc", SessionController, :oidc
+    get "/login/oidc/callback", SessionController, :oidc_callback
+    post "/login/link", SessionController, :link
+    delete "/logout", SessionController, :delete
+
+    live_session :signed_out, on_mount: {BabelSyncWeb.LiveScope, :signed_out} do
+      live "/login", AuthLive.Login
+      live "/login/link/:token", AuthLive.Login
+    end
+
     live_session :signed_in, on_mount: {BabelSyncWeb.LiveScope, :require} do
       live "/", VaultLive.Index
+      live "/account", AuthLive.Account
       live "/v/:vault_id", VaultLive.Show
       live "/v/:vault_id/settings", VaultLive.Settings
       live "/v/:vault_id/f/*path", VaultLive.Show
     end
   end
 
-  # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:babel_sync, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put
     # it behind authentication and allow only admins to access it.

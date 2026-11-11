@@ -58,5 +58,6 @@ defmodule BabelSyncWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+  plug BabelSyncWeb.Plugs.CORS
   plug BabelSyncWeb.Router
 end

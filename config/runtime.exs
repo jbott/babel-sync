@@ -41,13 +41,85 @@ data_dir =
     end
 
 auth =
-  case System.get_env("BABELSYNC_AUTH", if(mode == :single, do: "none", else: "oidc")) do
-    "none" when mode == :single -> :none
-    "none" -> raise "BABELSYNC_AUTH=none is only allowed with BABELSYNC_MODE=single"
-    "passkey" -> :passkey
-    "oidc" -> :oidc
-    other -> raise "BABELSYNC_AUTH must be none, passkey or oidc, got: #{inspect(other)}"
+  System.get_env("BABELSYNC_AUTH", if(mode == :single, do: "none", else: "oidc"))
+  |> String.split(",", trim: true)
+  |> Enum.map(fn
+    "none" ->
+      :none
+
+    "passkey" ->
+      :passkey
+
+    "oidc" ->
+      :oidc
+
+    "magic_link" ->
+      :magic_link
+
+    other ->
+      raise "BABELSYNC_AUTH lists none, passkey, oidc or magic_link, got: #{inspect(other)}"
+  end)
+  |> case do
+    [:none] when mode == :single -> []
+    [:none] -> raise "BABELSYNC_AUTH=none is only allowed with BABELSYNC_MODE=single"
+    methods -> methods
   end
+
+if :none in auth, do: raise("BABELSYNC_AUTH=none cannot be combined with other methods")
+
+if mode == :multi and :oidc not in auth and :magic_link not in auth do
+  raise "BABELSYNC_MODE=multi needs oidc or magic_link in BABELSYNC_AUTH so people can sign in the first time"
+end
+
+csv = fn name ->
+  name |> System.get_env("") |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+end
+
+oidc_require =
+  for pair <- csv.("BABELSYNC_OIDC_REQUIRE") do
+    case String.split(pair, "=", parts: 2) do
+      [claim, value] -> {claim, value}
+      _other -> raise "BABELSYNC_OIDC_REQUIRE is a list of claim=value, got: #{inspect(pair)}"
+    end
+  end
+
+if :oidc in auth do
+  for name <- ~w(BABELSYNC_OIDC_ISSUER BABELSYNC_OIDC_CLIENT_ID), is_nil(System.get_env(name)) do
+    raise "environment variable #{name} is missing"
+  end
+
+  if mode == :single and oidc_require == [] do
+    raise "BABELSYNC_OIDC_REQUIRE must name the owner, for example email=you@example.com, " <>
+            "or anyone with an account at the provider could sign in"
+  end
+end
+
+config :babel_sync, BabelSync.Auth.OIDC,
+  issuer: System.get_env("BABELSYNC_OIDC_ISSUER"),
+  client_id: System.get_env("BABELSYNC_OIDC_CLIENT_ID"),
+  client_secret: System.get_env("BABELSYNC_OIDC_CLIENT_SECRET"),
+  label: System.get_env("BABELSYNC_OIDC_LABEL", "single sign-on"),
+  scopes: String.split(System.get_env("BABELSYNC_OIDC_SCOPES", "openid email profile")),
+  require: oidc_require
+
+config :babel_sync, BabelSync.Auth.MagicLink,
+  from: System.get_env("BABELSYNC_MAIL_FROM", "babelsync@localhost"),
+  allowed_emails: Enum.map(csv.("BABELSYNC_ALLOWED_EMAILS"), &String.downcase/1)
+
+if smtp_host = System.get_env("BABELSYNC_SMTP_HOST") do
+  config :babel_sync, BabelSync.Mailer,
+    adapter: Swoosh.Adapters.SMTP,
+    relay: smtp_host,
+    port: String.to_integer(System.get_env("BABELSYNC_SMTP_PORT", "587")),
+    username: System.get_env("BABELSYNC_SMTP_USERNAME"),
+    password: System.get_env("BABELSYNC_SMTP_PASSWORD"),
+    tls: :always,
+    auth: if(System.get_env("BABELSYNC_SMTP_USERNAME"), do: :always, else: :never)
+else
+  if :magic_link in auth and config_env() == :prod do
+    raise "magic_link sign-in needs BABELSYNC_SMTP_HOST to send mail"
+  end
+end
 
 if storage == :local, do: File.mkdir_p!(data_dir)
 
