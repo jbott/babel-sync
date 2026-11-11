@@ -90,10 +90,19 @@ BABELSYNC_STORAGE=remote mix test    # the same suite on PostgreSQL and S3
 mix dialyzer
 ```
 
-The end-to-end tests run the JavaScript client and two copies of the plugin's sync engine against the real server under Node.
+The end-to-end tests run the JavaScript client and two copies of the plugin's sync engine against the real server under Node. When Chrome or Chromium is installed (or `CHROME_BIN` names one) they also drive the web app in a headless browser: two tabs editing one note, uploads, rename, history, trash, and passkey sign-in through a virtual authenticator. Without a browser those tests are skipped.
+
+The plugin can be exercised inside Obsidian itself. With a server running and an empty vault on it:
+
+```sh
+npm run build -w plugin
+BABELSYNC_URL=http://localhost:4000 node plugin/test/real-obsidian.mjs
+```
+
+This opens two Obsidian windows on throwaway profiles and vaults in the temp directory, never your own, installs the plugin in both, signs in, and checks live typing, cursors, attachments, renames, deletions, settings sync, catching up after being off, and Obsidian's mobile emulation. `OBSIDIAN_BIN` points at the Obsidian executable when it is not in `/Applications`.
 
 Layout: `lib/babel_sync` is the server core, `lib/babel_sync_web` the web app, channels and HTTP API, `js/core` the sync client shared by the web editor and the plugin, `plugin` the Obsidian plugin.
 
 ### Not yet verified
 
-The automated tests cannot drive a browser or Obsidian itself. The web editor and the plugin's Obsidian-facing layer (editor binding, settings, file events) are type-checked and build, and the sync engine underneath is tested, but they have not been run by hand yet.
+The plugin has not been run on a real phone or tablet, only under Obsidian's mobile emulation on the desktop.
