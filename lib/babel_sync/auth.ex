@@ -36,7 +36,9 @@ defmodule BabelSync.Auth do
 
   def scope_from_token(token) when is_binary(token) do
     with {:ok, {user_id, read_only}} <-
-           Phoenix.Token.verify(BabelSyncWeb.Endpoint, @socket_salt, token, max_age: @socket_max_age),
+           Phoenix.Token.verify(BabelSyncWeb.Endpoint, @socket_salt, token,
+             max_age: @socket_max_age
+           ),
          %Accounts.User{} = user <- Accounts.get_user(user_id) do
       {:ok, Scope.for_user(user, read_only: read_only)}
     else

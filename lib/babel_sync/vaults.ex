@@ -39,6 +39,11 @@ defmodule BabelSync.Vaults do
   @spec get_vault(Ecto.UUID.t()) :: Vault.t() | nil
   def get_vault(id), do: Repo.get(Vault, id)
 
+  @spec update_vault(Vault.t(), map()) :: {:ok, Vault.t()} | {:error, Ecto.Changeset.t()}
+  def update_vault(%Vault{} = vault, attrs) do
+    vault |> Vault.changeset(attrs) |> Repo.update()
+  end
+
   @spec delete_vault(Vault.t()) :: {:ok, Vault.t()} | {:error, Ecto.Changeset.t()}
   def delete_vault(%Vault{} = vault), do: Repo.delete(vault)
 

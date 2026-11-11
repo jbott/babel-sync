@@ -10,6 +10,7 @@ defmodule BabelSyncWeb.Router do
     plug :put_root_layout, html: {BabelSyncWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :fetch_scope
   end
 
   pipeline :api do
@@ -30,7 +31,14 @@ defmodule BabelSyncWeb.Router do
   scope "/", BabelSyncWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    get "/v/:vault_id/raw/*path", FileController, :raw
+
+    live_session :signed_in, on_mount: {BabelSyncWeb.LiveScope, :require} do
+      live "/", VaultLive.Index
+      live "/v/:vault_id", VaultLive.Show
+      live "/v/:vault_id/settings", VaultLive.Settings
+      live "/v/:vault_id/f/*path", VaultLive.Show
+    end
   end
 
   # Other scopes may use custom stacks.

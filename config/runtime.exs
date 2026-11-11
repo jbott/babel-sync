@@ -92,7 +92,8 @@ if System.get_env("PHX_SERVER") do
   config :babel_sync, BabelSyncWeb.Endpoint, server: true
 end
 
-config :babel_sync, BabelSyncWeb.Endpoint, http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+config :babel_sync, BabelSyncWeb.Endpoint,
+  http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
 if config_env() == :dev do
   # Reload browser tabs when matching files change.

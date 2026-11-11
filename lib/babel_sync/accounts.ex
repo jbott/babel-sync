@@ -13,6 +13,11 @@ defmodule BabelSync.Accounts do
     %User{} |> User.changeset(attrs) |> Repo.insert()
   end
 
+  @spec get_user_by_email(String.t()) :: User.t() | nil
+  def get_user_by_email(email) when is_binary(email) do
+    Repo.get_by(User, email: String.trim(email))
+  end
+
   @spec get_user(Ecto.UUID.t()) :: User.t() | nil
   def get_user(id), do: Repo.get(User, id)
 
