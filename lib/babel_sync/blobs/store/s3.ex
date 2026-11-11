@@ -60,38 +60,19 @@ defmodule BabelSync.Blobs.Store.S3 do
         {first, last} -> [{"range", "bytes=#{first}-#{last}"}]
       end
 
-    Stream.resource(
-      fn ->
-        {:ok, %{status: status} = response} =
-          request(:get, key, headers: headers, into: :self, receive_timeout: 60_000)
+    Stream.flat_map([key], fn key ->
+      {:ok, %{status: status, body: body}} =
+        request(:get, key, headers: headers, into: :self, receive_timeout: 60_000)
 
-        if status not in [200, 206], do: raise("S3 GET #{key} returned #{status}")
-        response
-      end,
-      fn response ->
-        case Req.parse_message(response, receive_message()) do
-          {:ok, [{:data, data}]} -> {[data], response}
-          {:ok, [:done]} -> {:halt, response}
-          {:ok, chunks} -> {for({:data, data} <- chunks, do: data), response}
-          {:error, reason} -> raise "S3 GET #{key} failed: #{inspect(reason)}"
-        end
-      end,
-      &Req.cancel_async_response/1
-    )
+      if status not in [200, 206], do: raise("S3 GET #{key} returned #{status}")
+      body
+    end)
   end
 
   @impl true
   def delete(key) do
     request(:delete, key, [])
     :ok
-  end
-
-  defp receive_message do
-    receive do
-      message -> message
-    after
-      60_000 -> raise "timed out reading from S3"
-    end
   end
 
   defp request(method, key, options) do

@@ -1,6 +1,8 @@
 defmodule BabelSyncWeb.Router do
   use BabelSyncWeb, :router
 
+  import BabelSyncWeb.Plugs.Scope
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -12,6 +14,17 @@ defmodule BabelSyncWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug :fetch_scope
+    plug :require_scope
+  end
+
+  scope "/api/vaults/:vault_id", BabelSyncWeb do
+    pipe_through :api
+
+    post "/uploads", BlobController, :begin
+    put "/uploads/:id/parts/:number", BlobController, :part
+    post "/uploads/:id/complete", BlobController, :complete
+    get "/blobs/:hash", BlobController, :show
   end
 
   scope "/", BabelSyncWeb do
