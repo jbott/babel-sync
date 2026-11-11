@@ -3,19 +3,36 @@ import type { LocalEntry, StateStore } from "./fs.ts";
 const ENTRIES = "entries";
 const META = "meta";
 
+const ATTEMPTS = 3;
+
 export class IdbStore implements StateStore {
+  private name: string;
   private database: Promise<IDBDatabase>;
+  private closed = false;
 
   constructor(name: string) {
-    this.database = new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 1);
+    this.name = name;
+    this.database = this.open();
+  }
+
+  private open(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.name, 1);
       request.onupgradeneeded = () => {
         request.result.createObjectStore(ENTRIES, { keyPath: "id" });
         request.result.createObjectStore(META);
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error("the sync state database is blocked"));
     });
+  }
+
+  private reopen(): void {
+    if (this.closed) return;
+    const stale = this.database;
+    this.database = this.open();
+    void stale.then((database) => database.close()).catch(() => {});
   }
 
   async load(): Promise<{ seq: number; entries: LocalEntry[] }> {
@@ -42,7 +59,8 @@ export class IdbStore implements StateStore {
   }
 
   async close(): Promise<void> {
-    (await this.database).close();
+    this.closed = true;
+    await this.database.then((database) => database.close()).catch(() => {});
   }
 
   private async request<T>(
@@ -50,11 +68,25 @@ export class IdbStore implements StateStore {
     mode: IDBTransactionMode,
     action: (store: IDBObjectStore) => IDBRequest,
   ): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.once<T>(name, mode, action);
+      } catch (error) {
+        if (attempt === ATTEMPTS || this.closed) throw error;
+        this.reopen();
+      }
+    }
+  }
+
+  private async once<T>(name: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest): Promise<T> {
     const database = await this.database;
+
     return new Promise((resolve, reject) => {
-      const request = action(database.transaction(name, mode).objectStore(name));
-      request.onsuccess = () => resolve(request.result as T);
-      request.onerror = () => reject(request.error);
+      const transaction = database.transaction(name, mode);
+      const request = action(transaction.objectStore(name));
+      transaction.oncomplete = () => resolve(request.result as T);
+      transaction.onabort = () => reject(transaction.error ?? request.error ?? new Error("the sync state write was aborted"));
+      transaction.onerror = () => reject(transaction.error ?? request.error);
     });
   }
 }
