@@ -19,6 +19,7 @@ defmodule BabelSync.Agent do
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.Agent.{Glob, Text}
+  alias BabelSync.Bases
   alias BabelSync.Blobs
   alias BabelSync.Sync
   alias BabelSync.Sync.Version
@@ -38,6 +39,8 @@ defmodule BabelSync.Agent do
           | :exists
           | :invalid_path
           | :invalid_pattern
+          | {:invalid_query, String.t()}
+          | :no_coordinates
           | :off_limits
           | :unguarded
           | :no_heading
@@ -124,6 +127,32 @@ defmodule BabelSync.Agent do
         |> Enum.take(@searched_files)
 
       {:ok, found}
+    end
+  end
+
+  @spec query_notes(Scope.t(), vault_reference(), keyword()) ::
+          {:ok, Bases.table() | Bases.groups()} | error()
+  def query_notes(scope, vault, opts \\ []) do
+    with {:ok, vault} <- vault(scope, vault, :read),
+         {:ok, definition} <- definition(vault, opts[:base]),
+         notes = notes(vault, opts[:folder]),
+         {:ok, near} <- near(notes, opts[:near], opts[:coordinates]) do
+      query =
+        opts
+        |> Keyword.take(~w(view folder where radius_km coordinates sort select group_by limit)a)
+        |> Keyword.merge(definition: definition, near: near)
+        |> Enum.reject(fn {_name, value} -> value in [nil, "", []] end)
+
+      with {:error, message} <- Bases.query(notes, query), do: {:error, {:invalid_query, message}}
+    end
+  end
+
+  @spec list_properties(Scope.t(), vault_reference(), String.t() | nil) ::
+          {:ok, %{notes: non_neg_integer(), properties: [map()]}} | error()
+  def list_properties(scope, vault, folder \\ nil) do
+    with {:ok, vault} <- vault(scope, vault, :read) do
+      notes = notes(vault, folder)
+      {:ok, %{notes: length(notes), properties: Bases.survey(notes)}}
     end
   end
 
@@ -427,6 +456,54 @@ defmodule BabelSync.Agent do
   defp hidden?(%Vault{}, path) do
     [top | _rest] = path |> Vaults.Path.normalize() |> String.split("/", parts: 2)
     String.downcase(top) == ".obsidian"
+  end
+
+  defp notes(vault, folder) do
+    files =
+      for %Entry{kind: kind} = entry <- entries(vault),
+          kind != :folder,
+          Bases.Note.in_folder?(%Bases.Note{path: entry.path}, folder || ""),
+          do: entry
+
+    files
+    |> Stream.chunk_every(@search_batch)
+    |> Enum.flat_map(fn batch ->
+      texts =
+        Sync.texts(for %Entry{kind: :doc, path: path, id: id} <- batch, markdown?(path), do: id)
+
+      for entry <- batch do
+        Bases.Note.new(
+          path: entry.path,
+          size: entry.size,
+          created: entry.inserted_at,
+          modified: entry.updated_at,
+          text: Map.get(texts, entry.id, "")
+        )
+      end
+    end)
+  end
+
+  defp markdown?(path), do: path |> Path.extname() |> String.downcase() == ".md"
+
+  defp definition(_vault, base) when base in [nil, ""], do: {:ok, nil}
+
+  defp definition(vault, path) do
+    with {:ok, entry} <- entry(vault, path),
+         {:ok, text} <- content(entry) do
+      with {:error, message} <- Bases.Definition.parse(text),
+           do: {:error, {:invalid_query, message}}
+    end
+  end
+
+  defp near(_notes, near, _property) when near in [nil, ""], do: {:ok, nil}
+
+  defp near(notes, near, property) do
+    place = Enum.find(notes, &(&1.path == near))
+
+    case Bases.Geo.point(near) || (place && Bases.Geo.of(place.properties, property)) do
+      nil -> {:error, :no_coordinates}
+      point -> {:ok, point}
+    end
   end
 
   defp note(vault, path) do

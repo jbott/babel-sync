@@ -70,6 +70,14 @@ defmodule BabelSync.MCP.Reply do
   defp message(:invalid_pattern),
     do: "That pattern is empty or malformed. Check the brackets and braces."
 
+  defp message({:invalid_query, message}),
+    do: "That query could not be run: #{message}. Call list_properties to see what notes hold."
+
+  defp message(:no_coordinates) do
+    "near must be \"latitude, longitude\" or the path of a note that has coordinates, " <>
+      "inside the folder being queried."
+  end
+
   defp message(:unguarded) do
     "A file already exists at that path." <>
       @unchanged <>

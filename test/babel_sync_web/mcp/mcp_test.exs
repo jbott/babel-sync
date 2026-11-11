@@ -102,7 +102,7 @@ defmodule BabelSyncWeb.MCPTest do
     %{"result" => %{"tools" => tools}} = decode(response)
 
     assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==
-             ~w(append_file create_directory delete_file edit_file file_history file_outline find_files list_changes list_directory list_trash list_vaults move_file read_file restore_file search_files write_file)
+             ~w(append_file create_directory delete_file edit_file file_history file_outline find_files list_changes list_directory list_properties list_trash list_vaults move_file query_notes read_file restore_file search_files write_file)
 
     write = Enum.find(tools, &(&1["name"] == "write_file"))
     assert write["description"] =~ "if_rev"
@@ -294,6 +294,101 @@ defmodule BabelSyncWeb.MCPTest do
 
     assert {:ok, _} = call(session, "write_file", %{path: "a.md", content: "v3", overwrite: true})
     assert read(session, "a.md") == "v3"
+  end
+
+  test "an agent queries notes by their properties, by distance and through a base", %{
+    session: session
+  } do
+    places = [
+      {"Places/Coffee/Kitsune.md", "coordinates:\n  - 48.8651\n  - 2.3378\nrating: 4\n"},
+      {"Places/Coffee/Ten Belles.md", "coordinates:\n  - 48.8722\n  - 2.3636\nrating: 5\n"},
+      {"Places/Food/Noma.md", "coordinates: [55.6828, 12.6105]\nrating: 5\n"},
+      {"Places/Food/Nowhere.md", "rating: 3\n"}
+    ]
+
+    for {path, properties} <- places do
+      {:ok, _} = call(session, "write_file", %{path: path, content: "---\n#{properties}---\n"})
+    end
+
+    {:ok, _} =
+      call(session, "write_file", %{
+        path: "Views/Places.base",
+        content: """
+        filters:
+          and:
+            - file.inFolder("Places")
+        formulas:
+          kind: if(file.inFolder("Places/Coffee"), "Coffee", "Food")
+        views:
+          - type: table
+            name: Best
+            filters:
+              and:
+                - rating >= 5
+            order:
+              - file.basename
+              - formula.kind
+        """
+      })
+
+    assert {:ok, listed} = call(session, "list_properties", %{folder: "Places"})
+
+    assert ["4 files", "rating\t4 notes\tnumber\t4 | 5 | 3", "coordinates\t3 notes\tlist\t" <> _] =
+             String.split(listed, "\n")
+
+    assert {:ok, top} =
+             call(session, "query_notes", %{
+               where: "rating >= 4",
+               sort: "rating desc, file.name",
+               select: ["rating"],
+               limit: 2
+             })
+
+    assert top ==
+             "2 of 3 notes; raise limit or narrow the query for the rest\n" <>
+               "file.path\trating\nPlaces/Food/Noma.md\t5\nPlaces/Coffee/Ten Belles.md\t5"
+
+    assert {:ok, near} =
+             call(session, "query_notes", %{near: "48.8584, 2.2945", radius_km: 10, select: []})
+
+    assert [
+             "2 notes",
+             "file.path\tdistance_km\t" <> _,
+             "Places/Coffee/Kitsune.md\t3.25\t" <> _,
+             _
+           ] =
+             String.split(near, "\n")
+
+    assert {:ok, around} =
+             call(session, "query_notes", %{
+               near: "Places/Coffee/Kitsune.md",
+               radius_km: 2.5,
+               select: ["rating"]
+             })
+
+    assert around =~ "Places/Coffee/Kitsune.md\t0.0\t4\nPlaces/Coffee/Ten Belles.md\t2.05\t5"
+
+    assert {:ok, best} = call(session, "query_notes", %{base: "Views/Places.base"})
+
+    assert best ==
+             "2 notes\nfile.path\tfile.basename\tformula.kind\n" <>
+               "Places/Coffee/Ten Belles.md\tTen Belles\tCoffee\nPlaces/Food/Noma.md\tNoma\tFood"
+
+    assert {:ok, "2 notes by formula.kind\n1\tCoffee\n1\tFood"} =
+             call(session, "query_notes", %{base: "Views/Places.base", group_by: "formula.kind"})
+
+    assert {:ok, "4 notes by file.folder\n2\tPlaces/Coffee\n2\tPlaces/Food"} =
+             call(session, "query_notes", %{folder: "Places", group_by: "file.folder"})
+
+    assert {:ok, "No note matches."} = call(session, "query_notes", %{where: "rating > 9"})
+
+    assert {:error, message} = call(session, "query_notes", %{where: "rating >"})
+    assert message =~ "could not be run"
+    assert message =~ "list_properties"
+    assert {:error, message} = call(session, "query_notes", %{near: "Places/Food/Nowhere.md"})
+    assert message =~ "latitude, longitude"
+    assert {:error, message} = call(session, "query_notes", %{base: "Views/Missing.base"})
+    assert message =~ "Nothing exists at that path"
   end
 
   test "problems come back as tool errors an agent can act on", %{session: session} do

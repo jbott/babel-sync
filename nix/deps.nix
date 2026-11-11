@@ -1386,6 +1386,43 @@ let
         in
         drv.override (workarounds.rustlerPrecompiled { } drv);
 
+      yamerl =
+        let
+          version = "0.10.0";
+          drv = buildRebar3 {
+            inherit version;
+            name = "yamerl";
+
+            src = fetchHex {
+              inherit version;
+              pkg = "yamerl";
+              sha256 = "346adb2963f1051dc837a2364e4acf6eb7d80097c0f53cbdc3046ec8ec4b4e6e";
+            };
+          };
+        in
+        drv;
+
+      yaml_elixir =
+        let
+          version = "2.12.2";
+          drv = buildMix {
+            inherit version;
+            name = "yaml_elixir";
+            appConfigPath = ../config;
+
+            src = fetchHex {
+              inherit version;
+              pkg = "yaml_elixir";
+              sha256 = "e7c1b10122f973e6558462d51c39026ba0e14afbc6745318e990ea82cfe9e159";
+            };
+
+            beamDeps = [
+              yamerl
+            ];
+          };
+        in
+        drv;
+
     };
 in
 self

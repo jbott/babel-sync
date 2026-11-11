@@ -12,6 +12,11 @@ defmodule BabelSync.MCP.Server do
   For a long note, file_outline gives its headings and line numbers; read_file then takes \
   an offset and limit.
 
+  Notes carry properties, and query_notes treats a folder as a table of them: filter with an \
+  expression, keep notes within a distance of a point, sort, count by a value, or run a \
+  .base file's own views. list_properties shows which properties exist. Reach for these \
+  before reading notes one by one.
+
   Change a note with edit_file or append_file. They send only the passage you change, need \
   no read first, and merge with what people are typing. write_file is for new notes; \
   replacing a whole existing note needs the rev from your last read, and is refused if the \
@@ -43,6 +48,8 @@ defmodule BabelSync.MCP.Server do
   component(Tools.ListDirectory)
   component(Tools.FindFiles)
   component(Tools.SearchFiles)
+  component(Tools.QueryNotes)
+  component(Tools.ListProperties)
   component(Tools.ReadFile)
   component(Tools.FileOutline)
   component(Tools.WriteFile)

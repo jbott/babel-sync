@@ -77,6 +77,41 @@ defmodule BabelSync.MCP.Format do
       written.changed
   end
 
+  def queried(%{counts: counts, total: total, group: group}) do
+    lines = Enum.map(counts, fn {value, count} -> "#{count}\t#{blank(value)}" end)
+    Enum.join(["#{total} notes by #{group}" | lines], "\n")
+  end
+
+  def queried(%{total: 0}), do: "No note matches."
+
+  def queried(%{columns: columns, rows: rows, total: total}) do
+    shown =
+      if length(rows) < total,
+        do: "#{length(rows)} of #{total} notes; raise limit or narrow the query for the rest",
+        else: counted(total)
+
+    Enum.join([shown, Enum.join(columns, "\t") | Enum.map(rows, &Enum.join(&1, "\t"))], "\n")
+  end
+
+  def properties(%{notes: notes, properties: []}),
+    do: "None of the #{notes} files there has properties."
+
+  def properties(%{notes: notes, properties: properties}) do
+    lines =
+      for property <- properties do
+        "#{property.name}\t#{property.notes} notes\t#{Enum.join(property.kinds, " or ")}\t" <>
+          Enum.join(property.examples, " | ")
+      end
+
+    Enum.join(["#{notes} files" | lines], "\n")
+  end
+
+  defp counted(1), do: "1 note"
+  defp counted(count), do: "#{count} notes"
+
+  defp blank(""), do: "(none)"
+  defp blank(value), do: value
+
   def trash([]), do: "The trash is empty."
 
   def trash(trash) do

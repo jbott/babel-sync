@@ -112,6 +112,7 @@ The agent gets the vault as a file system:
 | --- | --- |
 | `list_vaults`, `list_directory`, `find_files` | Look around: folders with file counts, files by path pattern (`Projects/**/*.md`) |
 | `search_files` | Search note text, plain or regular expression, with line numbers and context; includes what is being typed right now |
+| `query_notes`, `list_properties` | Treat notes as a table of their properties, like an Obsidian base: filter with a Bases expression, keep notes within a distance of a point, sort, count by a value, or run a `.base` file's own filters, formulas and views |
 | `file_outline`, `read_file` | Headings and properties with line numbers, then any line range; image attachments are shown as images |
 | `edit_file`, `append_file` | Replace exact passages, or add to the end of a note or of the section under a heading |
 | `write_file` | Create a note, or replace a whole one |

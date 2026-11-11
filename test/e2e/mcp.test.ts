@@ -26,9 +26,11 @@ test("the official client negotiates, is told how to work, and lists the tools",
     "find_files",
     "list_changes",
     "list_directory",
+    "list_properties",
     "list_trash",
     "list_vaults",
     "move_file",
+    "query_notes",
     "read_file",
     "restore_file",
     "search_files",
@@ -81,6 +83,8 @@ test("an agent works a vault like a file system", async () => {
 
   assert.equal((await agent.call("search_files", { query: "TRAIN" })).text, "Plans/Old/2019.md\n1: went by train\n\nPlans/trip.md\n4: - book trains 😀");
   assert.equal((await agent.call("search_files", { query: "^- \\w+$", regex: true, glob: "Plans/*.md" })).text, "Plans/trip.md\n5: - pack");
+  assert.equal((await agent.call("query_notes", { folder: "Plans", where: 'file.name.contains("trip")', select: ["file.ext"], limit: 5 })).text, "1 note\nfile.path\tfile.ext\nPlans/trip.md\tmd");
+  assert.equal((await agent.call("query_notes", { near: "48.85, 2.35", radius_km: 5 })).text, "No note matches.");
 
   const careless = await agent.call("write_file", { path: "Plans/trip.md", content: "gone" });
   assert.equal(careless.failed, true);
