@@ -438,6 +438,31 @@ async function run() {
   await eventually("deleting the empty folder in one Obsidian removes it from the other", async () => !(await exists(laptop, "Made on purpose")), 12000);
   const build = await laptop.page.evaluate(() => app.plugins.plugins.babelsync.build);
   check("the plugin knows which build it is running", /^[0-9a-f]{8}$/.test(build), build);
+  await laptop.page.evaluate(async () => {
+    await app.vault.createBinary("Pasted image 1.jpg", new Uint8Array([9, 8, 7, 6]).buffer);
+  });
+  await eventually("a pasted image reaches the other Obsidian", () => exists(desk, "Pasted image 1.jpg"), 12000);
+  await laptop.page.evaluate(async () => {
+    await app.vault.createFolder("Pasted");
+    await app.fileManager.renameFile(app.vault.getAbstractFileByPath("Pasted image 1.jpg"), "Pasted/Pasted image 1.jpg");
+  });
+  await eventually("moving it into a new attachments folder moves it on the other", async () => (await exists(desk, "Pasted/Pasted image 1.jpg")) && !(await exists(desk, "Pasted image 1.jpg")), 12000);
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  const copies = await laptop.page.evaluate(() => app.vault.getFiles().map((file) => file.path).filter((path) => path.includes("Pasted image")));
+  check("and the move makes no conflict copies", copies.length === 1 && copies[0] === "Pasted/Pasted image 1.jpg", copies.join(" | "));
+
+  await laptop.page.evaluate(async () => {
+    window.oldBabelSync = app.plugins.plugins.babelsync;
+    await app.commands.executeCommandById("babelsync:reload");
+  });
+  await eventually("after the reload command the new copy of the plugin syncs", () => laptop.page.evaluate(() => app.plugins.plugins.babelsync !== window.oldBabelSync && app.plugins.plugins.babelsync?.engine?.status === "synced"), 20000);
+  const copiesRunning = await laptop.page.evaluate(async () => {
+    const held = (await navigator.locks.query()).held.filter((lock) => lock.name.startsWith("babelsync:"));
+    return { held: held.length, oldStopped: window.oldBabelSync.engine === null, log: app.plugins.plugins.babelsync.debugLog() };
+  });
+  check("only one copy of the plugin holds the vault, and the old one has stopped", copiesRunning.held === 1 && copiesRunning.oldStopped, JSON.stringify({ held: copiesRunning.held, oldStopped: copiesRunning.oldStopped }));
+  check("the debug log survives the reload and tells the copies apart", /plugin unloaded/.test(copiesRunning.log) && new Set(copiesRunning.log.match(/ \[[0-9a-f]{4}\] /g)).size >= 2, copiesRunning.log.split("\n").slice(-6).join(" | "));
+
   await eventually("the laptop settles once nothing is left to send", () => laptop.page.evaluate(() => app.plugins.plugins.babelsync.engine.status === "synced"), 15000);
   const stamp = await laptop.page.evaluate(() => {
     const plugin = app.plugins.plugins.babelsync;

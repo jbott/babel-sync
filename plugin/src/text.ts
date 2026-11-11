@@ -43,7 +43,7 @@ export function conflictPath(path: string, device: string, now: Date): string {
   const folder = slash === -1 ? "" : path.slice(0, slash + 1);
   const name = slash === -1 ? path : path.slice(slash + 1);
   const dot = name.lastIndexOf(".");
-  const stem = dot <= 0 ? name : name.slice(0, dot);
+  const stem = (dot <= 0 ? name : name.slice(0, dot)).replace(/( \(conflict [^()]*\)( \d+)?)+$/, "");
   const extension = dot <= 0 ? "" : name.slice(dot);
   const stamp = now.toISOString().slice(0, 19).replace("T", " ").replace(/:/g, "");
   return `${folder}${stem} (conflict ${device} ${stamp})${extension}`;

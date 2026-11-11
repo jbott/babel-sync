@@ -38,7 +38,8 @@ const LABELS: Record<Status, string> = {
 
 declare const BABELSYNC_REVISION: string;
 
-const MAX_JOURNAL_LINES = 400;
+const MAX_JOURNAL_LINES = 600;
+const JOURNAL_SAVE_MS = 1_000;
 
 export default class BabelSyncPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
@@ -59,8 +60,15 @@ export default class BabelSyncPlugin extends Plugin {
   private running = "";
   private transition: Promise<void> = Promise.resolve();
   private journal: string[] = [];
+  private journalSave: number | null = null;
+  private instance = Math.random().toString(16).slice(2, 6);
+  private retired = false;
+  private release: (() => void) | null = null;
 
   async onload(): Promise<void> {
+    this.restoreJournal();
+    this.record(`plugin loaded, commit ${this.revision}`);
+    this.claimVault();
     this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) as Partial<Settings> | null) };
     this.fs = new ObsidianFs(this.app, () => this.settings.syncConfig);
     this.collab = new Collab(
@@ -107,8 +115,18 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.registerObsidianProtocolHandler("babelsync-connect", (params) => {
       const invitation = readInvitation(params);
-      if (!invitation) return void new Notice("Babel Sync: that connect link is not valid.");
+      if (!invitation) return void this.notify("Babel Sync: that connect link is not valid.");
       new ConnectModal(this.app, this, invitation).open();
+    });
+
+    this.addCommand({ id: "reload", name: "Reload plugin", callback: () => void this.reload() });
+    this.addCommand({
+      id: "copy-debug-log",
+      name: "Copy debug log",
+      callback: async () => {
+        await navigator.clipboard.writeText(this.debugLog());
+        this.notify("Babel Sync: debug log copied.");
+      },
     });
 
     this.app.workspace.onLayoutReady(() => void this.restart());
@@ -137,7 +155,7 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.updated = true;
     this.onStatus?.(this.status);
-    new Notice("Babel Sync was updated. Open its settings and tap Reload to use the new version.", 15_000);
+    this.notify("Babel Sync was updated. Tap here to reload it and use the new version.", 30_000, () => void this.reload());
   }
 
   async adopt({ server, vaultId, vaultName }: Invitation): Promise<void> {
@@ -197,15 +215,15 @@ export default class BabelSyncPlugin extends Plugin {
 
   async chooseVault(): Promise<void> {
     const reply = await this.remoteVaults();
-    if (reply.kind === "signed-out") return void new Notice("Babel Sync: sign in first.");
-    if (reply.kind === "failed") return void new Notice(`Babel Sync: ${reply.message}`);
+    if (reply.kind === "signed-out") return void this.notify("Babel Sync: sign in first.");
+    if (reply.kind === "failed") return void this.notify(`Babel Sync: ${reply.message}`);
 
     const server = this.settings.serverUrl;
     const confirm = (vault: RemoteVault) =>
       new ConnectModal(this.app, this, { server, vaultId: vault.id, vaultName: vault.name, files: vault.files }).open();
 
     if (reply.vaults.length === 0) {
-      new Notice("Babel Sync: there are no vaults on the server yet. Create one in the web app, then choose a vault from the plugin's settings.", 12_000);
+      this.notify("Babel Sync: there are no vaults on the server yet. Create one in the web app, then choose a vault from the plugin's settings.", 12_000);
     } else if (reply.vaults.length === 1) {
       confirm(reply.vaults[0]);
     } else {
@@ -229,7 +247,7 @@ export default class BabelSyncPlugin extends Plugin {
     const { serverUrl, deviceName } = this.settings;
 
     if (!serverUrl) {
-      new Notice("Enter the server address first.");
+      this.notify("Enter the server address first.");
       return null;
     }
 
@@ -242,7 +260,7 @@ export default class BabelSyncPlugin extends Plugin {
       await this.saveSettings();
       return url;
     } catch (error) {
-      new Notice(`Babel Sync: ${describe(error)}`);
+      this.notify(`Babel Sync: ${describe(error)}`);
       return null;
     }
   }
@@ -273,7 +291,7 @@ export default class BabelSyncPlugin extends Plugin {
         this.settings.tokens = fresh;
         await this.saveSettings();
         this.record(fresh ? "sign-in renewed" : "the server refused to renew the sign-in; signed out");
-        if (!fresh) new Notice("Babel Sync was signed out. Sign in again from its settings.");
+        if (!fresh) this.notify("Babel Sync was signed out. Sign in again from its settings.");
       })
       .finally(() => {
         this.refreshing = null;
@@ -288,22 +306,73 @@ export default class BabelSyncPlugin extends Plugin {
   private async finishSignIn(params: Callback): Promise<void> {
     const pending = this.settings.pendingSignIn;
     this.settings.pendingSignIn = null;
-    if (!pending) return void new Notice("Babel Sync: no sign-in is in progress.");
+    if (!pending) return void this.notify("Babel Sync: no sign-in is in progress.");
 
     try {
       this.settings.tokens = await finishAuthorization(nativeFetch, pending, params);
       await this.saveSettings();
-      new Notice("Babel Sync is signed in.");
+      this.notify("Babel Sync is signed in.");
       await this.restart(true);
       if (!this.settings.vaultId) await this.chooseVault();
     } catch (error) {
       await this.saveSettings();
-      new Notice(`Babel Sync: ${describe(error)}`);
+      this.notify(`Babel Sync: ${describe(error)}`);
     }
   }
 
   onunload(): void {
+    this.record("plugin unloaded");
+    this.retire();
+    this.release?.();
+  }
+
+  private claimVault(): void {
+    const locks = (navigator as Navigator & { locks?: LockManager }).locks;
+    if (!locks) return;
+
+    const held = new Promise<void>((resolve) => (this.release = resolve));
+    locks.request(`babelsync:${this.vaultKey()}`, { steal: true }, () => held).catch(() => {
+      if (this.retired) return;
+      this.record("another copy of the plugin took over this vault; this one has stopped");
+      this.retire();
+    });
+  }
+
+  private retire(): void {
+    this.retired = true;
+    this.saveJournal();
+    void this.engine?.stop().catch(() => {});
+    void this.client?.disconnect();
     void this.shutdown();
+  }
+
+  private vaultKey(): string {
+    return (this.app as unknown as { appId?: string }).appId ?? this.app.vault.getName();
+  }
+
+  private notify(message: string, timeout?: number, onTap?: () => void): void {
+    this.record(`shown: ${message}`);
+    const notice = new Notice(message, timeout);
+    if (onTap) notice.noticeEl.addEventListener("click", onTap);
+  }
+
+  private restoreJournal(): void {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(`babelsync-journal:${this.vaultKey()}`) ?? "[]");
+      if (Array.isArray(saved)) this.journal = saved.filter((line) => typeof line === "string").slice(-MAX_JOURNAL_LINES);
+    } catch {
+      this.journal = [];
+    }
+  }
+
+  private saveJournal(): void {
+    if (this.journalSave !== null) window.clearTimeout(this.journalSave);
+    this.journalSave = null;
+    try {
+      window.localStorage.setItem(`babelsync-journal:${this.vaultKey()}`, JSON.stringify(this.journal));
+    } catch {
+      return;
+    }
   }
 
   async saveSettings(): Promise<void> {
@@ -326,7 +395,7 @@ export default class BabelSyncPlugin extends Plugin {
       await store.clear();
       await store.close();
       await this.launch();
-      new Notice("Babel Sync is comparing this vault with the server.");
+      this.notify("Babel Sync is comparing this vault with the server.");
     });
   }
 
@@ -344,6 +413,7 @@ export default class BabelSyncPlugin extends Plugin {
 
   private async launch(): Promise<void> {
     const { serverUrl, vaultId, deviceName } = this.settings;
+    if (this.retired) return;
     this.running = this.fingerprint();
     if (!serverUrl || !vaultId) return this.show("offline");
 
@@ -374,11 +444,16 @@ export default class BabelSyncPlugin extends Plugin {
       this.rebind();
     });
     client.socket.onError(() => void this.accessToken().catch(() => {}));
+    client.socket.onOpen(() => this.record("connection opened"));
+    client.socket.onClose((event: unknown) => {
+      const { code, reason } = (event ?? {}) as { code?: number; reason?: string };
+      this.record(`connection closed${code ? ` (${code}${reason ? ` ${reason}` : ""})` : ""}`);
+    });
     engine.on("log", (line) => this.record(line));
     engine.on("error", (reason) => {
       this.record(`error: ${reason}`);
       this.lastError = reason;
-      new Notice(`Babel Sync: ${reason}`);
+      this.notify(`Babel Sync: ${reason}`);
     });
     engine.on("progress", () => this.onStatus?.(this.status));
 
@@ -449,8 +524,9 @@ export default class BabelSyncPlugin extends Plugin {
   }
 
   private record(line: string): void {
-    this.journal.push(`${new Date().toISOString()} ${line}`);
+    this.journal.push(`${new Date().toISOString()} [${this.instance}] ${line}`);
     if (this.journal.length > MAX_JOURNAL_LINES) this.journal.shift();
+    this.journalSave ??= window.setTimeout(() => this.saveJournal(), JOURNAL_SAVE_MS);
   }
 
   private show(status: Status): void {

@@ -3,6 +3,7 @@ import { after, test } from "node:test";
 import { BabelSyncClient } from "@babelsync/core";
 import { SyncEngine } from "../src/engine.ts";
 import { MemoryFs, MemoryStore } from "../src/fs.ts";
+import { conflictPath } from "../src/text.ts";
 
 const baseUrl = process.env.BABELSYNC_URL!;
 const token = process.env.BABELSYNC_TOKEN!;
@@ -361,6 +362,31 @@ test("a note renamed over one that was deleted while the device was off replaces
   await eventually(() => paths(laptop).join() === "old.md", () => `the laptop to hold only old.md, it has ${paths(laptop).join()}`);
   assert.equal(await text(laptop, "old.md"), "draft\n");
   assert.deepEqual(paths(back), ["old.md"]);
+});
+
+test("an attachment moved into a new folder stays one file, and a conflict copy never grows a second suffix", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await phone.fs.writeBinary("Pasted image.jpg", new Uint8Array([7, 7, 7]));
+  phone.engine.localChanged("Pasted image.jpg");
+  await eventually(async () => (await laptop.fs.stat("Pasted image.jpg")) !== null, "the image on the laptop");
+
+  await phone.fs.makeFolder("Attachments");
+  phone.engine.localFolderCreated("Attachments");
+  await phone.fs.rename("Pasted image.jpg", "Attachments/Pasted image.jpg");
+  phone.engine.localRenamed("Pasted image.jpg", "Attachments/Pasted image.jpg");
+  phone.engine.localChanged("Attachments/Pasted image.jpg");
+  phone.engine.rescan();
+
+  await eventually(() => paths(laptop).join() === "Attachments/Pasted image.jpg", () => `the laptop to hold only the moved image, it has ${paths(laptop).join()}`);
+  await eventually(() => phone.engine.status === "synced", "the phone to settle");
+  assert.deepEqual(paths(phone), ["Attachments/Pasted image.jpg"]);
+
+  const once = conflictPath("Attachments/Pasted image.jpg", "Phone", new Date("2026-11-11T20:31:01Z"));
+  assert.equal(once, "Attachments/Pasted image (conflict Phone 2026-11-11 203101).jpg");
+  assert.equal(conflictPath(once, "Phone", new Date("2026-11-11T20:32:48Z")), "Attachments/Pasted image (conflict Phone 2026-11-11 203248).jpg");
+  assert.equal(conflictPath("a (conflict Phone 2026-11-11 203101) 2.md", "Desk", new Date("2026-11-11T20:32:48Z")), "a (conflict Desk 2026-11-11 203248).md");
 });
 
 test("attachments over the device's size limit are skipped without being deleted", async () => {

@@ -54,6 +54,7 @@ const LONGEST_RETRY_MS = 300_000;
 const NEVER_CONFIRMED = -1;
 const UNCONDITIONAL = null;
 const SETTLE_MS = 1_000;
+const STOP_GRACE_MS = 3_000;
 const SETTLING_PASSES = 5;
 const QUIETLY = true;
 
@@ -240,7 +241,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (this.settling) clearTimeout(this.settling);
     this.retry = null;
     this.settling = null;
-    await this.idle();
+    await Promise.race([this.idle(), new Promise((resolve) => setTimeout(resolve, STOP_GRACE_MS))]);
     for (const live of this.live.values()) {
       if (live.timer) clearTimeout(live.timer);
       live.stop();
@@ -336,6 +337,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     this.queue = result.then(
       () => this.finished(),
       (error: unknown) => {
+        if (this.stopped) return this.finished();
         this.emit("log", `failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
         this.emit("error", error instanceof Error ? error.message : String(error));
         this.fallBehind();
@@ -609,9 +611,10 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     if (remote.path !== local.path && !local.moved) {
       await this.vacate(remote.path);
-      if (await fs.stat(remote.path)) await this.pushLocal(await this.setAside(remote.path));
       const left = local.path;
       const moved = (await fs.stat(left)) !== null;
+      const alreadyThere = !moved && (await this.diskHash({ ...local, path: remote.path })) === local.hash;
+      if (!alreadyThere && (await fs.stat(remote.path))) await this.pushLocal(await this.setAside(remote.path));
       if (moved) await fs.rename(left, remote.path);
       this.byPath.delete(left);
       local.path = remote.path;
