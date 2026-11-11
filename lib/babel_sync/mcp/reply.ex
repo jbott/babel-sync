@@ -46,7 +46,7 @@ defmodule BabelSync.MCP.Reply do
   defp message(:not_found),
     do: "Nothing exists at that path. Call list_directory or find_files to see what does."
 
-  defp message(:not_a_note), do: "That path is an attachment or folder, not a text note."
+  defp message(:not_a_note), do: "That path is a folder or a file that is not text."
   defp message(:not_a_folder), do: "That path is a file, not a folder."
   defp message(:exists), do: "A file already exists at the destination path." <> @unchanged
   defp message(:invalid_path), do: "That is not a valid vault path."

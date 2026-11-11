@@ -1,6 +1,6 @@
 defmodule BabelSync.MCP.Tools.WriteFile do
   @moduledoc """
-  Creates a note with the given text. To replace the whole text of an existing note, pass if_rev with the rev from your last read, so the write is refused if someone changed the note since, or overwrite to replace it regardless. For any smaller change use edit_file or append_file: they send only the changed passage and never undo what others typed.
+  Creates a file with the given text: a Markdown note, or any other text file such as .base, .canvas, .csv or .json. To replace the whole text of an existing note, pass if_rev with the rev from your last read, so the write is refused if someone changed the note since, or overwrite to replace it regardless. For any smaller change use edit_file or append_file: they send only the changed passage and never undo what others typed.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -19,7 +19,7 @@ defmodule BabelSync.MCP.Tools.WriteFile do
 
     field :content, :string,
       required: true,
-      description: "The complete Markdown text of the note."
+      description: "The complete text of the file."
 
     field :if_rev, :string,
       description: "Replace an existing note only if it is still at this rev."

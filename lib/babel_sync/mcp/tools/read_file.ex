@@ -1,6 +1,6 @@
 defmodule BabelSync.MCP.Tools.ReadFile do
   @moduledoc """
-  Reads a note as it is right now, including edits people are making, or shows an image attachment. The first line of the reply gives the line range, the total and the note's rev; the text follows. For a long note, call file_outline first and read only the lines you need. You do not need to read a note before edit_file or append_file.
+  Reads a note or any other text file as it is right now, including edits people are making, or shows an image attachment. The first line of the reply gives the line range, the total and the note's rev; the text follows. For a long note, call file_outline first and read only the lines you need. You do not need to read a note before edit_file or append_file.
   """
 
   use Anubis.Server.Component, type: :tool

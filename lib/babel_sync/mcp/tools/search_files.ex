@@ -1,6 +1,6 @@
 defmodule BabelSync.MCP.Tools.SearchFiles do
   @moduledoc """
-  Searches the text of every note, including what people are typing right now, and returns matching lines with their line numbers. Matches one line at a time. Follow up with read_file and an offset to see more of a note.
+  Searches the text of every note and of other text files up to 512 KiB, including what people are typing right now, and returns matching lines with their line numbers. Matches one line at a time. Follow up with read_file and an offset to see more of a note.
   """
 
   use Anubis.Server.Component, type: :tool

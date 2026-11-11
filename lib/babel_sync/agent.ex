@@ -50,6 +50,9 @@ defmodule BabelSync.Agent do
   @searched_files 50
   @search_batch 200
   @image_bytes 4_000_000
+  @text_bytes 2 * 1024 * 1024
+  @searched_bytes 512 * 1024
+  @never_text ~w(image/ audio/ video/ font/ application/pdf application/zip)
   @recent_changes 50
 
   @spec list_vaults(Scope.t()) :: [%{id: String.t(), name: String.t(), role: atom()}]
@@ -100,14 +103,18 @@ defmodule BabelSync.Agent do
 
       found =
         for(
-          %Entry{kind: :doc} = entry <- entries(vault),
+          %Entry{} = entry <- entries(vault),
+          searchable?(entry),
           Regex.match?(glob, entry.path),
           do: entry
         )
         |> Stream.chunk_every(@search_batch)
         |> Stream.flat_map(fn batch ->
-          texts = Sync.texts(Enum.map(batch, & &1.id))
-          Enum.map(batch, &%{path: &1.path, matches: Text.search(texts[&1.id], pattern, context)})
+          notes = Sync.texts(for %Entry{kind: :doc, id: id} <- batch, do: id)
+
+          for entry <- batch, {:ok, text} <- [searched(entry, notes)] do
+            %{path: entry.path, matches: Text.search(text, pattern, context)}
+          end
         end)
         |> Stream.reject(&(&1.matches == []))
         |> Enum.take(@searched_files)
@@ -120,20 +127,16 @@ defmodule BabelSync.Agent do
   def read_file(scope, vault, path, opts \\ []) do
     with {:ok, vault} <- vault(scope, vault, :read),
          {:ok, entry} <- entry(vault, path) do
-      case entry do
-        %Entry{kind: :doc} ->
-          with {:ok, text} <- text(entry, opts[:version]) do
-            part =
-              Text.slice(text, max(opts[:offset] || 1, 1), max(opts[:limit] || @read_lines, 1))
+      case text(entry, opts[:version]) do
+        {:ok, text} ->
+          part = Text.slice(text, max(opts[:offset] || 1, 1), max(opts[:limit] || @read_lines, 1))
+          {:ok, Map.merge(part, %{path: entry.path, kind: :note, rev: Text.rev(text)})}
 
-            {:ok, Map.merge(part, %{path: entry.path, kind: :note, rev: Text.rev(text)})}
-          end
-
-        %Entry{kind: :blob} ->
+        {:error, :not_a_note} when entry.kind == :blob ->
           {:ok, attachment(entry)}
 
-        %Entry{kind: :folder} ->
-          {:error, :not_a_note}
+        refused ->
+          refused
       end
     end
   end
@@ -141,9 +144,8 @@ defmodule BabelSync.Agent do
   @spec outline(Scope.t(), vault_reference(), String.t()) :: {:ok, map()} | error()
   def outline(scope, vault, path) do
     with {:ok, vault} <- vault(scope, vault, :read),
-         {:ok, entry} <- note(vault, path) do
-      text = Sync.text(entry.id)
-
+         {:ok, entry} <- note(vault, path),
+         {:ok, text} <- content(entry) do
       {:ok,
        text
        |> Text.outline()
@@ -160,19 +162,30 @@ defmodule BabelSync.Agent do
     with {:ok, vault} <- vault(scope, vault, :write),
          :ok <- reachable(vault, path) do
       case Vaults.get_entry_by_path(vault.id, path) do
-        %Entry{kind: :doc} = entry ->
-          if opts[:if_rev] || opts[:overwrite] do
-            written(:updated, entry, rewrite(scope, entry, opts[:if_rev], replace))
-          else
-            {:error, :unguarded}
-          end
-
-        %Entry{} ->
+        %Entry{kind: :folder} ->
           {:error, :not_a_note}
 
+        %Entry{} = entry ->
+          cond do
+            opts[:if_rev] ->
+              written(:updated, entry, rewrite(scope, entry, opts[:if_rev], replace))
+
+            opts[:overwrite] ->
+              written(:updated, entry, overwrite(scope, entry, content))
+
+            true ->
+              {:error, :unguarded}
+          end
+
         nil ->
-          with {:ok, entry} <- create(vault, path) do
-            written(:created, entry, rewrite(scope, entry, nil, replace))
+          if Vaults.Path.kind_for(path) == :doc do
+            with {:ok, entry} <- create(vault, path) do
+              written(:created, entry, rewrite(scope, entry, nil, replace))
+            end
+          else
+            with {:ok, entry} <- attach(vault, path, content) do
+              written(:created, entry, {:ok, "", content})
+            end
           end
       end
     end
@@ -205,11 +218,11 @@ defmodule BabelSync.Agent do
     with {:ok, vault} <- vault(scope, vault, :write),
          :ok <- reachable(vault, path) do
       case Vaults.get_entry_by_path(vault.id, path) do
-        %Entry{kind: :doc} = entry ->
-          written(:updated, entry, rewrite(scope, entry, nil, &Text.append(&1, content, heading)))
-
-        %Entry{} ->
+        %Entry{kind: :folder} ->
           {:error, :not_a_note}
+
+        %Entry{} = entry ->
+          written(:updated, entry, rewrite(scope, entry, nil, &Text.append(&1, content, heading)))
 
         nil when is_nil(heading) ->
           write_file(scope, vault.id, path, content)
@@ -386,11 +399,41 @@ defmodule BabelSync.Agent do
   end
 
   defp note(vault, path) do
-    case entry(vault, path) do
-      {:ok, %Entry{kind: :doc} = entry} -> {:ok, entry}
-      {:ok, %Entry{}} -> {:error, :not_a_note}
-      error -> error
+    with {:ok, entry} <- entry(vault, path),
+         {:ok, _text} <- content(entry) do
+      {:ok, entry}
     end
+  end
+
+  defp content(%Entry{kind: :doc} = entry), do: {:ok, Sync.text(entry.id)}
+
+  defp content(%Entry{kind: :blob, size: size, blob_hash: hash} = entry)
+       when size <= @text_bytes and is_binary(hash) do
+    with %Blobs.Blob{} = blob <- Blobs.get(entry.vault_id, hash),
+         bytes = Blobs.read(blob),
+         true <- String.valid?(bytes) and not String.contains?(bytes, <<0>>) do
+      {:ok, Sync.normalize(bytes)}
+    else
+      _binary -> {:error, :not_a_note}
+    end
+  end
+
+  defp content(%Entry{}), do: {:error, :not_a_note}
+
+  defp searched(%Entry{kind: :doc, id: id}, notes), do: Map.fetch(notes, id)
+  defp searched(%Entry{} = entry, _notes), do: content(entry)
+
+  defp searchable?(%Entry{kind: :doc}), do: true
+
+  defp searchable?(%Entry{kind: :blob, size: size, path: path}),
+    do: size <= @searched_bytes and may_hold_text(path) == :ok
+
+  defp searchable?(%Entry{}), do: false
+
+  defp may_hold_text(path) do
+    if String.starts_with?(MIME.from_path(path), @never_text),
+      do: {:error, :not_a_note},
+      else: :ok
   end
 
   defp named(vault, path) do
@@ -474,7 +517,8 @@ defmodule BabelSync.Agent do
     end
   end
 
-  defp text(entry, nil), do: {:ok, Sync.text(entry.id)}
+  defp text(entry, nil), do: content(entry)
+  defp text(%Entry{kind: kind}, _version_id) when kind != :doc, do: {:error, :not_found}
 
   defp text(entry, version_id) do
     case Sync.get_version(entry.id, version_id) do
@@ -509,14 +553,56 @@ defmodule BabelSync.Agent do
     end
   end
 
-  defp rewrite(%Scope{user: user}, %Entry{id: id}, if_rev, change) do
-    guarded = fn current ->
+  defp attach(vault, path, content) do
+    with :ok <- may_hold_text(path),
+         {:ok, blob} <- Blobs.put(vault.id, content) do
+      attrs = %{path: path, kind: :blob, blob_hash: blob.hash, size: blob.size}
+
+      case Vaults.create_entry(vault.id, attrs) do
+        {:ok, entry} -> {:ok, entry}
+        {:error, {:exists, _entry}} -> {:error, :exists}
+        {:error, %Ecto.Changeset{}} -> {:error, :invalid_path}
+      end
+    end
+  end
+
+  defp overwrite(scope, %Entry{kind: :doc} = entry, content),
+    do: rewrite(scope, entry, nil, fn _current -> {:ok, content} end)
+
+  defp overwrite(_scope, %Entry{kind: :blob} = entry, content) do
+    with {:ok, old} <- content(entry),
+         :ok <- store(entry, content) do
+      {:ok, old, content}
+    end
+  end
+
+  defp store(%Entry{} = entry, content) do
+    with {:ok, blob} <- Blobs.put(entry.vault_id, content),
+         {:ok, _entry} <- Vaults.update_entry(entry, %{blob_hash: blob.hash, size: blob.size}) do
+      :ok
+    end
+  end
+
+  defp guarded(if_rev, change) do
+    fn current ->
       current_rev = Text.rev(current)
 
       if if_rev in [nil, "", current_rev],
         do: change.(current),
         else: {:error, {:stale, current_rev}}
     end
+  end
+
+  defp rewrite(%Scope{}, %Entry{kind: :blob} = entry, if_rev, change) do
+    with {:ok, old} <- content(entry),
+         {:ok, new} <- guarded(if_rev, change).(old),
+         :ok <- store(entry, new) do
+      {:ok, old, new}
+    end
+  end
+
+  defp rewrite(%Scope{user: user}, %Entry{id: id}, if_rev, change) do
+    guarded = guarded(if_rev, change)
 
     with {:ok, old, new} <- Sync.rewrite_text(id, guarded, author_id: user.id, origin: :agent),
          :ok <- Sync.flush(id) do

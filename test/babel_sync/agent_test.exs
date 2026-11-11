@@ -562,6 +562,78 @@ defmodule BabelSync.AgentTest do
     assert read(ctx.scope, "a.md") == "secret"
   end
 
+  describe "text files that are not notes" do
+    test "are created, read, searched, edited and replaced like notes", %{
+      scope: scope,
+      vault: vault
+    } do
+      csv = "name,city\nAda,London\n"
+
+      assert {:ok, %{outcome: :created, lines: 2}} =
+               Agent.write_file(scope, nil, "Data/people.csv", csv)
+
+      assert %{kind: :blob} = Vaults.get_entry_by_path(vault.id, "Data/people.csv")
+
+      assert {:ok, %{kind: :note, text: ^csv, rev: rev}} =
+               Agent.read_file(scope, nil, "Data/people.csv")
+
+      assert {:ok, [%{path: "Data/people.csv", matches: [%{line: 2}]}]} =
+               Agent.search_files(scope, nil, "london")
+
+      edit = [%{old_text: "London", new_text: "Paris"}]
+
+      assert {:ok, %{outcome: :updated}} =
+               Agent.edit_file(scope, nil, "Data/people.csv", edit, if_rev: rev)
+
+      assert {:error, {:stale, _rev}} =
+               Agent.edit_file(scope, nil, "Data/people.csv", edit, if_rev: rev)
+
+      assert {:ok, %{outcome: :updated}} =
+               Agent.append_file(scope, nil, "Data/people.csv", "Bo,Oslo\n")
+
+      assert read(scope, "Data/people.csv") == "name,city\nAda,Paris\nBo,Oslo\n"
+
+      assert {:error, :unguarded} = Agent.write_file(scope, nil, "Data/people.csv", "x")
+
+      assert {:ok, %{outcome: :updated}} =
+               Agent.write_file(scope, nil, "Data/people.csv", "x\n", overwrite: true)
+
+      assert read(scope, "Data/people.csv") == "x\n"
+
+      entry = Vaults.get_entry_by_path(vault.id, "Data/people.csv")
+      assert length(Vaults.list_blob_versions(entry.id)) >= 3
+    end
+
+    test "an attachment a device uploaded is text when its bytes are", %{
+      scope: scope,
+      vault: vault
+    } do
+      {:ok, text} = Blobs.put(vault.id, ~s({"a": 1}\r\n))
+      {:ok, binary} = Blobs.put(vault.id, <<0, 255, 1, 2>>)
+      entry(vault, "config.json", %{blob_hash: text.hash, size: text.size})
+      entry(vault, "blob.bin", %{blob_hash: binary.hash, size: binary.size})
+
+      assert read(scope, "config.json") == ~s({"a": 1}\n)
+      assert {:ok, %{kind: :attachment, image: nil}} = Agent.read_file(scope, nil, "blob.bin")
+      assert {:error, :not_a_note} = Agent.append_file(scope, nil, "blob.bin", "x")
+
+      assert {:error, :not_a_note} =
+               Agent.write_file(scope, nil, "blob.bin", "x", overwrite: true)
+    end
+
+    test "Obsidian bases and canvases are notes that merge", %{scope: scope, vault: vault} do
+      assert {:ok, %{outcome: :created}} =
+               Agent.write_file(scope, nil, "Places/Restaurants.base", "views:\n")
+
+      assert %{kind: :doc} = Vaults.get_entry_by_path(vault.id, "Places/Restaurants.base")
+
+      assert {:ok, %{outcome: :updated}} =
+               Agent.append_file(scope, nil, "Places/Restaurants.base", "  - type: table\n")
+
+      assert read(scope, "Places/Restaurants.base") == "views:\n  - type: table\n"
+    end
+  end
+
   test "attachments cannot be edited as notes", %{scope: scope, vault: vault} do
     entry(vault, "photo.png")
     edit = [%{old_text: "x", new_text: "y"}]

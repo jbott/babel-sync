@@ -1,6 +1,6 @@
 defmodule BabelSync.MCP.Tools.EditFile do
   @moduledoc """
-  Changes passages of a note in place. Each edit replaces one exact passage with new text; the passages are found in the note as it is at that moment, so no read is needed first and people typing elsewhere in the note are not disturbed. All edits apply together or none do. The reply shows the changed lines and the new rev.
+  Changes passages of a note, or of any other text file, in place. Each edit replaces one exact passage with new text; the passages are found in the note as it is at that moment, so no read is needed first and people typing elsewhere in the note are not disturbed. All edits apply together or none do. The reply shows the changed lines and the new rev.
   """
 
   use Anubis.Server.Component, type: :tool
