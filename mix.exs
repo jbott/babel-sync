@@ -54,6 +54,7 @@ defmodule BabelSync.MixProject do
       {:gen_smtp, "~> 1.3"},
       {:rustler, ">= 0.0.0", optional: true},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:deps_nix, "~> 3.2", only: :dev, runtime: false},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.2.0"},

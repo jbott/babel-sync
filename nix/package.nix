@@ -1,5 +1,6 @@
 {
   lib,
+  callPackages,
   beamPackages,
   rustPlatform,
   cargo,
@@ -10,6 +11,7 @@
   tailwindcss_4,
   esbuild,
   removeReferencesTo,
+  revision ? "unknown",
 }:
 
 let
@@ -22,12 +24,6 @@ let
       fileset = lib.fileset.unions files;
     };
 
-  manifest = [
-    ../mix.exs
-    ../mix.lock
-    ../config
-  ];
-
   packages = [
     ../package.json
     ../package-lock.json
@@ -36,64 +32,92 @@ let
     ../plugin/package.json
   ];
 
-  mixFodDeps = beamPackages.fetchMixDeps {
-    pname = "babel_sync-mix-deps";
-    inherit version;
-    src = sources manifest;
-    hash = "sha256-JhrzLRYxfjoJToCPtFWfdeBFyVbnY0TmIoiSlpMOSEA=";
-  };
-
-  crates =
+  builtFromVendoredCrates =
     {
-      name,
-      path,
+      crate,
       hash,
+      env ? { },
+      jason,
     }:
-    rustPlatform.fetchCargoVendor {
-      name = "${name}-crates";
-      src = "${mixFodDeps}/${path}";
-      inherit hash;
-    };
+    dependency:
+    let
+      crates = rustPlatform.fetchCargoVendor {
+        name = "${crate}-crates";
+        src = "${dependency.src}/native/${crate}";
+        inherit hash;
+      };
+    in
+    dependency.override (inherited: {
+      beamDeps = inherited.beamDeps ++ [ jason ];
+      mixCompileFlags = [ "--no-prune-code-paths" ];
 
-  nifs = [
-    {
-      path = "y_ex/native/yex";
-      vendor = crates {
-        name = "yex";
-        path = "y_ex/native/yex";
+      nativeBuildInputs = [
+        cargo
+        rustc
+        removeReferencesTo
+      ];
+
+      env = env // {
+        CARGO_NET_OFFLINE = "true";
+      };
+
+      preConfigure = ''
+        export CARGO_HOME="$TMPDIR/cargo"
+        mkdir -p native/${crate}/.cargo
+        substitute ${crates}/.cargo/config.toml native/${crate}/.cargo/config.toml \
+          --subst-var-by vendor ${crates}
+      '';
+
+      preBuild = "";
+
+      postInstall = ''
+        remove-references-to -t ${crates} $out/lib/erlang/lib/*/priv/native/*.so
+      '';
+
+      passthru = { inherit crates; };
+    });
+
+  mixNixDeps = callPackages ./deps.nix {
+    inherit beamPackages;
+
+    overrides = final: previous: {
+      y_ex = builtFromVendoredCrates {
+        inherit (final) jason;
+        crate = "yex";
         hash = "sha256-y4kmCbkjrZbwGHXcDH+tl8uk3Z+79TDfDA/pBiPKJdc=";
-      };
-    }
-    {
-      path = "mdex_native/native/mdex_native_nif";
-      vendor = crates {
-        name = "mdex_native_nif";
-        path = "mdex_native/native/mdex_native_nif";
+      } previous.y_ex;
+
+      mdex_native = builtFromVendoredCrates {
+        inherit (final) jason;
+        crate = "mdex_native_nif";
         hash = "sha256-oCTNstM214IHsqPEaLllP8VZrzGotqyudMJdXtuK2/I=";
+        env.MDEX_NATIVE_BUILD = "1";
+      } previous.mdex_native;
+
+      exqlite = previous.exqlite.override {
+        env.EXQLITE_FORCE_BUILD = "1";
+        buildInputs = [ ];
       };
-    }
-  ];
+    };
+  };
 
   buildOnly = [
     tailwindcss_4
     esbuild
-  ]
-  ++ map (nif: nif.vendor) nifs;
-
-  useVendoredCrates = lib.concatMapStrings (nif: ''
-    mkdir -p "$MIX_DEPS_PATH/${nif.path}/.cargo"
-    substitute ${nif.vendor}/.cargo/config.toml "$MIX_DEPS_PATH/${nif.path}/.cargo/config.toml" \
-      --subst-var-by vendor ${nif.vendor}
-  '') nifs;
+    mixNixDeps.y_ex.crates
+    mixNixDeps.mdex_native.crates
+  ];
 in
 beamPackages.mixRelease {
   pname = "babel_sync";
-  inherit version mixFodDeps;
+  inherit version mixNixDeps;
 
   src = sources (
-    manifest
-    ++ packages
+    packages
     ++ [
+      ../mix.exs
+      ../mix.lock
+      ../config
       ../lib
       ../priv
       ../assets
@@ -113,22 +137,16 @@ beamPackages.mixRelease {
   };
 
   nativeBuildInputs = [
-    cargo
-    rustc
     nodejs_24
     npmHooks.npmConfigHook
     removeReferencesTo
   ];
 
   env = {
-    MDEX_NATIVE_BUILD = "1";
-    EXQLITE_FORCE_BUILD = "1";
-    CARGO_NET_OFFLINE = "true";
+    BABELSYNC_REVISION = revision;
     MIX_TAILWIND_PATH = lib.getExe tailwindcss_4;
     MIX_ESBUILD_PATH = lib.getExe esbuild;
   };
-
-  preConfigure = useVendoredCrates;
 
   postBuild = ''
     mix do deps.loadpaths --no-deps-check + assets.deploy
@@ -141,7 +159,7 @@ beamPackages.mixRelease {
 
   disallowedReferences = buildOnly;
 
-  passthru = { inherit mixFodDeps nifs; };
+  passthru = { inherit mixNixDeps; };
 
   meta = {
     description = "Self-hosted live sync server for Obsidian vaults";
