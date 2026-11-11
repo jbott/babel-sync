@@ -110,7 +110,7 @@ defmodule BabelSyncWeb.VaultLive.Settings do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-2xl space-y-10 py-8 md:py-14">
+      <div class="mx-auto max-w-2xl space-y-10 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
           <:trail>
             <.back_link navigate={Paths.vault(@vault.id)}>Back to the vault</.back_link>

@@ -350,70 +350,61 @@ defmodule BabelSyncWeb.VaultLive.Show do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} wide>
-      <div id="vault" class="flex h-[calc(100dvh-3rem)]">
+      <div
+        id="vault"
+        class="flex h-dvh pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+      >
         <aside
           id="sidebar"
           class={[
-            "flex-col border-line bg-sunken md:flex md:w-72 md:shrink-0 md:border-r",
+            "flex-col border-line bg-sunken pt-[env(safe-area-inset-top)] md:flex md:w-72 md:shrink-0 md:border-r",
             if(@entry, do: "hidden", else: "flex w-full")
           ]}
         >
-          <div class="flex items-center gap-1 py-2.5 pl-4 pr-2">
+          <div class="px-4 pt-3">
+            <Layouts.brand />
             <.link
               patch={Paths.vault(@vault.id)}
-              class="min-w-0 flex-1 truncate rounded font-serif text-lg font-bold tracking-tight text-ink"
+              class="mt-1.5 block truncate rounded font-serif text-xl font-bold tracking-tight text-ink"
             >
               {@vault.name}
             </.link>
-            <.icon_button
-              navigate={Paths.trash(@vault.id)}
-              id="vault-trash"
-              icon="hero-trash"
-              label="Trash"
-            />
-            <.icon_button
-              :if={@admin}
-              navigate={Paths.settings(@vault.id)}
-              id="vault-settings"
-              icon="hero-cog-6-tooth"
-              label="Vault settings"
-            />
           </div>
 
-          <div :if={@writable} class="space-y-2 px-3 pb-3">
-            <div class="flex items-center gap-1.5">
+          <div :if={@writable} class="px-2 pt-2.5">
+            <div class="flex items-center gap-1">
               <.form
                 for={@new_form}
                 id="new-note"
                 phx-submit="create_note"
                 class="relative min-w-0 flex-1"
               >
+                <button
+                  class="absolute left-0 top-0 grid size-9 cursor-pointer place-items-center rounded-lg text-faint transition-colors duration-150 hover:text-ink md:size-8"
+                  title="Create note"
+                  aria-label="Create note"
+                >
+                  <.icon name="hero-plus-mini" class="size-[1.125rem]" />
+                </button>
                 <input
                   type="text"
                   id={"new-note-path-#{@notes_created}"}
                   name={@new_form[:path].name}
                   value=""
-                  placeholder="New note path"
+                  placeholder="New note"
                   aria-label="New note path"
                   autocapitalize="off"
                   autocomplete="off"
                   spellcheck="false"
                   required
-                  class={[field_class(), "h-9 bg-canvas pr-10 text-sm"]}
+                  class="block h-9 w-full min-w-0 rounded-lg bg-ink/5 pl-9 pr-3 text-sm text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus:bg-surface focus:ring-2 focus:ring-accent/60 md:h-8 md:pl-8"
                 />
-                <button
-                  class="absolute right-1 top-1 grid size-7 cursor-pointer place-items-center rounded-md bg-accent text-accent-ink transition duration-150 hover:brightness-110 active:scale-95"
-                  title="Create note"
-                  aria-label="Create note"
-                >
-                  <.icon name="hero-plus-mini" class="size-4" />
-                </button>
               </.form>
               <label
-                class="grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg border border-line-strong bg-canvas text-muted shadow-raise transition duration-150 hover:border-faint hover:text-ink has-focus-visible:border-accent has-focus-visible:ring-3 has-focus-visible:ring-accent/20 active:scale-95"
+                class="grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors duration-150 hover:bg-ink/7 hover:text-ink has-focus-visible:ring-2 has-focus-visible:ring-accent/60 md:size-8"
                 title="Upload files"
               >
-                <.icon name="hero-arrow-up-tray-mini" class="size-4" />
+                <.icon name="hero-arrow-up-tray" class="size-[1.125rem]" />
                 <input
                   id="uploader"
                   type="file"
@@ -429,7 +420,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
             <progress
               id="upload-progress"
               phx-update="ignore"
-              class="upload-meter"
+              class="upload-meter mt-2"
               value="0"
               max="100"
               hidden
@@ -439,7 +430,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
           <nav
             id="tree"
             aria-label="Files"
-            class="flex-1 overflow-y-auto border-t border-line px-2 pb-6 pt-2 text-base md:text-sm"
+            class="mt-2 flex-1 overflow-y-auto px-2 pb-6 text-base md:text-sm"
           >
             <div :if={@tree == []} class="px-3 py-10 text-center">
               <.icon name="hero-document-plus" class="size-7 text-faint" />
@@ -447,10 +438,28 @@ defmodule BabelSyncWeb.VaultLive.Show do
             </div>
             <.tree nodes={@tree} selected={@entry && @entry.path} vault_id={@vault.id} />
           </nav>
+
+          <div class="flex items-center gap-0.5 border-t border-line px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+            <Layouts.account_link :if={@current_scope} />
+            <div class="flex-1"></div>
+            <.icon_button
+              navigate={Paths.trash(@vault.id)}
+              id="vault-trash"
+              icon="hero-trash"
+              label="Trash"
+            />
+            <.icon_button
+              :if={@admin}
+              navigate={Paths.settings(@vault.id)}
+              id="vault-settings"
+              icon="hero-cog-6-tooth"
+              label="Vault settings"
+            />
+          </div>
         </aside>
 
         <section class={[
-          "min-w-0 flex-1 flex-col bg-surface md:flex",
+          "min-w-0 flex-1 flex-col bg-surface pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:flex",
           if(@entry, do: "flex", else: "hidden")
         ]}>
           <div :if={is_nil(@entry)} id="empty" class="m-auto max-w-sm p-8 text-center">
@@ -617,7 +626,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         <aside
           :if={@versions}
           id="history"
-          class="fixed inset-x-0 bottom-0 top-12 z-20 flex flex-col border-line bg-canvas md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
+          class="fixed inset-0 z-20 flex flex-col border-line bg-canvas pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
         >
           <.history_heading />
           <div :if={@versions == []} class="px-6 py-12 text-center">
@@ -688,7 +697,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         <aside
           :if={@blob_versions}
           id="blob-history"
-          class="fixed inset-x-0 bottom-0 top-12 z-20 flex flex-col border-line bg-canvas md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
+          class="fixed inset-0 z-20 flex flex-col border-line bg-canvas pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
         >
           <.history_heading />
           <ul class="divide-y divide-line overflow-y-auto">

@@ -101,7 +101,7 @@ defmodule BabelSyncWeb.AuthLive.Login do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} masthead={false}>
       <div class="mx-auto max-w-sm py-12 md:py-24">
         <div class="animate-rise space-y-6 rounded-2xl border border-line bg-surface p-6 shadow-float sm:p-8">
           <div class="space-y-4 text-center">

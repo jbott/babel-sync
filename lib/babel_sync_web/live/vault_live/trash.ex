@@ -74,7 +74,7 @@ defmodule BabelSyncWeb.VaultLive.Trash do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-2xl space-y-7 py-8 md:py-14">
+      <div class="mx-auto max-w-2xl space-y-7 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
           <:trail>
             <.back_link navigate={Paths.vault(@vault.id)}>{@vault.name}</.back_link>

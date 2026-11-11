@@ -8,8 +8,8 @@ defmodule BabelSyncWeb.OAuthHTML do
 
   def consent(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-md py-10 md:py-20">
+    <Layouts.app flash={@flash} current_scope={@current_scope} column="max-w-md">
+      <div class="mx-auto max-w-md pb-12 pt-7 md:pb-20 md:pt-12">
         <div class="animate-rise overflow-hidden rounded-2xl border border-line bg-surface shadow-float">
           <div class="space-y-5 p-6 sm:p-8">
             <div class="flex items-center gap-2 text-faint" aria-hidden="true">
@@ -34,7 +34,7 @@ defmodule BabelSyncWeb.OAuthHTML do
             </div>
             <p id="consent-destination" class="text-ink">
               Access will be handed to
-              <strong class="break-all font-semibold">{destination(@request.redirect_uri)}</strong>
+              <strong class="wrap-anywhere font-semibold">{destination(@request.redirect_uri)}</strong>
             </p>
             <p
               :if={is_nil(@request.client.approved_at)}
@@ -126,8 +126,8 @@ defmodule BabelSyncWeb.OAuthHTML do
 
   def invalid(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-md py-16 text-center md:py-28">
+    <Layouts.app flash={@flash} current_scope={@current_scope} column="max-w-md">
+      <div class="mx-auto max-w-md pb-16 pt-12 text-center md:pt-24">
         <span class="mx-auto grid size-14 place-items-center rounded-2xl bg-warn/15 text-warn">
           <.icon name="hero-exclamation-triangle" class="size-7" />
         </span>

@@ -104,7 +104,7 @@ defmodule BabelSyncWeb.CoreComponents do
   defp button_class(variant, size) do
     [
       "inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium",
-      "transition duration-150 active:translate-y-px active:scale-[0.99]",
+      "transition-colors duration-150",
       "disabled:pointer-events-none disabled:opacity-50 phx-submit-loading:opacity-60 phx-click-loading:opacity-60",
       button_size(size),
       button_variant(variant)
@@ -148,8 +148,8 @@ defmodule BabelSyncWeb.CoreComponents do
   def icon_button(%{rest: rest} = assigns) do
     assigns =
       assign(assigns, :classes, [
-        "grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg transition duration-150 md:size-8",
-        "active:scale-95 disabled:pointer-events-none disabled:opacity-50",
+        "grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg transition-colors duration-150 md:size-8",
+        "disabled:pointer-events-none disabled:opacity-50",
         assigns.tone == "neutral" && "text-muted hover:bg-ink/7 hover:text-ink",
         assigns.tone == "danger" && "text-muted hover:bg-danger/12 hover:text-danger",
         assigns.class
@@ -398,7 +398,7 @@ defmodule BabelSyncWeb.CoreComponents do
     >
       <.icon
         name="hero-arrow-left-mini"
-        class="size-4 shrink-0 transition-transform group-hover:-translate-x-0.5"
+        class="size-4 shrink-0"
       />
       <span class="truncate">{render_slot(@inner_block)}</span>
     </.link>

@@ -28,35 +28,70 @@ defmodule BabelSyncWeb.Layouts do
     doc: "the current [scope](https://phoenix.hexdocs.pm/scopes.html)"
 
   attr :wide, :boolean, default: false, doc: "let the content fill the window"
+  attr :masthead, :boolean, default: true, doc: "show the brand and account links above the page"
+  attr :column, :string, default: "max-w-2xl", doc: "the width the masthead lines up with"
 
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-line bg-canvas/85 px-3 backdrop-blur-md md:px-4">
-      <.link
-        navigate={~p"/"}
-        class="group -ml-1 flex items-center gap-2 rounded-lg px-1.5 py-1 text-ink"
+    <main class={[
+      not @wide &&
+        "px-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] sm:px-6 lg:px-8"
+    ]}>
+      <div
+        :if={not @wide and @masthead}
+        class={["mx-auto flex items-center justify-between gap-4 pt-4 md:pt-7", @column]}
       >
-        <.logo class="size-[1.375rem] text-accent transition-transform duration-300 group-hover:rotate-[60deg]" />
-        <span class="font-serif text-[1.0625rem] font-bold tracking-tight">BabelSync</span>
-      </.link>
-      <div class="flex-1"></div>
-      <.theme_toggle />
-      <.icon_button
-        :if={@current_scope}
-        id="account-link"
-        navigate={~p"/account"}
-        icon="hero-user-circle"
-        label="Account"
-      />
-    </header>
-
-    <main class={[not @wide && "px-4 sm:px-6 lg:px-8"]}>
+        <.brand />
+        <.account_link :if={@current_scope} class="-mr-2" />
+      </div>
       {render_slot(@inner_block)}
     </main>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc """
+  Renders the mark and wordmark as the link back to the list of vaults.
+  """
+  attr :class, :any, default: nil
+
+  def brand(assigns) do
+    ~H"""
+    <.link
+      navigate={~p"/"}
+      title="All vaults"
+      class={[
+        "group -ml-1 inline-flex items-center gap-2 rounded-lg px-1 py-1 text-muted transition-colors duration-150 hover:text-ink",
+        @class
+      ]}
+    >
+      <.logo class="size-5 text-accent" />
+      <span class="font-serif text-base font-semibold tracking-tight">BabelSync</span>
+    </.link>
+    """
+  end
+
+  @doc """
+  Renders the link to the account page, where the profile, passkeys,
+  connected apps and the theme live.
+  """
+  attr :class, :any, default: nil
+
+  def account_link(assigns) do
+    ~H"""
+    <.link
+      id="account-link"
+      navigate={~p"/account"}
+      class={[
+        "inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-muted transition duration-150 hover:bg-ink/7 hover:text-ink md:h-8",
+        @class
+      ]}
+    >
+      <.icon name="hero-user-circle" class="size-[1.125rem]" /> Account
+    </.link>
     """
   end
 
@@ -75,7 +110,7 @@ defmodule BabelSyncWeb.Layouts do
     <div
       id={@id}
       aria-live="polite"
-      class="pointer-events-none fixed inset-x-3 top-14 z-50 flex flex-col gap-2 sm:left-auto sm:right-4 sm:w-96"
+      class="pointer-events-none fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 flex flex-col gap-2 sm:left-auto sm:right-4 sm:w-96"
     >
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
@@ -114,33 +149,33 @@ defmodule BabelSyncWeb.Layouts do
   end
 
   @doc """
-  Provides dark vs light theme toggle based on themes defined in app.css.
+  Renders the switch between following the system theme, light and dark.
 
-  See <head> in root.html.heex which applies the theme before page load.
+  The script in the head of root.html.heex applies the choice before the
+  page is painted and listens for the event these buttons dispatch.
   """
   def theme_toggle(assigns) do
     ~H"""
     <div
-      class="theme-toggle flex items-center gap-0.5 rounded-full border border-line bg-sunken p-0.5"
+      id="theme-toggle"
+      class="theme-toggle grid grid-cols-3 gap-1 rounded-xl border border-line bg-sunken p-1"
       role="group"
       aria-label="Theme"
     >
       <button
         :for={
           {theme, icon, label} <- [
-            {"system", "hero-computer-desktop-micro", "Match the system theme"},
-            {"light", "hero-sun-micro", "Light theme"},
-            {"dark", "hero-moon-micro", "Dark theme"}
+            {"system", "hero-computer-desktop-mini", "System"},
+            {"light", "hero-sun-mini", "Light"},
+            {"dark", "hero-moon-mini", "Dark"}
           ]
         }
         type="button"
-        class="grid h-7 w-8 cursor-pointer place-items-center rounded-full"
+        class="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg text-sm font-medium"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme={theme}
-        title={label}
-        aria-label={label}
       >
-        <.icon name={icon} class="size-4" />
+        <.icon name={icon} class="size-4" /> {label}
       </button>
     </div>
     """

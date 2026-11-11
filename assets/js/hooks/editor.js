@@ -22,6 +22,7 @@ const theme = EditorView.theme({
     flexBasis: "0",
     padding: "2rem clamp(1.125rem, 4vw, 2rem) 40vh",
     caretColor: "var(--accent)",
+    fontVariantLigatures: "none",
   },
   ".cm-line": {padding: "0 0.25rem"},
   ".cm-cursor, .cm-dropCursor": {borderLeftColor: "var(--accent)", borderLeftWidth: "2px"},
