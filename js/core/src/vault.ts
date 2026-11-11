@@ -15,11 +15,11 @@ export type Entry = {
   updated_at: string;
 };
 
-type JoinReply = { seq: number; name: string; writable: boolean; entries: Entry[] };
+type JoinReply = { seq: number; name: string; writable: boolean; complete: boolean; entries: Entry[] };
 
 type VaultEvents = {
   entry: Entry;
-  joined: { entries: Entry[]; seq: number };
+  joined: { entries: Entry[]; seq: number; complete: boolean };
   left: undefined;
   error: string;
 };
@@ -44,6 +44,7 @@ export class VaultSession extends Emitter<VaultEvents> {
   joined = false;
 
   private channel: Channel;
+  private latest = new Map<string, number>();
 
   constructor(socket: Socket, vaultId: string, since = 0) {
     super();
@@ -60,9 +61,10 @@ export class VaultSession extends Emitter<VaultEvents> {
         this.name = reply.name;
         this.writable = reply.writable;
         this.joined = true;
+        if (reply.complete) this.entries.clear();
         for (const entry of reply.entries) this.apply(entry, false);
         this.seq = Math.max(this.seq, reply.seq);
-        this.emit("joined", { entries: reply.entries, seq: this.seq });
+        this.emit("joined", { entries: reply.entries, seq: this.seq, complete: reply.complete });
       })
       .receive("error", (reply: { reason?: string }) => this.emit("error", reply.reason ?? "error"));
   }
@@ -141,8 +143,8 @@ export class VaultSession extends Emitter<VaultEvents> {
   }
 
   private apply(entry: Entry, announce: boolean): void {
-    const known = this.entries.get(entry.id);
-    if (known && known.seq >= entry.seq) return;
+    if ((this.latest.get(entry.id) ?? -1) >= entry.seq) return;
+    this.latest.set(entry.id, entry.seq);
 
     if (entry.deleted) this.entries.delete(entry.id);
     else this.entries.set(entry.id, entry);

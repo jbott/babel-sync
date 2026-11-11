@@ -60,10 +60,10 @@ async function shutdown(device: Device): Promise<void> {
   await device.client.disconnect();
 }
 
-async function eventually(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
+async function eventually(check: () => boolean | Promise<boolean>, what: string | (() => string)): Promise<void> {
   const deadline = Date.now() + 8000;
   while (!(await check())) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${typeof what === "string" ? what : what()}`);
     await new Promise((resolve) => setTimeout(resolve, 15));
   }
 }
@@ -161,7 +161,10 @@ test("renames and deletions follow, and a note keeps its identity when moved", a
   await laptop.fs.remove("junk.md");
   laptop.engine.localDeleted("junk.md");
 
-  await eventually(() => paths(phone).join() === "Final/done.md", "the phone to follow");
+  await eventually(
+    () => paths(phone).join() === "Final/done.md",
+    () => `the phone to follow, it has ${paths(phone).join()} and the laptop ${paths(laptop).join()}; errors ${[...phone.errors, ...laptop.errors].join()}`,
+  );
 
   await edit(phone, "Final/done.md", "v1\nv2\n");
   await eventually(async () => (await text(laptop, "Final/done.md")) === "v1\nv2\n", "an edit after the move");
