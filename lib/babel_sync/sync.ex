@@ -56,7 +56,12 @@ defmodule BabelSync.Sync do
   def flush(entry_id), do: call(entry_id, :flush)
 
   @spec live?(Ecto.UUID.t()) :: boolean()
-  def live?(entry_id), do: Registry.lookup(BabelSync.Sync.Registry, entry_id) != []
+  def live?(entry_id) do
+    case Registry.lookup(BabelSync.Sync.Registry, entry_id) do
+      [{server, _value}] -> Process.alive?(server)
+      [] -> false
+    end
+  end
 
   @spec texts([Ecto.UUID.t()]) :: %{Ecto.UUID.t() => String.t()}
   def texts(entry_ids) do
