@@ -26,6 +26,11 @@ config :babel_sync, BabelSync.Sync,
   settle_after: :timer.seconds(30),
   compact_after: 200
 
+config :babel_sync, BabelSync.Janitor,
+  enabled: true,
+  retention_days: 30,
+  interval: :timer.hours(1)
+
 config :babel_sync, BabelSync.Blobs, max_size: 5 * 1024 * 1024 * 1024
 
 # Configure the endpoint

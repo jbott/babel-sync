@@ -31,6 +31,23 @@ defmodule BabelSyncWeb.VaultChannelTest do
     assert [%{path: "gone.md", deleted: true}] = reply.entries
   end
 
+  test "a client away past a purge gets the whole tree again", %{owner: owner, vault: vault} do
+    kept = entry(vault, "a.md")
+    {:ok, [deleted]} = Vaults.delete_entry(entry(vault, "gone.md"))
+
+    assert {:ok, %{complete: false}, _socket} = join_vault(owner, vault, %{"since" => kept.seq})
+    assert {:ok, %{complete: true}, _socket} = join_vault(owner, vault)
+
+    :ok = Vaults.purge_entry(deleted)
+
+    assert {:ok, reply, _socket} = join_vault(owner, vault, %{"since" => kept.seq})
+    assert reply.complete
+    assert [%{path: "a.md"}] = reply.entries
+
+    assert {:ok, %{complete: false, entries: []}, _socket} =
+             join_vault(owner, vault, %{"since" => deleted.seq})
+  end
+
   test "people outside the vault cannot join", %{vault: vault} do
     assert {:error, %{reason: "forbidden"}} = join_vault(user(), vault)
   end

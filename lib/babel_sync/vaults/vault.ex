@@ -6,6 +6,7 @@ defmodule BabelSync.Vaults.Vault do
   schema "vaults" do
     field :name, :string
     field :seq, :integer, default: 0
+    field :purged_seq, :integer, default: 0
     has_many :members, BabelSync.Vaults.Member
     timestamps()
   end

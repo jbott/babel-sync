@@ -54,3 +54,5 @@ config :babel_sync, BabelSync.Sync,
   compact_after: 20
 
 config :babel_sync, BabelSync.Blobs, max_size: 64 * 1024 * 1024
+
+config :babel_sync, BabelSync.Janitor, enabled: false

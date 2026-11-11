@@ -11,7 +11,7 @@ defmodule BabelSync.Vaults do
 
   alias BabelSync.Accounts.User
   alias BabelSync.Repo
-  alias BabelSync.Vaults.{Entry, Member, Vault}
+  alias BabelSync.Vaults.{BlobVersion, Entry, Member, Vault}
 
   @type access :: :read | :write | :admin
 
@@ -135,6 +135,7 @@ defmodule BabelSync.Vaults do
             %Entry{vault_id: vault_id, seq: seq}
             |> Entry.changeset(attrs)
             |> Repo.insert()
+            |> remember_blob(nil)
         end
       end)
 
@@ -150,9 +151,134 @@ defmodule BabelSync.Vaults do
       |> Entry.changeset(attrs)
       |> Ecto.Changeset.put_change(:seq, seq)
       |> Repo.update()
+      |> remember_blob(current.blob_hash)
     end)
     |> announce()
   end
+
+  @spec list_blob_versions(Ecto.UUID.t()) :: [BlobVersion.t()]
+  def list_blob_versions(entry_id) do
+    Repo.all(from v in BlobVersion, where: v.entry_id == ^entry_id, order_by: [desc: v.id])
+  end
+
+  @spec restore_blob_version(Entry.t(), integer()) ::
+          {:ok, Entry.t()} | {:error, :not_found} | {:error, Ecto.Changeset.t()}
+  def restore_blob_version(%Entry{kind: :blob} = entry, version_id) do
+    case Repo.get_by(BlobVersion, entry_id: entry.id, id: version_id) do
+      %BlobVersion{blob_hash: hash, size: size} ->
+        update_entry(entry, %{blob_hash: hash, size: size})
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
+  @spec list_trash(Ecto.UUID.t()) :: [Entry.t()]
+  def list_trash(vault_id) do
+    Repo.all(
+      from e in Entry,
+        where: e.vault_id == ^vault_id and not is_nil(e.deleted_at) and e.kind != :folder,
+        order_by: [desc: e.deleted_at, asc: e.path]
+    )
+  end
+
+  @spec get_trashed(Ecto.UUID.t(), Ecto.UUID.t()) :: Entry.t() | nil
+  def get_trashed(vault_id, id) do
+    Repo.one(
+      from e in Entry,
+        where: e.vault_id == ^vault_id and e.id == ^id and not is_nil(e.deleted_at)
+    )
+  end
+
+  @spec restore_entry(Entry.t()) :: {:ok, Entry.t()} | {:error, :not_found}
+  def restore_entry(%Entry{id: id, vault_id: vault_id}) do
+    Repo.transact(fn ->
+      seq = next_seq(vault_id)
+
+      case Repo.get(Entry, id) do
+        %Entry{deleted_at: deleted_at} = trashed when not is_nil(deleted_at) ->
+          trashed
+          |> Ecto.Changeset.change(deleted_at: nil, seq: seq, path: free_path(trashed))
+          |> Repo.update()
+
+        _missing_or_live ->
+          {:error, :not_found}
+      end
+    end)
+    |> announce()
+  end
+
+  @spec purge_entry(Entry.t()) :: :ok
+  def purge_entry(%Entry{id: id, vault_id: vault_id}) do
+    purge(from e in Entry, where: e.id == ^id and e.vault_id == ^vault_id)
+  end
+
+  @spec purge_trash(DateTime.t()) :: :ok
+  def purge_trash(deleted_before) do
+    purge(from e in Entry, where: e.deleted_at < ^deleted_before)
+  end
+
+  @spec prune_blob_versions(DateTime.t()) :: :ok
+  def prune_blob_versions(older_than) do
+    newest =
+      from n in BlobVersion, where: n.entry_id == parent_as(:version).entry_id, select: max(n.id)
+
+    Repo.delete_all(
+      from v in BlobVersion,
+        as: :version,
+        where: v.inserted_at < ^older_than and v.id < subquery(newest)
+    )
+
+    :ok
+  end
+
+  defp purge(query) do
+    Repo.transact(fn ->
+      doomed =
+        Repo.all(
+          from e in query, where: not is_nil(e.deleted_at), select: {e.id, e.vault_id, e.seq}
+        )
+
+      for {vault_id, seq} <-
+            doomed
+            |> Enum.group_by(&elem(&1, 1), &elem(&1, 2))
+            |> Enum.map(fn {vault, seqs} -> {vault, Enum.max(seqs)} end) do
+        Repo.update_all(
+          from(v in Vault, where: v.id == ^vault_id and v.purged_seq < ^seq),
+          set: [purged_seq: seq]
+        )
+      end
+
+      ids = Enum.map(doomed, &elem(&1, 0))
+      Repo.delete_all(from e in Entry, where: e.id in ^ids)
+      {:ok, :purged}
+    end)
+
+    :ok
+  end
+
+  defp free_path(%Entry{vault_id: vault_id, path: path}) do
+    extension = Elixir.Path.extname(path)
+    stem = String.trim_trailing(path, extension)
+
+    [path, stem <> " (restored)" <> extension]
+    |> Stream.concat(Stream.map(2..1000, &"#{stem} (restored #{&1})#{extension}"))
+    |> Enum.find(&is_nil(get_entry_by_path(vault_id, &1)))
+  end
+
+  defp remember_blob({:ok, %Entry{kind: :blob, blob_hash: hash} = entry} = result, previous)
+       when is_binary(hash) and hash != previous do
+    Repo.insert!(%BlobVersion{
+      entry_id: entry.id,
+      blob_hash: hash,
+      size: entry.size,
+      inserted_at: DateTime.utc_now()
+    })
+
+    result
+  end
+
+  defp remember_blob(result, _previous), do: result
 
   @spec rename_entry(Entry.t(), String.t()) ::
           {:ok, [Entry.t()]}

@@ -20,10 +20,18 @@ defmodule BabelSync.Application do
 
     opts = [strategy: :one_for_one, name: BabelSync.Supervisor]
 
-    with {:ok, supervisor} <- Supervisor.start_link(children ++ sign_in_children(), opts) do
+    children = children ++ sign_in_children() ++ cleanup_children()
+
+    with {:ok, supervisor} <- Supervisor.start_link(children, opts) do
       BabelSync.Auth.Setup.announce()
       {:ok, supervisor}
     end
+  end
+
+  defp cleanup_children do
+    if Application.fetch_env!(:babel_sync, BabelSync.Janitor)[:enabled],
+      do: [BabelSync.Janitor],
+      else: []
   end
 
   defp sign_in_children do

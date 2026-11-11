@@ -160,6 +160,40 @@ defmodule BabelSync.Blobs do
   @spec read(Blob.t()) :: binary()
   def read(%Blob{} = blob), do: blob |> stream() |> Enum.into(<<>>, & &1) |> IO.iodata_to_binary()
 
+  @spec collect_garbage(DateTime.t()) :: non_neg_integer()
+  def collect_garbage(uploaded_before) do
+    current =
+      from e in BabelSync.Vaults.Entry,
+        where: e.vault_id == parent_as(:blob).vault_id and e.blob_hash == parent_as(:blob).hash
+
+    historic =
+      from v in BabelSync.Vaults.BlobVersion,
+        join: e in BabelSync.Vaults.Entry,
+        on: e.id == v.entry_id,
+        where: e.vault_id == parent_as(:blob).vault_id and v.blob_hash == parent_as(:blob).hash
+
+    unreferenced =
+      Repo.all(
+        from b in Blob,
+          as: :blob,
+          where: b.inserted_at < ^uploaded_before and not exists(current) and not exists(historic)
+      )
+
+    Enum.each(unreferenced, fn blob ->
+      Repo.delete!(blob)
+      :ok = Store.impl().delete(key(blob))
+    end)
+
+    length(unreferenced)
+  end
+
+  @spec abandon_stale_uploads(DateTime.t()) :: non_neg_integer()
+  def abandon_stale_uploads(untouched_since) do
+    stale = Repo.all(from u in Upload, where: u.updated_at < ^untouched_since)
+    Enum.each(stale, &abandon/1)
+    length(stale)
+  end
+
   @spec local_path(Blob.t()) :: Path.t() | nil
   def local_path(%Blob{} = blob) do
     if Store.impl() == Store.Disk, do: Store.Disk.path(key(blob))

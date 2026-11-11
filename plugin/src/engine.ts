@@ -67,7 +67,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
 
     const vault = this.options.client.vault(this.options.vaultId, seq);
     this.vault = vault;
-    vault.on("joined", ({ entries: changes }) => this.run(() => this.reconcile(changes)));
+    vault.on("joined", ({ entries: changes, complete }) => this.run(() => this.reconcile(changes, complete)));
     vault.on("entry", (entry) => this.run(() => this.applyRemote(entry)));
     vault.on("left", () => this.setStatus("offline"));
     vault.on("error", (reason) => {
@@ -168,7 +168,14 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
     this.emit("status", status);
   }
 
-  private async reconcile(changes: Entry[]): Promise<void> {
+  private async reconcile(changes: Entry[], complete = false): Promise<void> {
+    if (complete) {
+      const alive = new Set(changes.map((change) => change.id));
+      for (const entry of [...this.byId.values()]) {
+        if (!alive.has(entry.id)) await this.removeLocally(entry);
+      }
+    }
+
     for (const change of [...changes].sort((a, b) => a.seq - b.seq)) {
       await this.applyRemote(change);
     }

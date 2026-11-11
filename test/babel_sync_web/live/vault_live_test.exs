@@ -175,6 +175,75 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
   end
 
+  describe "change notices" do
+    test "one that arrives after a newer one for the same entry is ignored", %{
+      conn: conn,
+      vault: vault
+    } do
+      note = entry(vault, "ghost.md")
+      {:ok, view, _html} = live(conn, Paths.vault(vault.id))
+      assert has_element?(view, "#sidebar", "ghost.md")
+
+      {:ok, [_deleted]} = Vaults.delete_entry(note)
+      refute has_element?(view, "#sidebar", "ghost.md")
+
+      send(view.pid, {:entry_changed, note})
+      refute has_element?(view, "#sidebar", "ghost.md")
+    end
+  end
+
+  describe "trash and attachment history" do
+    test "a deleted note is restored from the trash or removed for good", %{
+      conn: conn,
+      vault: vault
+    } do
+      {:ok, [note]} = vault |> entry("idea.md") |> Vaults.delete_entry()
+      {:ok, [junk]} = vault |> entry("junk.md") |> Vaults.delete_entry()
+
+      {:ok, view, _html} = live(conn, Paths.trash(vault.id))
+      assert has_element?(view, "#trashed-#{note.id}", "idea.md")
+
+      view |> element("#trashed-#{note.id} button", "Restore") |> render_click()
+      refute has_element?(view, "#trashed-#{note.id}")
+      assert Vaults.get_entry_by_path(vault.id, "idea.md").id == note.id
+
+      view |> element("#trashed-#{junk.id} button", "Delete forever") |> render_click()
+      assert has_element?(view, "#trash-empty")
+      refute Vaults.get_entry(junk.id)
+    end
+
+    test "a viewer sees the trash but cannot change it", %{vault: vault, anonymous: conn} do
+      viewer = user()
+      {:ok, _member} = Vaults.put_member(vault, viewer, :viewer)
+      {:ok, [note]} = vault |> entry("idea.md") |> Vaults.delete_entry()
+
+      {:ok, view, _html} = conn |> sign_in(viewer) |> live(Paths.trash(vault.id))
+      assert has_element?(view, "#trashed-#{note.id}")
+      refute has_element?(view, "#trashed-#{note.id} button")
+      render_click(view, "purge", %{"id" => note.id})
+      assert Vaults.get_entry(note.id)
+    end
+
+    test "an earlier version of an attachment is restored", %{conn: conn, vault: vault} do
+      {:ok, first} = Blobs.put(vault.id, "first")
+      {:ok, second} = Blobs.put(vault.id, "second")
+
+      {:ok, file} =
+        Vaults.create_entry(vault.id, %{path: "data.bin", blob_hash: first.hash, size: 5})
+
+      {:ok, file} = Vaults.update_entry(file, %{blob_hash: second.hash, size: 6})
+      [_current, original] = Vaults.list_blob_versions(file.id)
+
+      {:ok, view, _html} = live(conn, Paths.entry(file))
+      view |> element("#history-button") |> render_click()
+      assert has_element?(view, "#blob-history li", "current")
+
+      view |> element("#blob-version-#{original.id} button") |> render_click()
+      assert Vaults.get_entry(file.id).blob_hash == first.hash
+      refute has_element?(view, "#blob-version-#{original.id} button")
+    end
+  end
+
   describe "settings" do
     test "only owners can open them", ctx do
       editor = user()

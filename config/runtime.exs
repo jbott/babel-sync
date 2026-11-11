@@ -156,6 +156,10 @@ if storage == :remote do
     secret_access_key: s3_env.("BABELSYNC_S3_SECRET_ACCESS_KEY", "babelsyncsecret")
 end
 
+if retention = System.get_env("BABELSYNC_RETENTION_DAYS") do
+  config :babel_sync, BabelSync.Janitor, retention_days: String.to_integer(retention)
+end
+
 if max_blob = System.get_env("BABELSYNC_MAX_BLOB_BYTES") do
   config :babel_sync, BabelSync.Blobs, max_size: String.to_integer(max_blob)
 end

@@ -33,10 +33,11 @@ defmodule BabelSyncWeb.VaultLive.Show do
        |> assign(:preview, nil)
        |> assign(:versions, nil)
        |> assign(:version, nil)
+       |> assign(:blob_versions, nil)
        |> assign(:preview_timer, nil)
        |> assign(:new_form, to_form(%{"path" => ""}, as: :note))
        |> assign(:rename_form, nil)
-       |> put_entries(Vaults.list_entries(vault_id))}
+       |> track(Vaults.list_entries(vault_id))}
     else
       _denied ->
         {:ok,
@@ -154,8 +155,33 @@ defmodule BabelSyncWeb.VaultLive.Show do
     {:noreply, socket |> assign(:versions, Sync.list_versions(entry.id)) |> assign(:version, nil)}
   end
 
+  def handle_event("history", _params, %{assigns: %{entry: %Entry{kind: :blob} = entry}} = socket) do
+    {:noreply, assign(socket, :blob_versions, Vaults.list_blob_versions(entry.id))}
+  end
+
   def handle_event("close_history", _params, socket) do
-    {:noreply, socket |> assign(:versions, nil) |> assign(:version, nil)}
+    {:noreply,
+     socket |> assign(:versions, nil) |> assign(:version, nil) |> assign(:blob_versions, nil)}
+  end
+
+  def handle_event(
+        "restore_blob",
+        %{"id" => id},
+        %{assigns: %{entry: %Entry{kind: :blob} = entry}} = socket
+      ) do
+    write(socket, fn ->
+      case Vaults.restore_blob_version(entry, String.to_integer(id)) do
+        {:ok, restored} ->
+          {:noreply,
+           socket
+           |> assign(:entry, restored)
+           |> assign(:blob_versions, Vaults.list_blob_versions(entry.id))
+           |> put_flash(:info, "Restored. The replaced file is still in the history.")}
+
+        {:error, _gone} ->
+          {:noreply, put_flash(socket, :error, "That version is no longer available.")}
+      end
+    end)
   end
 
   def handle_event("show_version", %{"id" => id}, %{assigns: %{entry: %Entry{} = entry}} = socket) do
@@ -178,6 +204,28 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   @impl true
   def handle_info({:entry_changed, %Entry{} = changed}, socket) do
+    if Map.get(socket.assigns.latest, changed.id, -1) >= changed.seq,
+      do: {:noreply, socket},
+      else: entry_changed(changed, socket)
+  end
+
+  def handle_info({:doc_update, _entry_id, _update, _origin}, socket) do
+    if socket.assigns.mode == :read and is_nil(socket.assigns.preview_timer) do
+      timer = Process.send_after(self(), :render_preview, @preview_delay)
+      {:noreply, assign(socket, :preview_timer, timer)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info(:render_preview, socket) do
+    {:noreply, socket |> assign(:preview_timer, nil) |> render_preview()}
+  end
+
+  def handle_info({:awareness, _state}, socket), do: {:noreply, socket}
+
+  defp entry_changed(changed, socket) do
+    socket = assign(socket, :latest, Map.put(socket.assigns.latest, changed.id, changed.seq))
     entries = Enum.reject(socket.assigns.entries, &(&1.id == changed.id))
     entries = if changed.deleted_at, do: entries, else: [changed | entries]
     socket = put_entries(socket, entries)
@@ -200,21 +248,6 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end
   end
 
-  def handle_info({:doc_update, _entry_id, _update, _origin}, socket) do
-    if socket.assigns.mode == :read and is_nil(socket.assigns.preview_timer) do
-      timer = Process.send_after(self(), :render_preview, @preview_delay)
-      {:noreply, assign(socket, :preview_timer, timer)}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  def handle_info(:render_preview, socket) do
-    {:noreply, socket |> assign(:preview_timer, nil) |> render_preview()}
-  end
-
-  def handle_info({:awareness, _state}, socket), do: {:noreply, socket}
-
   defp write(socket, fun) do
     if socket.assigns.writable,
       do: fun.(),
@@ -229,6 +262,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
       other ->
         other
     end
+  end
+
+  defp track(socket, entries) do
+    socket |> assign(:latest, Map.new(entries, &{&1.id, &1.seq})) |> put_entries(entries)
   end
 
   defp put_entries(socket, entries) do
@@ -255,6 +292,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
     )
     |> assign(:versions, nil)
     |> assign(:version, nil)
+    |> assign(:blob_versions, nil)
     |> assign(:rename_form, nil)
     |> render_preview()
   end
@@ -312,15 +350,25 @@ defmodule BabelSyncWeb.VaultLive.Show do
         >
           <div class="flex items-center justify-between gap-2 px-4 py-3">
             <.link patch={Paths.vault(@vault.id)} class="font-semibold truncate">{@vault.name}</.link>
-            <.link
-              :if={@admin}
-              navigate={Paths.settings(@vault.id)}
-              id="vault-settings"
-              class="btn btn-ghost btn-xs"
-              title="Vault settings"
-            >
-              <.icon name="hero-cog-6-tooth" class="size-4" />
-            </.link>
+            <div class="flex items-center">
+              <.link
+                navigate={Paths.trash(@vault.id)}
+                id="vault-trash"
+                class="btn btn-ghost btn-xs"
+                title="Trash"
+              >
+                <.icon name="hero-trash" class="size-4" />
+              </.link>
+              <.link
+                :if={@admin}
+                navigate={Paths.settings(@vault.id)}
+                id="vault-settings"
+                class="btn btn-ghost btn-xs"
+                title="Vault settings"
+              >
+                <.icon name="hero-cog-6-tooth" class="size-4" />
+              </.link>
+            </div>
           </div>
 
           <div :if={@writable} class="px-3 pb-3 space-y-2">
@@ -396,7 +444,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
               >Read</button>
             </div>
             <button
-              :if={@entry.kind == :doc}
+              :if={@entry.kind in [:doc, :blob]}
               id="history-button"
               phx-click="history"
               class="btn btn-ghost btn-xs"
@@ -530,6 +578,41 @@ defmodule BabelSyncWeb.VaultLive.Show do
               Restore this version
             </button>
           </div>
+        </aside>
+
+        <aside
+          :if={@blob_versions}
+          id="blob-history"
+          class="w-96 shrink-0 border-l border-base-300 flex flex-col"
+        >
+          <div class="flex items-center justify-between px-4 h-12 border-b border-base-300">
+            <span class="font-medium">History</span>
+            <button phx-click="close_history" class="btn btn-ghost btn-xs"><.icon
+              name="hero-x-mark"
+              class="size-4"
+            /></button>
+          </div>
+          <ul class="divide-y divide-base-300 overflow-y-auto">
+            <li
+              :for={version <- @blob_versions}
+              id={"blob-version-#{version.id}"}
+              class="flex items-center gap-3 px-4 py-3 text-sm"
+            >
+              <div class="flex-1">
+                <div>{Calendar.strftime(version.inserted_at, "%Y-%m-%d %H:%M:%S UTC")}</div>
+                <div class="text-xs text-base-content/60">{size(version.size)}</div>
+              </div>
+              <span :if={version.blob_hash == @entry.blob_hash} class="badge badge-sm">current</span>
+              <button
+                :if={@writable and version.blob_hash != @entry.blob_hash}
+                phx-click="restore_blob"
+                phx-value-id={version.id}
+                class="btn btn-xs transition hover:-translate-y-px"
+              >
+                Restore
+              </button>
+            </li>
+          </ul>
         </aside>
       </div>
     </Layouts.app>

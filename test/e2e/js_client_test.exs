@@ -70,6 +70,49 @@ defmodule BabelSync.E2E.JsClientTest do
     assert status == 0, output
   end
 
+  test "a device away past the retention period drops what was purged and keeps its own work" do
+    owner = user()
+    vault = vault(owner)
+    token = owner |> Scope.for_user() |> Auth.socket_token()
+
+    state =
+      Path.join(System.tmp_dir!(), "babelsync-absence-#{System.unique_integer([:positive])}.json")
+
+    on_exit(fn -> File.rm(state) end)
+
+    absence = fn phase ->
+      {output, status} =
+        System.cmd(
+          "node",
+          ["--test", "--test-force-exit", "--test-timeout=30000", "plugin/test/absence.test.ts"],
+          stderr_to_stdout: true,
+          env: [
+            {"BABELSYNC_URL", BabelSyncWeb.Endpoint.url()},
+            {"BABELSYNC_TOKEN", token},
+            {"BABELSYNC_VAULT_IDS", vault.id},
+            {"BABELSYNC_PHASE", phase},
+            {"BABELSYNC_STATE", state}
+          ]
+        )
+
+      assert status == 0, output
+    end
+
+    absence.("before")
+
+    for path <- ["untouched.md", "edited.md"] do
+      {:ok, [deleted]} = vault.id |> Vaults.get_entry_by_path(path) |> Vaults.delete_entry()
+      :ok = Vaults.purge_entry(deleted)
+    end
+
+    absence.("after")
+
+    assert Vaults.get_entry_by_path(vault.id, "kept.md")
+    refute Vaults.get_entry_by_path(vault.id, "untouched.md")
+    edited = Vaults.get_entry_by_path(vault.id, "edited.md")
+    assert Sync.text(edited.id) == "edited\nwhile away\n"
+  end
+
   test "the plugin signs a device in through the oauth flow" do
     vault = vault(BabelSync.Accounts.single_user!())
 

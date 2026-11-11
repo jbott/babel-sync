@@ -4,7 +4,10 @@ defmodule BabelSyncWeb.VaultChannel do
   attachment change as it happens.
 
   A client joins with the last `seq` it saw and receives what changed
-  since, deletions included; with `since: 0` it receives the live tree.
+  since, deletions included. A new client, or one away for so long that
+  deletions it has not seen were purged from the trash, receives the
+  whole live tree instead, marked `complete`: whatever it knows that is
+  not listed no longer exists.
   """
 
   use BabelSyncWeb, :channel
@@ -24,13 +27,16 @@ defmodule BabelSyncWeb.VaultChannel do
       :ok = Vaults.subscribe(vault_id)
       vault = Vaults.get_vault(vault_id)
 
+      complete = since == 0 or since < vault.purged_seq
+
       entries =
-        if since == 0,
+        if complete,
           do: Vaults.list_entries(vault_id),
           else: Vaults.changes_since(vault_id, since)
 
       reply = %{
         seq: vault.seq,
+        complete: complete,
         name: vault.name,
         writable: Scope.authorize(scope, vault_id, :write) == :ok,
         entries: Enum.map(entries, &EntryJSON.entry/1)

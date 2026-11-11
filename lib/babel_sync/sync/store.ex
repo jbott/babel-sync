@@ -63,7 +63,16 @@ defmodule BabelSync.Sync.Store do
 
   @spec prune_versions(DateTime.t()) :: non_neg_integer()
   def prune_versions(older_than) do
-    {count, _} = Repo.delete_all(from v in Version, where: v.inserted_at < ^older_than)
+    newest =
+      from n in Version, where: n.entry_id == parent_as(:version).entry_id, select: max(n.id)
+
+    {count, _} =
+      Repo.delete_all(
+        from v in Version,
+          as: :version,
+          where: v.inserted_at < ^older_than and v.id < subquery(newest)
+      )
+
     count
   end
 
