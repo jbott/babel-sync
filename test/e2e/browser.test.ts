@@ -4,11 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import { connectAgent } from "./mcp_client.ts";
 
 const baseUrl = process.env.BABELSYNC_URL!;
 const phase = process.env.BABELSYNC_PHASE!;
 const vaultId = process.env.BABELSYNC_VAULT_ID ?? "";
 const setupUrl = process.env.BABELSYNC_SETUP_URL ?? "";
+const token = process.env.BABELSYNC_TOKEN ?? "";
 
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -32,6 +34,7 @@ async function open(path: string): Promise<Page> {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
   pages.push(page);
+  await page.setViewport({ width: 1280, height: 4000 });
   const session = await page.createCDPSession();
   await session.send("Emulation.setFocusEmulationEnabled", { enabled: true });
   page.on("pageerror", (error) => problems.push(`uncaught: ${error}`));
@@ -59,6 +62,26 @@ async function waitForText(page: Page, selector: string, expected: string, exact
     expected,
     exact,
   );
+}
+
+function editorText(page: Page): Promise<string> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll(".cm-line")]
+      .map((line) => {
+        const copy = line.cloneNode(true) as HTMLElement;
+        copy.querySelectorAll(".cm-ySelectionCaret, .cm-widgetBuffer").forEach((widget) => widget.remove());
+        return copy.textContent;
+      })
+      .join("\n"),
+  );
+}
+
+async function eventually(check: () => Promise<boolean>, describe: () => Promise<string>): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (!(await check())) {
+    if (Date.now() > deadline) throw new Error(await describe());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 async function fill(page: Page, selector: string, value: string): Promise<void> {
@@ -96,6 +119,30 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
   await two.keyboard.type("tab two says hi\n");
   await waitForText(one, ".cm-content", "tab two says hi");
   await one.waitForSelector(".cm-ySelectionCaret");
+
+  const agent = await connectAgent(baseUrl, token);
+  const note = { vault: vaultId, path: "Notes/browser.md" };
+  assert.equal((await agent.call("edit_note", { ...note, old_text: "from tab one", new_text: "from tab one, says the agent" })).failed, false);
+  await waitForText(one, ".cm-content", "from tab one, says the agent 😀");
+  await waitForText(two, ".cm-content", "from tab one, says the agent 😀");
+
+  const appending = (async () => {
+    for (let line = 1; line <= 15; line++) await agent.call("append_note", { ...note, content: `agent line ${line}\n` });
+  })();
+  await two.keyboard.type("typed while the agent was writing\n", { delay: 5 });
+  await appending;
+  await two.keyboard.type("still typing\n");
+
+  const afterAgent = (await agent.call("read_note", note)).text;
+  for (let line = 1; line <= 15; line++) assert.ok(afterAgent.includes(`agent line ${line}\n`), `agent line ${line} survived`);
+  assert.ok(afterAgent.includes("typed while the agent was writing\nstill typing\n"), afterAgent);
+  await waitForText(one, ".cm-content", "agent line 15");
+  await waitForText(one, ".cm-content", "typed while the agent was writing");
+  const settled = (await agent.call("read_note", note)).text;
+  for (const tab of [one, two]) {
+    await eventually(async () => (await editorText(tab)) === settled, async () => `editor has ${JSON.stringify(await editorText(tab))}, server has ${JSON.stringify(settled)}`);
+  }
+  await agent.close();
 
   await one.click('#toolbar button[phx-value-mode="read"]');
   await waitForText(one, "#preview h1", "Hello");

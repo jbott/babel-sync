@@ -34,13 +34,20 @@ defmodule BabelSync.E2E.BrowserTest do
   test "the web app works in a real browser" do
     vault = vault(Accounts.single_user!())
 
-    chrome("app", [{"BABELSYNC_VAULT_ID", vault.id}])
+    owner = Accounts.single_user!()
+
+    chrome("app", [
+      {"BABELSYNC_VAULT_ID", vault.id},
+      {"BABELSYNC_TOKEN", owner |> Accounts.Scope.for_user() |> Auth.socket_token()}
+    ])
 
     note = Vaults.get_entry_by_path(vault.id, "Notes/renamed.md")
     :ok = Sync.flush(note.id)
     assert Sync.text(note.id) =~ "tab two says hi\n"
     assert Sync.text(note.id) =~ "after the move\n"
-    assert Sync.text(note.id) =~ "# Hello\n\nfrom tab one 😀\n"
+    assert Sync.text(note.id) =~ "# Hello\n\nfrom tab one, says the agent 😀\n"
+    assert Sync.text(note.id) =~ "agent line 15\n"
+    assert Sync.text(note.id) =~ "typed while the agent was writing\nstill typing"
     assert %{kind: :blob, size: 70} = Vaults.get_entry_by_path(vault.id, "Notes/pixel.png")
     refute Vaults.get_entry_by_path(vault.id, "Notes/browser.md")
   end

@@ -3,12 +3,14 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, wri
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
+import { connectAgent } from "../../test/e2e/mcp_client.ts";
 
 const repo = join(import.meta.dirname, "../..");
 const here = mkdtempSync(join(tmpdir(), "babelsync-obsidian-"));
 const server = process.env.BABELSYNC_URL ?? "http://localhost:4000";
 const binary = process.env.OBSIDIAN_BIN ?? "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
 const realProfile = process.env.OBSIDIAN_PROFILE ?? `${process.env.HOME}/Library/Application Support/obsidian/obsidian.json`;
+const chrome = process.env.CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const realBefore = existsSync(realProfile) ? statSync(realProfile).mtimeMs : 0;
 const realUntouched = () => (existsSync(realProfile) ? statSync(realProfile).mtimeMs : 0) === realBefore;
 const results = [];
@@ -190,9 +192,78 @@ async function run() {
     editor.setCursor({ line: 0, ch: 0 });
   });
   await desk.page.keyboard.type("desk says hello\n");
-  const merged = "desk says hello\nhi from the laptop 😀\ntyped on the laptop";
+  let merged = "desk says hello\nhi from the laptop 😀\ntyped on the laptop";
   await eventually("simultaneous typing converges to the same text in both editors", async () => (await editorText(laptop)) === merged && (await editorText(desk)) === merged);
   await eventually("the merged text is written to both vaults on disk", () => readFileSync(join(laptop.vault, "Hello.md"), "utf8") === merged && readFileSync(join(desk.vault, "Hello.md"), "utf8") === merged, 30000);
+
+  const note = { vault: vaultId, path: "Hello.md" };
+  const agent = await connectAgent(server, await laptop.page.evaluate(() => app.plugins.plugins.babelsync.settings.tokens.accessToken));
+  await agent.call("append_note", { ...note, content: "the agent adds a line\n" });
+  await eventually("an agent's append shows up in both open Obsidian editors", async () =>
+    (await editorText(laptop))?.endsWith("\nthe agent adds a line\n") && (await editorText(desk))?.endsWith("\nthe agent adds a line\n"),
+  );
+  await agent.call("edit_note", { ...note, old_text: "desk says hello", new_text: "desk says hello to the agent" });
+  await eventually("an agent's edit shows up in both open Obsidian editors", async () =>
+    (await editorText(laptop))?.startsWith("desk says hello to the agent\n") && (await editorText(desk))?.startsWith("desk says hello to the agent\n"),
+  );
+
+  await laptop.page.bringToFront();
+  await laptop.page.evaluate(() => {
+    const editor = app.workspace.activeEditor.editor;
+    editor.focus();
+    editor.setCursor({ line: 1, ch: 0 });
+  });
+  const appending = (async () => {
+    for (let line = 1; line <= 12; line++) await agent.call("append_note", { ...note, content: `agent line ${line}\n` });
+  })();
+  await laptop.page.keyboard.type("typed in Obsidian while the agent wrote ", { delay: 8 });
+  await appending;
+  const afterAgent = (await agent.call("read_note", note)).text;
+  check(
+    "typing in Obsidian while an agent appends loses neither",
+    afterAgent.includes("typed in Obsidian while the agent wrote hi from the laptop 😀") && Array.from({ length: 12 }, (_, n) => `agent line ${n + 1}\n`).every((line) => afterAgent.includes(line)),
+    JSON.stringify(afterAgent),
+  );
+  await eventually("both Obsidian editors match what the agent reads", async () => {
+    const now = (await agent.call("read_note", note)).text;
+    return (await editorText(laptop)) === now && (await editorText(desk)) === now;
+  });
+
+  const browser = await puppeteer.launch({ executablePath: chrome, headless: true }).catch(() => null);
+  if (browser) {
+    const web = await browser.newPage();
+    await web.setViewport({ width: 1280, height: 4000 });
+    await web.goto(`${server}/v/${vaultId}/f/Hello.md`, { waitUntil: "networkidle0" });
+    if (new URL(web.url()).pathname === "/login") {
+      check("web editor opened (server needs sign-in, skipped)", true);
+    } else {
+      await web.waitForSelector(".cm-content");
+      await eventually("the web editor shows what Obsidian and the agent wrote", () =>
+        web.evaluate(() => document.querySelector(".cm-content").innerText.includes("agent line 12") && document.querySelector(".cm-content").innerText.includes("typed in Obsidian while the agent wrote")),
+      );
+      await web.focus(".cm-content");
+      await web.keyboard.type("typed in the browser\n");
+      await eventually("typing in the web editor shows up live in both Obsidian editors", async () =>
+        (await editorText(laptop))?.startsWith("typed in the browser\n") && (await editorText(desk))?.startsWith("typed in the browser\n"),
+      );
+      await eventually("the web editor shows Obsidian's cursor", () => web.evaluate(() => !!document.querySelector(".cm-ySelectionCaret")));
+      await laptop.page.bringToFront();
+      await laptop.page.evaluate(() => {
+        const editor = app.workspace.activeEditor.editor;
+        editor.focus();
+        editor.setCursor({ line: 0, ch: 0 });
+      });
+      await laptop.page.keyboard.type("Obsidian answers the browser\n");
+      await eventually("typing in Obsidian shows up live in the web editor", () => web.evaluate(() => document.querySelector(".cm-content").innerText.startsWith("Obsidian answers the browser")));
+    }
+    await browser.close();
+  } else {
+    check("web editor opened (no Chrome found, skipped)", true);
+  }
+
+  merged = (await agent.call("read_note", note)).text;
+  await agent.close();
+  await eventually("everything written by all three is on disk in both vaults", () => readFileSync(join(laptop.vault, "Hello.md"), "utf8") === merged && readFileSync(join(desk.vault, "Hello.md"), "utf8") === merged, 30000);
 
   const picture = [...Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64")];
   await laptop.page.evaluate((bytes) => app.vault.createBinary("Attachments/pixel.png", new Uint8Array(bytes).buffer), picture).catch(async () => {

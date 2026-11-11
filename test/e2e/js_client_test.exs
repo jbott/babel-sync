@@ -129,4 +129,26 @@ defmodule BabelSync.E2E.JsClientTest do
 
     assert status == 0, output
   end
+
+  test "the official MCP client drives the server" do
+    owner = user()
+    _vault = vault(owner, %{name: "Agent vault"})
+    Application.put_env(:babel_sync, :auth, [:passkey])
+    on_exit(fn -> Application.put_env(:babel_sync, :auth, []) end)
+
+    {output, status} =
+      System.cmd(
+        "node",
+        ["--test", "--test-force-exit", "--test-timeout=60000", "test/e2e/mcp.test.ts"],
+        stderr_to_stdout: true,
+        env: [
+          {"BABELSYNC_URL", BabelSyncWeb.Endpoint.url()},
+          {"BABELSYNC_TOKEN", owner |> Scope.for_user() |> Auth.socket_token()},
+          {"BABELSYNC_READ_TOKEN",
+           owner |> Scope.for_user(read_only: true) |> Auth.socket_token()}
+        ]
+      )
+
+    assert status == 0, output
+  end
 end
