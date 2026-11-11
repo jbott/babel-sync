@@ -134,18 +134,84 @@ async function signIn(device, vaultId) {
   await page.evaluate(() => {
     app.setting.open();
     app.setting.openTabById("babelsync");
-    [...document.querySelectorAll(".vertical-tab-content button")].find((button) => button.innerText === "Load vaults").click();
   });
-  await eventually(`${name}: settings tab lists the server's vaults`, () =>
+  await eventually(`${name}: settings tab lists the server's vaults by itself`, () =>
     page.evaluate((vaultId) => [...document.querySelectorAll(".vertical-tab-content select option")].some((option) => option.value === vaultId), vaultId),
   );
   await page.evaluate(async (vaultId) => {
     const select = [...document.querySelectorAll(".vertical-tab-content select")].find((select) => [...select.options].some((option) => option.value === vaultId));
     select.value = vaultId;
     select.dispatchEvent(new Event("change"));
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    app.setting.close();
   }, vaultId);
+  await eventually(`${name}: settings tab says what it is syncing with`, () =>
+    page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.startsWith("Syncing with ")),
+  );
+  if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `settings-${name}.png`) });
+  await page.evaluate(() => app.setting.close());
+  await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("BabelSync: synced")));
+}
+
+async function followLink(device, vaultId) {
+  const { page, name } = device;
+  await page.evaluate(() => {
+    app.setting.open();
+    app.setting.openTabById("babelsync");
+  });
+  await eventually(`${name}: a fresh settings tab starts at step 1`, () =>
+    page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.startsWith("Step 1 of 3")),
+  );
+  if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `settings-${name}-fresh.png`) });
+  await page.evaluate(() => app.setting.close());
+
+  const handled = await page.evaluate(
+    (server, id) => {
+      if (typeof window.OBS_ACT !== "function") return false;
+      window.OBS_ACT({ action: "babelsync-connect", server, id, name: "Linked" });
+      return true;
+    },
+    server,
+    vaultId,
+  );
+  check(`${name}: Obsidian hands the connect link to the plugin`, handled);
+  await eventually(`${name}: the connect link asks before changing anything`, () =>
+    page.evaluate(
+      (host) => {
+        const modal = document.querySelector(".modal-container .modal");
+        const unset = !app.plugins.plugins.babelsync.settings.serverUrl;
+        return unset && !!modal?.innerText.includes(`“Linked” on ${host}`);
+      },
+      new URL(server).host,
+    ),
+  );
+  if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `connect-${name}.png`) });
+  await page.evaluate(() => [...document.querySelectorAll(".modal-container .modal button")].find((button) => button.innerText === "Connect").click());
+
+  const needsSignIn = (await fetch(`${server}/api/vaults`)).status === 401;
+  if (needsSignIn) {
+    let url;
+    await eventually(`${name}: connecting opens the consent page`, async () => {
+      url = await page.evaluate(() => window.__opened.at(-1));
+      return !!url?.startsWith(`${server}/oauth/authorize?`);
+    });
+    const callback = await approve(url);
+    await page.evaluate((callback) => app.plugins.plugins.babelsync.finishSignIn(callback), callback);
+  }
+
+  await eventually(`${name}: the connect link alone sets the server and the vault`, () =>
+    page.evaluate((server, id) => {
+      const { serverUrl, vaultId } = app.plugins.plugins.babelsync.settings;
+      return serverUrl === server && vaultId === id;
+    }, server, vaultId),
+  );
+  await page.evaluate(
+    async (name) => {
+      const plugin = app.plugins.plugins.babelsync;
+      plugin.settings.deviceName = name;
+      plugin.settings.userName = name;
+      await plugin.saveSettings();
+    },
+    name,
+  );
   await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("BabelSync: synced")));
 }
 
@@ -166,7 +232,7 @@ async function run() {
   await enablePlugin(laptop);
   await enablePlugin(desk);
   await signIn(laptop, vaultId);
-  await signIn(desk, vaultId);
+  await followLink(desk, vaultId);
 
   await laptop.page.evaluate(() => app.vault.create("Hello.md", "hi from the laptop 😀\n"));
   await eventually("a note created in one Obsidian appears in the other", async () => (await read(desk, "Hello.md")) === "hi from the laptop 😀\n");

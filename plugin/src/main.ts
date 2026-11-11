@@ -1,8 +1,10 @@
 import { BabelSyncClient } from "@babelsync/core";
-import { Notice, Plugin, TFile, debounce } from "obsidian";
+import { Notice, Plugin, TFile, debounce, requestUrl } from "obsidian";
 import { Collab } from "./collab.ts";
+import { ConnectModal } from "./connect.ts";
 import { type Status, SyncEngine } from "./engine.ts";
 import { IdbStore } from "./idb-store.ts";
+import { type Invitation, readInvitation } from "./invitation.ts";
 import { nativeFetch } from "./native-fetch.ts";
 import {
   type Callback,
@@ -15,11 +17,16 @@ import {
   revokeTokens,
 } from "./oauth.ts";
 import { ObsidianFs } from "./obsidian-fs.ts";
-import { DEFAULT_SETTINGS, type Settings, SettingsTab, maxBlobBytes } from "./settings.ts";
+import { DEFAULT_SETTINGS, type RemoteVault, type Settings, SettingsTab, maxBlobBytes } from "./settings.ts";
 
 const CONFIG_SCAN_MS = 30_000;
 const TOKEN_CHECK_MS = 60_000;
 const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\/data\.json$/, /^\.obsidian\/cache$/, /^\.trash\//];
+
+export type VaultsReply =
+  | { kind: "vaults"; vaults: RemoteVault[] }
+  | { kind: "signed-out" }
+  | { kind: "failed"; message: string };
 
 const LABELS: Record<Status, string> = {
   offline: "BabelSync: offline",
@@ -30,6 +37,8 @@ const LABELS: Record<Status, string> = {
 
 export default class BabelSyncPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
+  status: Status = "offline";
+  onStatus: ((status: Status) => void) | null = null;
 
   private client: BabelSyncClient | null = null;
   private engine: SyncEngine | null = null;
@@ -77,7 +86,56 @@ export default class BabelSyncPlugin extends Plugin {
     });
     this.registerObsidianProtocolHandler("babelsync", ({ code, state, error }) => void this.finishSignIn({ code, state, error }));
 
+    this.registerObsidianProtocolHandler("babelsync-connect", (params) => {
+      const invitation = readInvitation(params);
+      if (!invitation) return void new Notice("BabelSync: that connect link is not valid.");
+      new ConnectModal(this.app, this, invitation).open();
+    });
+
     this.app.workspace.onLayoutReady(() => void this.restart());
+  }
+
+  async adopt({ server, vaultId, vaultName }: Invitation): Promise<void> {
+    const { tokens, serverUrl } = this.settings;
+
+    if (serverUrl !== server && tokens) {
+      this.settings.tokens = null;
+      void revokeTokens(nativeFetch, serverUrl, tokens.refreshToken).catch(() => {});
+    }
+
+    Object.assign(this.settings, { serverUrl: server, vaultId, vaultName });
+    await this.saveSettings();
+    await this.restart();
+  }
+
+  async remoteVaults(): Promise<VaultsReply> {
+    const { serverUrl } = this.settings;
+    if (!serverUrl) return { kind: "failed", message: "Enter the server address first." };
+
+    try {
+      const token = await this.accessToken();
+      const response = await requestUrl({
+        url: `${serverUrl}/api/vaults`,
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+        throw: false,
+      });
+
+      if (response.status === 401) return { kind: "signed-out" };
+      if (response.status !== 200) return { kind: "failed", message: `The server answered ${response.status}. Check the address.` };
+
+      const vaults = (response.json as { vaults: RemoteVault[] }).vaults;
+      await this.rememberName(vaults);
+      return { kind: "vaults", vaults };
+    } catch {
+      return { kind: "failed", message: "Could not reach the server. Check the address and your connection." };
+    }
+  }
+
+  private async rememberName(vaults: RemoteVault[]): Promise<void> {
+    const name = vaults.find((vault) => vault.id === this.settings.vaultId)?.name;
+    if (!name || name === this.settings.vaultName) return;
+    this.settings.vaultName = name;
+    await this.saveSettings();
   }
 
   async signIn(): Promise<void> {
@@ -269,6 +327,8 @@ export default class BabelSyncPlugin extends Plugin {
   }
 
   private show(status: Status): void {
+    this.status = status;
+    this.onStatus?.(status);
     this.statusBar?.setText(LABELS[status]);
   }
 }

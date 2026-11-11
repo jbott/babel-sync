@@ -1,4 +1,6 @@
-import { type App, type ButtonComponent, Platform, PluginSettingTab, Setting, requestUrl } from "obsidian";
+import { type App, type ButtonComponent, Platform, PluginSettingTab, Setting } from "obsidian";
+import type { Status } from "./engine.ts";
+import { hostOf, normalizeServer } from "./invitation.ts";
 import type BabelSyncPlugin from "./main.ts";
 import type { Pending, Tokens } from "./oauth.ts";
 
@@ -11,6 +13,7 @@ export type Settings = {
   tokens: Tokens | null;
   pendingSignIn: Pending | null;
   vaultId: string;
+  vaultName: string;
   deviceName: string;
   userName: string;
   userColor: string;
@@ -25,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tokens: null,
   pendingSignIn: null,
   vaultId: "",
+  vaultName: "",
   deviceName: Platform.isMobile ? "Phone" : "Desktop",
   userName: "",
   userColor: "#7c3aed",
@@ -36,13 +40,25 @@ export function maxBlobBytes(settings: Settings): number | undefined {
   return settings.maxFileMebibytes > 0 ? settings.maxFileMebibytes * MEBIBYTE : undefined;
 }
 
-type RemoteVault = { id: string; name: string; role: string };
+export type RemoteVault = { id: string; name: string; role: string };
+
+type Reach = "unknown" | "checking" | "open" | "signed-out" | "failed";
+
+const ACTIVITY: Record<Status, string> = {
+  offline: "Offline. Changes are kept and sent when the server is reachable again.",
+  syncing: "Syncing…",
+  synced: "Everything is up to date.",
+  error: "Something went wrong. Try Reconnect below.",
+};
 
 export class SettingsTab extends PluginSettingTab {
   private plugin: BabelSyncPlugin;
   private vaults: RemoteVault[] = [];
-  private notice = "";
+  private reach: Reach = "unknown";
+  private problem = "";
   private signInUrl: string | null = null;
+  private summary: Setting | null = null;
+  private signedIn = false;
 
   constructor(app: App, plugin: BabelSyncPlugin) {
     super(app, plugin);
@@ -50,41 +66,59 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   display(): void {
+    this.plugin.onStatus = () => this.statusChanged();
+    this.signedIn = this.plugin.settings.tokens !== null;
+    this.draw();
+    if (this.reach === "unknown") void this.check();
+  }
+
+  hide(): void {
+    this.plugin.onStatus = null;
+    this.summary = null;
+    this.reach = "unknown";
+    this.signInUrl = null;
+    void this.plugin.restart();
+  }
+
+  private draw(): void {
     const { containerEl } = this;
     const { settings } = this.plugin;
     containerEl.empty();
 
+    this.summary = new Setting(containerEl).setHeading();
+    this.summarize();
+
     new Setting(containerEl)
       .setName("Server")
-      .setDesc("Address of your BabelSync server, for example https://notes.example.com")
-      .addText((text) =>
-        text
-          .setPlaceholder("https://")
-          .setValue(settings.serverUrl)
-          .onChange((value) => this.save({ serverUrl: value.trim().replace(/\/+$/, "") })),
-      );
+      .setDesc("Address of your BabelSync server, for example notes.example.com")
+      .addText((text) => {
+        text.setPlaceholder("https://").setValue(settings.serverUrl);
+        text.inputEl.addEventListener("change", () => void this.changeServer(text.getValue()));
+      });
 
-    new Setting(containerEl)
-      .setName("Account")
-      .setDesc(this.accountDescription())
-      .addButton((button) => this.accountButton(button));
+    if (settings.serverUrl) {
+      new Setting(containerEl)
+        .setName("Account")
+        .setDesc(this.accountDescription())
+        .addButton((button) => this.accountButton(button));
+    }
 
-    new Setting(containerEl)
-      .setName("Vault")
-      .setDesc(this.notice || "The server vault this Obsidian vault syncs with.")
-      .addDropdown((dropdown) => {
-        dropdown.addOption("", "Not connected");
-        for (const vault of this.options()) dropdown.addOption(vault.id, `${vault.name} (${vault.role})`);
-        dropdown.setValue(settings.vaultId).onChange((value) => this.save({ vaultId: value }, true));
-      })
-      .addButton((button) => button.setButtonText("Load vaults").onClick(() => this.loadVaults()));
+    if (this.reach === "open") {
+      new Setting(containerEl)
+        .setName("Vault")
+        .setDesc(
+          this.vaults.length === 0
+            ? "There are no vaults on the server yet. Create one in the web app, then come back."
+            : "The server vault this Obsidian vault syncs with. Notes already here are merged into it.",
+        )
+        .addDropdown((dropdown) => {
+          dropdown.addOption("", "Choose a vault");
+          for (const vault of this.options()) dropdown.addOption(vault.id, vault.name);
+          dropdown.setValue(settings.vaultId).onChange((value) => this.chooseVault(value));
+        });
+    }
 
-    new Setting(containerEl)
-      .setName("Device name")
-      .setDesc("Names the copy kept when two devices change the same attachment.")
-      .addText((text) =>
-        text.setValue(settings.deviceName).onChange((value) => this.save({ deviceName: value.trim() })),
-      );
+    new Setting(containerEl).setName("You").setHeading();
 
     new Setting(containerEl)
       .setName("Your name")
@@ -95,11 +129,18 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Device name")
+      .setDesc("How this device appears on the server, and the name given to the copy kept when two devices change the same attachment.")
+      .addText((text) =>
+        text.setValue(settings.deviceName).onChange((value) => this.save({ deviceName: value.trim() })),
+      );
+
+    new Setting(containerEl).setName("What syncs").setHeading();
+
+    new Setting(containerEl)
       .setName("Sync Obsidian settings")
       .setDesc("Themes, snippets, hotkeys and plugins. Window layout stays on each device.")
-      .addToggle((toggle) =>
-        toggle.setValue(settings.syncConfig).onChange((value) => this.save({ syncConfig: value }, true)),
-      );
+      .addToggle((toggle) => toggle.setValue(settings.syncConfig).onChange((value) => this.save({ syncConfig: value })));
 
     new Setting(containerEl)
       .setName("Largest attachment (MiB)")
@@ -112,31 +153,117 @@ export class SettingsTab extends PluginSettingTab {
         });
       });
 
+    new Setting(containerEl).setName("Troubleshooting").setHeading();
+
     new Setting(containerEl)
-      .setName("Start over")
-      .setDesc("Forget what this device has synced and compare everything with the server again.")
-      .addButton((button) => button.setButtonText("Resync").onClick(() => this.plugin.resync()));
+      .setName("Reconnect")
+      .setDesc("Drop the connection to the server and open it again.")
+      .addButton((button) => button.setButtonText("Reconnect").onClick(() => this.plugin.restart(true)));
+
+    new Setting(containerEl)
+      .setName("Compare everything again")
+      .setDesc("Forget what this device has synced and compare every file with the server. Nothing is deleted.")
+      .addButton((button) => button.setButtonText("Compare").onClick(() => this.plugin.resync()));
   }
 
-  hide(): void {
-    void this.plugin.restart();
+  private summarize(): void {
+    const { name, description } = this.headline();
+    this.summary?.setName(name).setDesc(description);
+  }
+
+  private headline(): { name: string; description: string } {
+    const { serverUrl, vaultId, vaultName, tokens } = this.plugin.settings;
+
+    if (!serverUrl) {
+      return {
+        name: "Step 1 of 3: enter your server",
+        description: "Type the address below. Or open the vault in the web app and choose Connect Obsidian to set all of this up with one tap.",
+      };
+    }
+    if (this.reach === "checking") return { name: "Checking the server…", description: hostOf(serverUrl) };
+    if (this.reach === "failed") return { name: "Cannot talk to the server", description: this.problem };
+    if (this.reach === "signed-out" || (this.reach === "unknown" && !tokens && !vaultId)) {
+      return {
+        name: "Step 2 of 3: sign in",
+        description: this.signInUrl
+          ? "Sign-in is ready. Open the page, approve this device, and you will come straight back."
+          : `Sign in to ${hostOf(serverUrl)} so this device can sync.`,
+      };
+    }
+    if (!vaultId) return { name: "Step 3 of 3: choose a vault", description: "Pick the server vault to sync with below." };
+
+    return {
+      name: `Syncing with ${vaultName || "your vault"} on ${hostOf(serverUrl)}`,
+      description: ACTIVITY[this.plugin.status],
+    };
+  }
+
+  private statusChanged(): void {
+    const signedIn = this.plugin.settings.tokens !== null;
+    if (signedIn === this.signedIn) return this.summarize();
+
+    this.signedIn = signedIn;
+    this.signInUrl = null;
+    void this.check();
+  }
+
+  private async check(): Promise<void> {
+    if (!this.plugin.settings.serverUrl) {
+      this.reach = "unknown";
+      return this.draw();
+    }
+
+    this.reach = "checking";
+    this.summarize();
+    const reply = await this.plugin.remoteVaults();
+
+    if (reply.kind === "vaults") {
+      this.vaults = reply.vaults;
+      this.reach = "open";
+      if (!this.plugin.settings.vaultId && reply.vaults.length === 1) return this.chooseVault(reply.vaults[0]!.id);
+    } else if (reply.kind === "signed-out") {
+      this.reach = "signed-out";
+    } else {
+      this.reach = "failed";
+      this.problem = reply.message;
+    }
+
+    this.draw();
+  }
+
+  private async changeServer(value: string): Promise<void> {
+    const serverUrl = normalizeServer(value) ?? "";
+    if (serverUrl === this.plugin.settings.serverUrl) return this.draw();
+
+    this.signedIn = false;
+    if (this.plugin.settings.tokens) await this.plugin.signOut();
+    await this.save({ serverUrl, vaultId: "", vaultName: "" });
+    this.signInUrl = null;
+    this.vaults = [];
+    await this.check();
+  }
+
+  private async chooseVault(vaultId: string): Promise<void> {
+    const vaultName = this.vaults.find((vault) => vault.id === vaultId)?.name ?? "";
+    await this.save({ vaultId, vaultName });
+    await this.plugin.restart();
+    this.draw();
   }
 
   private accountDescription(): string {
     if (this.plugin.settings.tokens) return "This device is signed in.";
-    if (this.signInUrl) return "Sign-in is ready. Open the page, approve this device, and come back.";
-    return "Not signed in. A server that runs without sign-in works as it is.";
+    if (this.reach === "open") return "This server does not ask for sign-in.";
+    if (this.signInUrl) return "Open the page, approve this device, and come back.";
+    return "Not signed in.";
   }
 
   private accountButton(button: ButtonComponent): void {
     const signInUrl = this.signInUrl;
 
     if (this.plugin.settings.tokens) {
-      this.signInUrl = null;
-      button.setButtonText("Sign out").onClick(async () => {
-        await this.plugin.signOut();
-        this.display();
-      });
+      button.setButtonText("Sign out").onClick(() => this.plugin.signOut());
+    } else if (this.reach === "open") {
+      button.setButtonText("Not needed").setDisabled(true);
     } else if (signInUrl) {
       button
         .setButtonText("Open sign-in page")
@@ -149,44 +276,19 @@ export class SettingsTab extends PluginSettingTab {
         .onClick(async () => {
           if (!Platform.isMobile) return this.plugin.signIn();
           this.signInUrl = await this.plugin.prepareSignIn();
-          this.display();
+          this.draw();
         });
     }
   }
 
   private options(): RemoteVault[] {
-    const { vaultId } = this.plugin.settings;
+    const { vaultId, vaultName } = this.plugin.settings;
     if (!vaultId || this.vaults.some((vault) => vault.id === vaultId)) return this.vaults;
-    return [...this.vaults, { id: vaultId, name: vaultId.slice(0, 8), role: "current" }];
+    return [...this.vaults, { id: vaultId, name: vaultName || "Current vault", role: "current" }];
   }
 
-  private async save(changes: Partial<Settings>, redraw = false): Promise<void> {
+  private async save(changes: Partial<Settings>): Promise<void> {
     Object.assign(this.plugin.settings, changes);
     await this.plugin.saveSettings();
-    if (redraw) this.display();
-  }
-
-  private async loadVaults(): Promise<void> {
-    const { serverUrl } = this.plugin.settings;
-
-    try {
-      const token = await this.plugin.accessToken();
-      const response = await requestUrl({
-        url: `${serverUrl}/api/vaults`,
-        headers: token ? { authorization: `Bearer ${token}` } : {},
-        throw: false,
-      });
-
-      if (response.status === 200) {
-        this.vaults = response.json.vaults;
-        this.notice = this.vaults.length === 0 ? "No vaults yet. Create one in the web app." : "";
-      } else {
-        this.notice = response.status === 401 ? "Sign in first." : `Server answered ${response.status}.`;
-      }
-    } catch {
-      this.notice = "Could not reach the server.";
-    }
-
-    this.display();
   }
 }
