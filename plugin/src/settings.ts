@@ -1,6 +1,6 @@
-import { type App, Platform, PluginSettingTab, Setting, requestUrl } from "obsidian";
+import { type App, type ButtonComponent, Platform, PluginSettingTab, Setting, requestUrl } from "obsidian";
 import type BabelSyncPlugin from "./main.ts";
-import type { Tokens } from "./oauth.ts";
+import type { Pending, Tokens } from "./oauth.ts";
 
 const MEBIBYTE = 1024 * 1024;
 
@@ -9,6 +9,7 @@ export type Settings = {
   clientId: string;
   clientServer: string;
   tokens: Tokens | null;
+  pendingSignIn: Pending | null;
   vaultId: string;
   deviceName: string;
   userName: string;
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clientId: "",
   clientServer: "",
   tokens: null,
+  pendingSignIn: null,
   vaultId: "",
   deviceName: Platform.isMobile ? "Phone" : "Desktop",
   userName: "",
@@ -40,6 +42,7 @@ export class SettingsTab extends PluginSettingTab {
   private plugin: BabelSyncPlugin;
   private vaults: RemoteVault[] = [];
   private notice = "";
+  private signInUrl: string | null = null;
 
   constructor(app: App, plugin: BabelSyncPlugin) {
     super(app, plugin);
@@ -63,22 +66,8 @@ export class SettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Account")
-      .setDesc(
-        settings.tokens
-          ? "This device is signed in."
-          : "Not signed in. A server that runs without sign-in works as it is.",
-      )
-      .addButton((button) =>
-        settings.tokens
-          ? button.setButtonText("Sign out").onClick(async () => {
-              await this.plugin.signOut();
-              this.display();
-            })
-          : button
-              .setButtonText("Sign in")
-              .setCta()
-              .onClick(() => this.plugin.signIn()),
-      );
+      .setDesc(this.accountDescription())
+      .addButton((button) => this.accountButton(button));
 
     new Setting(containerEl)
       .setName("Vault")
@@ -131,6 +120,38 @@ export class SettingsTab extends PluginSettingTab {
 
   hide(): void {
     void this.plugin.restart();
+  }
+
+  private accountDescription(): string {
+    if (this.plugin.settings.tokens) return "This device is signed in.";
+    if (this.signInUrl) return "Sign-in is ready. Open the page, approve this device, and come back.";
+    return "Not signed in. A server that runs without sign-in works as it is.";
+  }
+
+  private accountButton(button: ButtonComponent): void {
+    const signInUrl = this.signInUrl;
+
+    if (this.plugin.settings.tokens) {
+      this.signInUrl = null;
+      button.setButtonText("Sign out").onClick(async () => {
+        await this.plugin.signOut();
+        this.display();
+      });
+    } else if (signInUrl) {
+      button
+        .setButtonText("Open sign-in page")
+        .setCta()
+        .onClick(() => void window.open(signInUrl));
+    } else {
+      button
+        .setButtonText("Sign in")
+        .setCta()
+        .onClick(async () => {
+          if (!Platform.isMobile) return this.plugin.signIn();
+          this.signInUrl = await this.plugin.prepareSignIn();
+          this.display();
+        });
+    }
   }
 
   private options(): RemoteVault[] {

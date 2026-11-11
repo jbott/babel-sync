@@ -38,7 +38,6 @@ export default class BabelSyncPlugin extends Plugin {
   private collab!: Collab;
   private statusBar: HTMLElement | null = null;
   private running = "";
-  private pendingSignIn: Pending | null = null;
   private transition: Promise<void> = Promise.resolve();
 
   async onload(): Promise<void> {
@@ -79,21 +78,31 @@ export default class BabelSyncPlugin extends Plugin {
   }
 
   async signIn(): Promise<void> {
+    const url = await this.prepareSignIn();
+    if (url) window.open(url);
+  }
+
+  async prepareSignIn(): Promise<string | null> {
     const { serverUrl, deviceName } = this.settings;
-    if (!serverUrl) return void new Notice("Enter the server address first.");
+
+    if (!serverUrl) {
+      new Notice("Enter the server address first.");
+      return null;
+    }
 
     try {
       if (!this.settings.clientId || this.settings.clientServer !== serverUrl) {
         this.settings.clientId = await registerClient(nativeFetch, serverUrl, `Obsidian (${deviceName})`);
         this.settings.clientServer = serverUrl;
-        await this.saveSettings();
       }
 
       const { url, pending } = await beginAuthorization(serverUrl, this.settings.clientId);
-      this.pendingSignIn = pending;
-      window.open(url);
+      this.settings.pendingSignIn = pending;
+      await this.saveSettings();
+      return url;
     } catch (error) {
       new Notice(`BabelSync: ${describe(error)}`);
+      return null;
     }
   }
 
@@ -129,8 +138,8 @@ export default class BabelSyncPlugin extends Plugin {
   private refreshing: Promise<void> | null = null;
 
   private async finishSignIn(params: Callback): Promise<void> {
-    const pending = this.pendingSignIn;
-    this.pendingSignIn = null;
+    const pending = this.settings.pendingSignIn;
+    this.settings.pendingSignIn = null;
     if (!pending) return void new Notice("BabelSync: no sign-in is in progress.");
 
     try {
@@ -139,6 +148,7 @@ export default class BabelSyncPlugin extends Plugin {
       new Notice("BabelSync is signed in.");
       await this.restart(true);
     } catch (error) {
+      await this.saveSettings();
       new Notice(`BabelSync: ${describe(error)}`);
     }
   }
