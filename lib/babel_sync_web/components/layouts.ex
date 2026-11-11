@@ -91,7 +91,7 @@ defmodule BabelSyncWeb.Layouts do
         @class
       ]}
     >
-      <.icon name="hero-user-circle" class="size-[1.125rem]" /> Account
+      <.icon name="hero-user-circle" class="size-[1.125rem]" /> Settings
     </.link>
     """
   end
@@ -155,11 +155,16 @@ defmodule BabelSyncWeb.Layouts do
   The script in the head of root.html.heex applies the choice before the
   page is painted and listens for the event these buttons dispatch.
   """
+  attr :class, :any, default: nil
+
   def theme_toggle(assigns) do
     ~H"""
     <div
       id="theme-toggle"
-      class="theme-toggle grid grid-cols-3 gap-1 rounded-xl border border-line bg-sunken p-1"
+      class={[
+        "theme-toggle grid grid-cols-3 gap-1 rounded-xl border border-line bg-sunken p-1",
+        @class
+      ]}
       role="group"
       aria-label="Theme"
     >
@@ -172,7 +177,7 @@ defmodule BabelSyncWeb.Layouts do
           ]
         }
         type="button"
-        class="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg text-sm font-medium"
+        class="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme={theme}
       >

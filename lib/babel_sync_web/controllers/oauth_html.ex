@@ -103,7 +103,7 @@ defmodule BabelSyncWeb.OAuthHTML do
             </.form>
 
             <p class="text-center text-xs text-faint">
-              You can disconnect it again at any time from your account page.
+              You can disconnect it again at any time from your settings.
             </p>
           </div>
         </div>

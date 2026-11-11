@@ -388,11 +388,13 @@ defmodule BabelSyncWeb.CoreComponents do
   Renders the link that leads from a page back to its parent.
   """
   attr :navigate, :string, required: true
+  attr :id, :string, default: nil
   slot :inner_block, required: true
 
   def back_link(assigns) do
     ~H"""
     <.link
+      id={@id}
       navigate={@navigate}
       class="group -ml-1 inline-flex max-w-full items-center gap-1 rounded-md px-1 py-0.5 text-muted transition hover:text-ink"
     >
@@ -410,13 +412,14 @@ defmodule BabelSyncWeb.CoreComponents do
   """
   attr :title, :string, required: true
   attr :tone, :string, values: ~w(neutral danger), default: "neutral"
+  attr :class, :any, default: nil
   attr :rest, :global
   slot :description
   slot :inner_block, required: true
 
   def panel(assigns) do
     ~H"""
-    <section class="space-y-3" {@rest}>
+    <section class={["space-y-3", @class]} {@rest}>
       <div class="flex items-center gap-3">
         <h2 class={[
           "text-xs font-semibold uppercase tracking-[0.1em]",
@@ -453,6 +456,52 @@ defmodule BabelSyncWeb.CoreComponents do
     >
       {render_slot(@inner_block)}
     </ul>
+    """
+  end
+
+  @doc """
+  Renders the card that the rows of one group of settings sit in.
+  """
+  attr :class, :any, default: nil
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  def group(assigns) do
+    ~H"""
+    <div
+      class={[
+        "divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface shadow-raise",
+        @class
+      ]}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
+
+  @doc """
+  Renders one setting as a row: what it is on the left, its value or
+  control on the right. A stacked setting puts the control under the label
+  on a narrow screen.
+  """
+  attr :label, :string, required: true
+  attr :for, :string, default: nil
+  attr :stack, :boolean, default: false
+  slot :hint
+  slot :inner_block, required: true
+
+  def setting(assigns) do
+    ~H"""
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      <div class={["min-w-0 sm:w-40 sm:flex-none", @stack && "basis-full sm:basis-auto"]}>
+        <label for={@for} class="block text-sm font-medium text-ink">{@label}</label>
+        <p :if={@hint != []} class="text-xs text-faint">{render_slot(@hint)}</p>
+      </div>
+      <div class="flex min-w-0 flex-1 items-center justify-end gap-2.5">
+        {render_slot(@inner_block)}
+      </div>
+    </div>
     """
   end
 

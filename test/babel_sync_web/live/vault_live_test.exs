@@ -88,6 +88,47 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
   end
 
+  describe "the way back from settings" do
+    test "returns to the vault the person came from", %{conn: conn, owner: owner, vault: vault} do
+      journal = vault(owner, %{name: "Journal"})
+      {:ok, view, _html} = live(conn, Paths.vault(journal.id))
+
+      assert has_element?(view, "#account-link[href='/account?from=#{journal.id}']")
+
+      {:ok, account, _html} = live(conn, ~p"/account?from=#{journal.id}")
+
+      assert has_element?(
+               account,
+               "#account-back[href='#{Paths.vault(journal.id)}']",
+               "Back to Journal"
+             )
+
+      refute has_element?(account, "#account-back[href='#{Paths.vault(vault.id)}']")
+    end
+
+    test "falls back to the notes for a vault that is unknown or someone else's", %{conn: conn} do
+      foreign = vault(user(), %{name: "Someone else's"})
+
+      for from <- [foreign.id, "nonsense", ""] do
+        {:ok, account, _html} = live(conn, ~p"/account?from=#{from}")
+
+        assert has_element?(account, "#account-back[href='/']", "Back to notes")
+        refute has_element?(account, "#account-back", "Someone else")
+      end
+
+      {:ok, account, _html} = live(conn, ~p"/account")
+      assert has_element?(account, "#account-back[href='/']", "Back to notes")
+    end
+
+    test "is left out for someone without a vault", %{anonymous: conn} do
+      conn = sign_in(conn, user())
+      {:ok, account, _html} = live(conn, ~p"/account?from=#{Ecto.UUID.generate()}")
+
+      refute has_element?(account, "#account-back")
+      assert has_element?(account, "#vaults-empty")
+    end
+  end
+
   describe "vault switcher" do
     test "lists the person's vaults and moves between them", %{
       conn: conn,

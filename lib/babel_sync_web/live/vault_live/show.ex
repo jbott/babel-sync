@@ -485,9 +485,9 @@ defmodule BabelSyncWeb.VaultLive.Show do
             <.icon_button
               :if={@current_scope}
               id="account-link"
-              navigate={~p"/account"}
+              navigate={~p"/account?#{[from: @vault.id]}"}
               icon="hero-user-circle"
-              label="Account"
+              label="Your settings"
             />
           </div>
         </aside>
