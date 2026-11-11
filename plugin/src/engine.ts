@@ -43,8 +43,11 @@ type Live = {
 const DISK = Symbol("disk");
 const MAX_RESTING_SESSIONS = 16;
 
-export class SyncEngine extends Emitter<{ status: Status; error: string }> {
+export type Progress = { direction: "receiving" | "sending"; done: number; total: number };
+
+export class SyncEngine extends Emitter<{ status: Status; error: string; progress: Progress | null }> {
   status: Status = "offline";
+  progress: Progress | null = null;
 
   private options: EngineOptions;
   private vault: VaultSession | null = null;
@@ -175,7 +178,19 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
     else if (this.pending === 0) this.setStatus(this.online ? "synced" : "offline");
   }
 
+  get fileCount(): number {
+    return this.byId.size;
+  }
+
+  private report(direction: Progress["direction"] | null, done = 0, total = 0): void {
+    const progress = direction && total > 1 ? { direction, done, total } : null;
+    if (!progress && !this.progress) return;
+    this.progress = progress;
+    this.emit("progress", progress);
+  }
+
   private setStatus(status: Status): void {
+    if (status !== "syncing") this.report(null);
     if (this.status === status) return;
     this.status = status;
     this.emit("status", status);
@@ -189,7 +204,9 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
       }
     }
 
-    for (const change of [...changes].sort((a, b) => a.seq - b.seq)) {
+    const incoming = [...changes].sort((a, b) => a.seq - b.seq);
+    for (const [done, change] of incoming.entries()) {
+      this.report("receiving", done, incoming.length);
       await this.applyRemote(change);
     }
 
@@ -200,13 +217,16 @@ export class SyncEngine extends Emitter<{ status: Status; error: string }> {
       if (entry.moved) await this.pushRename(entry);
     }
 
-    for (const file of files) {
+    const outgoing = files.filter((file) => {
       const id = this.byPath.get(file.path);
       const known = id ? this.byId.get(id) : undefined;
-      if (!known || known.mtime !== file.mtime || known.size !== file.size) {
-        await this.pushLocal(file.path);
-      }
+      return !known || known.mtime !== file.mtime || known.size !== file.size;
+    });
+    for (const [done, file] of outgoing.entries()) {
+      this.report("sending", done, outgoing.length);
+      await this.pushLocal(file.path);
     }
+    this.report(null);
 
     for (const entry of [...this.byId.values()]) {
       const materialized = entry.kind !== "folder" && entry.hash !== null;

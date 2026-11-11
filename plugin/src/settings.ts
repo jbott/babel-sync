@@ -1,5 +1,4 @@
 import { type App, type ButtonComponent, Platform, PluginSettingTab, Setting } from "obsidian";
-import type { Status } from "./engine.ts";
 import { hostOf, normalizeServer } from "./invitation.ts";
 import type BabelSyncPlugin from "./main.ts";
 import type { Pending, Tokens } from "./oauth.ts";
@@ -44,12 +43,9 @@ export type RemoteVault = { id: string; name: string; role: string };
 
 type Reach = "unknown" | "checking" | "open" | "signed-out" | "failed";
 
-const ACTIVITY: Record<Status, string> = {
-  offline: "Offline. Changes are kept and sent when the server is reachable again.",
-  syncing: "Syncing…",
-  synced: "Everything is up to date.",
-  error: "Something went wrong. Try Reconnect below.",
-};
+function clock(time: number): string {
+  return new Date(time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
 
 export class SettingsTab extends PluginSettingTab {
   private plugin: BabelSyncPlugin;
@@ -194,8 +190,24 @@ export class SettingsTab extends PluginSettingTab {
 
     return {
       name: `Syncing with ${vaultName || "your vault"} on ${hostOf(serverUrl)}`,
-      description: ACTIVITY[this.plugin.status],
+      description: this.activity(),
     };
+  }
+
+  private activity(): string {
+    const { status, progress, fileCount, lastSynced, lastError } = this.plugin;
+    const files = `${fileCount.toLocaleString()} ${fileCount === 1 ? "file" : "files"}`;
+
+    if (status === "syncing" && progress) {
+      const verb = progress.direction === "receiving" ? "Receiving" : "Sending";
+      return `${verb} ${(progress.done + 1).toLocaleString()} of ${progress.total.toLocaleString()}…`;
+    }
+    if (status === "syncing") return "Syncing…";
+    if (status === "synced") return `Everything is up to date. ${files}, checked at ${clock(lastSynced ?? Date.now())}.`;
+    if (status === "error") return `Stopped on an error: ${lastError || "unknown"}. Try Reconnect below.`;
+
+    const since = lastSynced ? ` Last in sync at ${clock(lastSynced)}.` : "";
+    return `Offline. Changes are kept and sent when the server is reachable again.${since}`;
   }
 
   private statusChanged(): void {

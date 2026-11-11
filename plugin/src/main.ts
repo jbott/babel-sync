@@ -2,7 +2,7 @@ import { BabelSyncClient } from "@babelsync/core";
 import { Notice, Plugin, TFile, debounce, requestUrl } from "obsidian";
 import { Collab } from "./collab.ts";
 import { ConnectModal } from "./connect.ts";
-import { type Status, SyncEngine } from "./engine.ts";
+import { type Progress, type Status, SyncEngine } from "./engine.ts";
 import { IdbStore } from "./idb-store.ts";
 import { type Invitation, readInvitation } from "./invitation.ts";
 import { nativeFetch } from "./native-fetch.ts";
@@ -39,6 +39,8 @@ export default class BabelSyncPlugin extends Plugin {
   settings: Settings = { ...DEFAULT_SETTINGS };
   status: Status = "offline";
   onStatus: ((status: Status) => void) | null = null;
+  lastError = "";
+  lastSynced: number | null = null;
 
   private client: BabelSyncClient | null = null;
   private engine: SyncEngine | null = null;
@@ -289,7 +291,11 @@ export default class BabelSyncPlugin extends Plugin {
       this.rebind();
     });
     client.socket.onError(() => void this.accessToken().catch(() => {}));
-    engine.on("error", (reason) => new Notice(`BabelSync: ${reason}`));
+    engine.on("error", (reason) => {
+      this.lastError = reason;
+      new Notice(`BabelSync: ${reason}`);
+    });
+    engine.on("progress", () => this.onStatus?.(this.status));
 
     this.client = client;
     this.store = store;
@@ -332,8 +338,20 @@ export default class BabelSyncPlugin extends Plugin {
     return `babelsync-${this.app.vault.getName()}-${this.settings.vaultId}`;
   }
 
+  get progress(): Progress | null {
+    return this.engine?.progress ?? null;
+  }
+
+  get fileCount(): number {
+    return this.engine?.fileCount ?? 0;
+  }
+
   private show(status: Status): void {
     this.status = status;
+    if (status === "synced") {
+      this.lastSynced = Date.now();
+      this.lastError = "";
+    }
     this.onStatus?.(status);
     this.statusBar?.setText(LABELS[status]);
   }
