@@ -49,4 +49,24 @@ defmodule BabelSync.E2E.JsClientTest do
 
     assert Sync.text(live.id) == "a😀😃b 日本の語\nbob was here\nand the server too ✅🎉\n"
   end
+
+  test "two plugin sync engines keep their vaults identical through the server" do
+    owner = user()
+    vaults = for n <- 1..10, do: vault(owner, %{name: "Device test #{n}"})
+    token = owner |> Scope.for_user() |> Auth.socket_token()
+
+    {output, status} =
+      System.cmd(
+        "node",
+        ["--test", "--test-force-exit", "--test-timeout=60000", "plugin/test/engine.test.ts"],
+        stderr_to_stdout: true,
+        env: [
+          {"BABELSYNC_URL", BabelSyncWeb.Endpoint.url()},
+          {"BABELSYNC_TOKEN", token},
+          {"BABELSYNC_VAULT_IDS", Enum.map_join(vaults, ",", & &1.id)}
+        ]
+      )
+
+    assert status == 0, output
+  end
 end
