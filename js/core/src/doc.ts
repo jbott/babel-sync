@@ -139,7 +139,14 @@ export class DocSession extends Emitter<DocEvents> {
     changes: { added: number[]; updated: number[]; removed: number[] },
     origin: unknown,
   ): void => {
-    if (origin === this || !this.joined) return;
+    if (!this.joined) return;
+
+    if (origin === this) {
+      const arrived = changes.added.some((id) => id !== this.doc.clientID);
+      if (arrived && this.awareness.getLocalState() !== null) this.sendAwareness([this.doc.clientID]);
+      return;
+    }
+
     this.sendAwareness([...changes.added, ...changes.updated, ...changes.removed]);
   };
 

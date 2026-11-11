@@ -5,7 +5,7 @@ import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { OpenDoc, SyncEngine } from "./engine.ts";
 
-type Binding = { path: string; doc: OpenDoc | null; generation: number };
+type Binding = { path: string; doc: OpenDoc | null; generation: number; unavailable: boolean };
 
 export class Collab {
   readonly extension: Extension;
@@ -36,7 +36,7 @@ export class Collab {
 
       visible.add(editor);
       const bound = this.bindings.get(editor);
-      if (!bound || bound.path !== view.file.path) void this.bind(editor, view.file.path);
+      if (!bound || bound.path !== view.file.path || bound.unavailable) void this.bind(editor, view.file.path);
     }
 
     for (const editor of [...this.bindings.keys()]) {
@@ -50,15 +50,18 @@ export class Collab {
 
   private async bind(editor: EditorView, path: string): Promise<void> {
     this.unbind(editor);
-    const binding: Binding = { path, doc: null, generation: ++this.generation };
+    const binding: Binding = { path, doc: null, generation: ++this.generation, unavailable: false };
     this.bindings.set(editor, binding);
 
-    const doc = (await this.engine()?.openDoc(path)) ?? null;
+    const doc = (await this.engine()?.openDoc(path).catch(() => null)) ?? null;
     if (this.bindings.get(editor) !== binding) {
       doc?.release();
       return;
     }
-    if (!doc) return;
+    if (!doc) {
+      binding.unavailable = true;
+      return;
+    }
     binding.doc = doc;
 
     const shared = doc.text.toString();

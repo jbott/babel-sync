@@ -297,6 +297,7 @@ async function run() {
   );
   check("device-only files are not synced", !existsSync(join(desk.vault, ".obsidian/plugins/babelsync/data.json")) || JSON.parse(readFileSync(join(desk.vault, ".obsidian/plugins/babelsync/data.json"), "utf8")).deviceName === "desk");
 
+  await openNote(desk, "Hello.md");
   await desk.page.evaluate(() => app.plugins.disablePlugin("babelsync"));
   writeFileSync(join(desk.vault, "Offline.md"), "written while the plugin was off\n");
   await laptop.page.evaluate(() => app.vault.create("Meanwhile.md", "made on the laptop\n"));
@@ -304,6 +305,20 @@ async function run() {
   await desk.page.evaluate(() => app.plugins.enablePlugin("babelsync"));
   await eventually("after the plugin restarts, offline changes go up", async () => (await read(laptop, "Offline.md")) === "written while the plugin was off\n", 30000);
   await eventually("and missed changes come down", async () => (await read(desk, "Meanwhile.md")) === "made on the laptop\n", 30000);
+  await eventually("a note left open across the restart is live again", () =>
+    desk.page.evaluate(() => [...app.plugins.plugins.babelsync.collab.bindings.values()].some((binding) => binding.path === "Hello.md" && binding.doc)),
+  );
+  await openNote(laptop, "Hello.md");
+  await laptop.page.bringToFront();
+  await laptop.page.evaluate(() => {
+    const editor = app.workspace.activeEditor.editor;
+    editor.focus();
+    editor.setCursor({ line: 0, ch: 0 });
+  });
+  await eventually("the laptop's cursor is resting in the note", () => laptop.page.evaluate(() => app.workspace.activeEditor.editor.hasFocus()));
+  await desk.page.evaluate(() => app.plugins.disablePlugin("babelsync"));
+  await desk.page.evaluate(() => app.plugins.enablePlugin("babelsync"));
+  await eventually("a device that joins sees a cursor already resting there, without waiting for it to move", () => desk.page.evaluate(() => !!document.querySelector(".cm-ySelectionCaret")), 6000);
 
   await desk.page.evaluate(() => app.emulateMobile(true)).catch(() => {});
   const phone = await findApp(desk.browser).catch(() => null);

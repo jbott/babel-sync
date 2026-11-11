@@ -72,6 +72,9 @@ export default class BabelSyncPlugin extends Plugin {
     this.registerInterval(window.setInterval(() => this.settings.syncConfig && this.engine?.rescan(), CONFIG_SCAN_MS));
 
     this.registerInterval(window.setInterval(() => void this.accessToken().catch(() => {}), TOKEN_CHECK_MS));
+    this.registerDomEvent(document, "visibilitychange", () => {
+      if (document.visibilityState === "visible") void this.accessToken().catch(() => {});
+    });
     this.registerObsidianProtocolHandler("babelsync", ({ code, state, error }) => void this.finishSignIn({ code, state, error }));
 
     this.app.workspace.onLayoutReady(() => void this.restart());
@@ -213,7 +216,15 @@ export default class BabelSyncPlugin extends Plugin {
       ignore: (path) => this.ignored(path),
     });
 
-    engine.on("status", (status) => this.show(status));
+    let cameOnline = false;
+    engine.on("status", (status) => {
+      this.show(status);
+      if (status === "offline" || status === "error") cameOnline = false;
+      if (status !== "synced" || cameOnline) return;
+      cameOnline = true;
+      this.rebind();
+    });
+    client.socket.onError(() => void this.accessToken().catch(() => {}));
     engine.on("error", (reason) => new Notice(`BabelSync: ${reason}`));
 
     this.client = client;
