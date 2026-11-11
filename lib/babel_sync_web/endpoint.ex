@@ -16,7 +16,8 @@ defmodule BabelSyncWeb.Endpoint do
       max_frame_size: 16 * 1024 * 1024,
       check_origin: {BabelSyncWeb.Origin, :allowed?, []}
     ],
-    longpoll: false
+    longpoll: false,
+    max_channels_per_transport: 2000
 
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [:user_agent, session: @session_options]],
