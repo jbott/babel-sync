@@ -216,7 +216,7 @@ test("a passkey is registered, used to sign in, and refused when unknown", { ski
   await page.goto(setupUrl, { waitUntil: "networkidle0" });
   await page.waitForSelector(".phx-connected");
   await page.click("#passkey-setup");
-  await page.waitForFunction(() => location.pathname === "/");
+  await page.waitForFunction(() => location.pathname === "/account");
 
   await page.goto(baseUrl + "/account", { waitUntil: "networkidle0" });
   await page.waitForSelector(".phx-connected");
@@ -231,7 +231,7 @@ test("a passkey is registered, used to sign in, and refused when unknown", { ski
   await page.waitForFunction(() => location.pathname === "/login");
   await page.waitForSelector(".phx-connected #passkey-sign-in");
   await page.click("#passkey-sign-in");
-  await page.waitForFunction(() => location.pathname === "/");
+  await page.waitForFunction(() => location.pathname === "/account");
 
   await page.goto(baseUrl + "/account", { waitUntil: "networkidle0" });
   await page.waitForSelector(".phx-connected");

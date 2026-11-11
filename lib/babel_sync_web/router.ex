@@ -81,7 +81,7 @@ defmodule BabelSyncWeb.Router do
     end
 
     live_session :signed_in, on_mount: {BabelSyncWeb.LiveScope, :require} do
-      live "/", VaultLive.Index
+      live "/", VaultLive.Home
       live "/account", AuthLive.Account
       live "/v/:vault_id", VaultLive.Show
       live "/v/:vault_id/settings", VaultLive.Settings

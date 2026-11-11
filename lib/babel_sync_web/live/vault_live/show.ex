@@ -25,6 +25,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
       {:ok,
        socket
        |> assign(:vault, vault)
+       |> assign(:vaults, Vaults.list_vaults(scope.user))
        |> assign(:writable, writable)
        |> assign(:admin, Scope.authorize(scope, vault_id, :admin) == :ok)
        |> assign(:mode, if(writable, do: :edit, else: :read))
@@ -88,6 +89,17 @@ defmodule BabelSyncWeb.VaultLive.Show do
         {:error, _changeset} -> {:noreply, put_flash(socket, :error, "That is not a valid path.")}
       end
     end)
+  end
+
+  def handle_event("switch_vault", %{"vault" => "manage"}, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/account")}
+  end
+
+  def handle_event("switch_vault", %{"vault" => id}, socket) do
+    case Enum.find(socket.assigns.vaults, &(&1.id == id)) do
+      %Vaults.Vault{id: ^id} -> {:noreply, push_navigate(socket, to: Paths.vault(id))}
+      nil -> {:noreply, socket}
+    end
   end
 
   def handle_event("attach", %{"name" => name, "hash" => hash}, socket) do
@@ -363,12 +375,6 @@ defmodule BabelSyncWeb.VaultLive.Show do
         >
           <div class="px-4 pt-3">
             <Layouts.brand />
-            <.link
-              patch={Paths.vault(@vault.id)}
-              class="mt-1.5 block truncate rounded font-serif text-xl font-bold tracking-tight text-ink"
-            >
-              {@vault.name}
-            </.link>
           </div>
 
           <div :if={@writable} class="px-2 pt-2.5">
@@ -440,8 +446,29 @@ defmodule BabelSyncWeb.VaultLive.Show do
           </nav>
 
           <div class="flex items-center gap-0.5 border-t border-line px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
-            <Layouts.account_link :if={@current_scope} />
-            <div class="flex-1"></div>
+            <form
+              id="vault-switcher-form"
+              phx-change="switch_vault"
+              class="relative mr-1 min-w-0 flex-1"
+            >
+              <select
+                id="vault-switcher"
+                name="vault"
+                aria-label="Vault"
+                title="Switch vault"
+                class="block h-9 w-full min-w-0 cursor-pointer appearance-none truncate rounded-lg bg-ink/5 pl-3 pr-8 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus-visible:ring-2 focus-visible:ring-accent/60 md:h-8"
+              >
+                <option :for={vault <- @vaults} value={vault.id} selected={vault.id == @vault.id}>
+                  {vault.name}
+                </option>
+                <hr />
+                <option value="manage">Manage vaults…</option>
+              </select>
+              <.icon
+                name="hero-chevron-up-down-mini"
+                class="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-faint"
+              />
+            </form>
             <.icon_button
               navigate={Paths.trash(@vault.id)}
               id="vault-trash"
@@ -454,6 +481,13 @@ defmodule BabelSyncWeb.VaultLive.Show do
               id="vault-settings"
               icon="hero-cog-6-tooth"
               label="Vault settings"
+            />
+            <.icon_button
+              :if={@current_scope}
+              id="account-link"
+              navigate={~p"/account"}
+              icon="hero-user-circle"
+              label="Account"
             />
           </div>
         </aside>

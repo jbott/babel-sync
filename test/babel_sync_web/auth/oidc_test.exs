@@ -86,7 +86,7 @@ defmodule BabelSyncWeb.Auth.OIDCTest do
 
     signed_in = round_trip(conn)
     assert redirected_to(signed_in) == "/"
-    assert {:ok, _view, _html} = signed_in |> recycle() |> live(~p"/")
+    assert {:ok, _view, _html} = signed_in |> recycle() |> live(~p"/account")
     assert [_owner] = BabelSync.Repo.all(Accounts.User)
   end
 

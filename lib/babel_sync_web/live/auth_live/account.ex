@@ -1,12 +1,15 @@
 defmodule BabelSyncWeb.AuthLive.Account do
   use BabelSyncWeb, :live_view
 
-  alias BabelSync.{Accounts, Auth, OAuth}
+  alias BabelSync.{Accounts, Auth, OAuth, Vaults}
   alias BabelSync.Auth.Passkeys
+  alias BabelSync.Vaults.Vault
+  alias BabelSyncWeb.Paths
 
   @impl true
   def mount(_params, _session, socket) do
     user = socket.assigns.current_scope.user
+    vaults = Vaults.list_vaults(user)
 
     {:ok,
      socket
@@ -15,7 +18,16 @@ defmodule BabelSyncWeb.AuthLive.Account do
      |> assign(:signed_in?, not Auth.open?())
      |> assign(:challenge, nil)
      |> assign(:profile, to_form(Accounts.change_user(user)))
+     |> assign(:vault_form, to_form(Vault.changeset(%Vault{}, %{})))
+     |> assign(:roles, roles(user, vaults))
+     |> stream(:vaults, vaults)
      |> load()}
+  end
+
+  defp roles(user, vaults) do
+    if BabelSync.mode() == :multi,
+      do: Map.new(vaults, &{&1.id, Vaults.role(user, &1.id)}),
+      else: %{}
   end
 
   defp load(socket) do
@@ -27,6 +39,13 @@ defmodule BabelSyncWeb.AuthLive.Account do
   end
 
   @impl true
+  def handle_event("create", %{"vault" => params}, socket) do
+    case Vaults.create_vault(socket.assigns.current_scope.user, params) do
+      {:ok, vault} -> {:noreply, push_navigate(socket, to: Paths.vault(vault.id))}
+      {:error, changeset} -> {:noreply, assign(socket, :vault_form, to_form(changeset))}
+    end
+  end
+
   def handle_event("save_profile", %{"user" => params}, socket) do
     scope = socket.assigns.current_scope
 
@@ -85,12 +104,57 @@ defmodule BabelSyncWeb.AuthLive.Account do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} account_link={false}>
       <div class="mx-auto max-w-2xl space-y-10 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
           Account
           <:subtitle>{@current_scope.user.email}</:subtitle>
         </.header>
+
+        <.panel id="your-vaults" title="Vaults">
+          <:description>Each vault syncs with one Obsidian vault folder.</:description>
+          <.rows id="vaults" phx-update="stream">
+            <li id="vaults-empty" class="hidden px-6 py-9 text-center only:block">
+              <.logo class="mx-auto size-9 text-line-strong" />
+              <p class="mt-3 text-muted">No vaults yet. Create the first one below.</p>
+            </li>
+            <li :for={{id, vault} <- @streams.vaults} id={id}>
+              <.link
+                navigate={Paths.vault(vault.id)}
+                class="group flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-canvas"
+              >
+                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-accent/12 text-accent">
+                  <.logo class="size-5" />
+                </span>
+                <span class="min-w-0 flex-1 truncate font-serif text-lg font-bold tracking-tight text-ink">
+                  {vault.name}
+                </span>
+                <.badge :if={@roles[vault.id]}>{@roles[vault.id]}</.badge>
+                <.icon
+                  name="hero-arrow-right-mini"
+                  class="size-4 shrink-0 text-faint transition-colors duration-150 group-hover:text-ink"
+                />
+              </.link>
+            </li>
+          </.rows>
+          <.form
+            for={@vault_form}
+            id="new-vault"
+            phx-submit="create"
+            class="flex items-start gap-2.5"
+          >
+            <div class="flex-1">
+              <.input
+                field={@vault_form[:name]}
+                aria-label="New vault"
+                placeholder="New vault name"
+              />
+            </div>
+            <.button variant="primary">
+              <.icon name="hero-plus-mini" class="size-4" /> Create
+            </.button>
+          </.form>
+        </.panel>
 
         <.panel title="Profile">
           <.form

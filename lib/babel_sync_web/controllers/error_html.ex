@@ -46,7 +46,7 @@ defmodule BabelSyncWeb.ErrorHTML do
             <p class="mt-3 text-muted">{@hint}</p>
             <div class="mt-7">
               <.button href={~p"/"}>
-                <.icon name="hero-arrow-left-mini" class="size-4" /> Back to your vaults
+                <.icon name="hero-arrow-left-mini" class="size-4" /> Back to your notes
               </.button>
             </div>
           </div>

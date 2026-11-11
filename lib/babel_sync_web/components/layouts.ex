@@ -30,6 +30,7 @@ defmodule BabelSyncWeb.Layouts do
   attr :wide, :boolean, default: false, doc: "let the content fill the window"
   attr :masthead, :boolean, default: true, doc: "show the brand and account links above the page"
   attr :column, :string, default: "max-w-2xl", doc: "the width the masthead lines up with"
+  attr :account_link, :boolean, default: true, doc: "show the account link in the masthead"
 
   slot :inner_block, required: true
 
@@ -44,7 +45,7 @@ defmodule BabelSyncWeb.Layouts do
         class={["mx-auto flex items-center justify-between gap-4 pt-4 md:pt-7", @column]}
       >
         <.brand />
-        <.account_link :if={@current_scope} class="-mr-2" />
+        <.account_link :if={@current_scope && @account_link} class="-mr-2" />
       </div>
       {render_slot(@inner_block)}
     </main>
@@ -62,7 +63,7 @@ defmodule BabelSyncWeb.Layouts do
     ~H"""
     <.link
       navigate={~p"/"}
-      title="All vaults"
+      title="Home"
       class={[
         "group -ml-1 inline-flex items-center gap-2 rounded-lg px-1 py-1 text-muted transition-colors duration-150 hover:text-ink",
         @class

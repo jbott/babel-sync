@@ -22,22 +22,98 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
 
     test "is skipped for the owner in single-user mode without sign-in", %{anonymous: conn} do
-      assert {:ok, _view, html} = live(conn, ~p"/")
+      assert {:ok, _view, html} = live(conn, ~p"/account")
       assert html =~ "Vaults"
+    end
+  end
+
+  describe "home" do
+    test "opens the first vault by name", %{conn: conn, owner: owner, vault: research} do
+      assert {:error, {:live_redirect, %{to: to}}} = live(conn, ~p"/")
+      assert to == Paths.vault(research.id)
+
+      archive = vault(owner, %{name: "Archive"})
+      assert {:error, {:live_redirect, %{to: to}}} = live(conn, ~p"/")
+      assert to == Paths.vault(archive.id)
+      assert redirected_to(get(conn, ~p"/")) == Paths.vault(archive.id)
+    end
+
+    test "opens the account page for someone without a vault", %{anonymous: conn} do
+      conn = sign_in(conn, user())
+
+      assert {:error, {:live_redirect, %{to: "/account"}}} = live(conn, ~p"/")
+      {:ok, account, _html} = live(conn, ~p"/account")
+      assert has_element?(account, "#vaults-empty")
+      refute has_element?(account, "#vaults a")
+      assert has_element?(account, "#new-vault")
+    end
+
+    test "carries a notice through to where it lands", %{conn: conn, vault: vault} do
+      {:ok, settings, _html} = live(conn, Paths.settings(vault.id))
+
+      {:ok, account, _html} =
+        settings
+        |> element("#delete-vault")
+        |> render_click()
+        |> follow_redirect(conn, ~p"/")
+        |> follow_redirect(conn, ~p"/account")
+
+      assert has_element?(account, "#flash-info", "Vault deleted.")
     end
   end
 
   describe "vault list" do
     test "shows only the user's vaults and creates new ones", %{conn: conn} do
       vault(user(), %{name: "Someone else's"})
-      {:ok, view, html} = live(conn, ~p"/")
+      {:ok, view, _html} = live(conn, ~p"/account")
 
-      assert html =~ "Research"
-      refute html =~ "Someone else"
+      assert has_element?(view, "#vaults a", "Research")
+      refute has_element?(view, "#vaults", "Someone else")
 
       view |> form("#new-vault", vault: %{name: "Journal"}) |> render_submit()
       {path, _flash} = assert_redirect(view)
       assert path =~ "/v/"
+    end
+
+    test "names the person's role when vaults are shared", %{conn: conn, owner: owner} do
+      Application.put_env(:babel_sync, :mode, :multi)
+      on_exit(fn -> Application.put_env(:babel_sync, :mode, :single) end)
+
+      shared = vault(user(), %{name: "Shared"})
+      {:ok, _member} = Vaults.put_member(shared, owner, :viewer)
+      {:ok, view, _html} = live(conn, ~p"/account")
+
+      assert has_element?(view, "#vaults a", "owner")
+      assert has_element?(view, "#vaults a[href='#{Paths.vault(shared.id)}']", "viewer")
+    end
+  end
+
+  describe "vault switcher" do
+    test "lists the person's vaults and moves between them", %{
+      conn: conn,
+      owner: owner,
+      vault: research
+    } do
+      journal = vault(owner, %{name: "Journal"})
+      hidden = vault(user(), %{name: "Someone else's"})
+      {:ok, view, _html} = live(conn, Paths.vault(research.id))
+
+      assert has_element?(view, "#vault-switcher option[selected]", "Research")
+      assert has_element?(view, "#vault-switcher option", "Journal")
+      refute has_element?(view, "#vault-switcher option", "Someone else")
+
+      view |> element("#vault-switcher-form") |> render_change(%{"vault" => hidden.id})
+      refute_redirected(view, Paths.vault(hidden.id))
+
+      view |> element("#vault-switcher-form") |> render_change(%{"vault" => journal.id})
+      assert_redirect(view, Paths.vault(journal.id))
+    end
+
+    test "leads to where vaults are managed", %{conn: conn, vault: vault} do
+      {:ok, view, _html} = live(conn, Paths.vault(vault.id))
+
+      view |> element("#vault-switcher-form") |> render_change(%{"vault" => "manage"})
+      assert_redirect(view, "/account")
     end
   end
 
@@ -447,8 +523,8 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
 
     test "an empty vault name is rejected on both forms", %{conn: conn, vault: vault} do
-      {:ok, index, _html} = live(conn, ~p"/")
-      index |> form("#new-vault", vault: %{name: ""}) |> render_submit()
+      {:ok, account, _html} = live(conn, ~p"/account")
+      account |> form("#new-vault", vault: %{name: ""}) |> render_submit()
       assert [_only] = Vaults.list_vaults(Vaults.list_members(vault) |> hd() |> Map.fetch!(:user))
 
       {:ok, settings, _html} = live(conn, Paths.settings(vault.id))

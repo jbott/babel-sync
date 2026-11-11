@@ -146,14 +146,14 @@ defmodule BabelSyncWeb.Auth.LoginTest do
 
       signed_in = get(conn, path)
       assert redirected_to(signed_in) == "/"
-      assert {:ok, _view, _html} = signed_in |> recycle() |> live(~p"/")
+      assert {:ok, _view, _html} = signed_in |> recycle() |> live(~p"/account")
     end
 
     test "pages need a session and signing out ends it", %{conn: conn} do
       assert {:error, {:redirect, %{to: "/login"}}} = live(conn, ~p"/")
 
       conn = sign_in(conn, Accounts.single_user!())
-      assert {:ok, _view, _html} = live(conn, ~p"/")
+      assert {:ok, _view, _html} = live(conn, ~p"/account")
 
       signed_out = delete(conn, ~p"/logout")
       assert redirected_to(signed_out) == "/login"
