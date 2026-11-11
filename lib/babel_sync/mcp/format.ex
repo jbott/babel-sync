@@ -68,6 +68,10 @@ defmodule BabelSync.MCP.Format do
     )
   end
 
+  def written(%{kind: :attachment} = written) do
+    "#{written.outcome} #{written.path} · #{written.type} · #{written.bytes} bytes"
+  end
+
   def written(written) do
     "#{written.outcome} #{written.path} · rev #{written.rev} · #{written.lines} lines\n" <>
       written.changed

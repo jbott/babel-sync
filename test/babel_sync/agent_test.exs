@@ -621,6 +621,33 @@ defmodule BabelSync.AgentTest do
                Agent.write_file(scope, nil, "blob.bin", "x", overwrite: true)
     end
 
+    test "binary files are written whole from base64", %{scope: scope, vault: vault} do
+      encoded = Base.encode64(@pixel)
+
+      assert {:ok, %{outcome: :created, kind: :attachment, type: "image/png", bytes: 70}} =
+               Agent.write_binary(scope, nil, "Art/pixel.png", encoded)
+
+      assert {:ok, %{image: @pixel}} = Agent.read_file(scope, nil, "Art/pixel.png")
+      assert {:error, :unguarded} = Agent.write_binary(scope, nil, "Art/pixel.png", encoded)
+
+      assert {:ok, %{outcome: :updated, bytes: 3}} =
+               Agent.write_binary(scope, nil, "Art/pixel.png", Base.encode64("abc"),
+                 overwrite: true
+               )
+
+      entry = Vaults.get_entry_by_path(vault.id, "Art/pixel.png")
+      assert [_now, _before] = Vaults.list_blob_versions(entry.id)
+
+      write(scope, "note.md", "text")
+      assert {:error, :not_an_attachment} = Agent.write_binary(scope, nil, "note.md", encoded)
+      assert {:error, :not_an_attachment} = Agent.write_binary(scope, nil, "new.md", encoded)
+      assert {:error, :invalid_encoding} = Agent.write_binary(scope, nil, "x.png", "not base64!")
+      assert {:error, :off_limits} = Agent.write_binary(scope, nil, ".obsidian/x.png", encoded)
+
+      huge = Base.encode64(:binary.copy(<<0>>, 8 * 1024 * 1024 + 1))
+      assert {:error, :too_large} = Agent.write_binary(scope, nil, "huge.bin", huge)
+    end
+
     test "Obsidian bases and canvases are notes that merge", %{scope: scope, vault: vault} do
       assert {:ok, %{outcome: :created}} =
                Agent.write_file(scope, nil, "Places/Restaurants.base", "views:\n")

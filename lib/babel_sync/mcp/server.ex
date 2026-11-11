@@ -25,8 +25,7 @@ defmodule BabelSync.MCP.Server do
   just the passage you name in all of them. The one difference is what happens when a \
   person changes the same file at the same moment: in Markdown, .txt, .base and .canvas \
   files both changes are kept; in other text files pass if_rev to be refused instead of \
-  overwriting theirs. Images are shown; other binary files can only be listed, moved and \
-  deleted.
+  overwriting theirs. Images are shown. Binary files are written whole, as base64, with write_file.
 
   Notes use Obsidian Markdown: [[wikilinks]], #tags, and YAML properties between --- lines \
   at the top.

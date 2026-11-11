@@ -31,6 +31,9 @@ defmodule BabelSync.Agent do
           | :ambiguous_vault
           | :not_found
           | :not_a_note
+          | :not_an_attachment
+          | :invalid_encoding
+          | :too_large
           | :not_a_folder
           | :exists
           | :invalid_path
@@ -51,6 +54,7 @@ defmodule BabelSync.Agent do
   @search_batch 200
   @image_bytes 4_000_000
   @text_bytes 2 * 1024 * 1024
+  @written_bytes 8 * 1024 * 1024
   @searched_bytes 512 * 1024
   @never_text ~w(image/ audio/ video/ font/ application/pdf application/zip)
   @recent_changes 50
@@ -183,10 +187,37 @@ defmodule BabelSync.Agent do
               written(:created, entry, rewrite(scope, entry, nil, replace))
             end
           else
-            with {:ok, entry} <- attach(vault, path, content) do
+            with :ok <- may_hold_text(path),
+                 {:ok, entry} <- attach(vault, path, content) do
               written(:created, entry, {:ok, "", content})
             end
           end
+      end
+    end
+  end
+
+  @spec write_binary(Scope.t(), vault_reference(), String.t(), String.t(), keyword()) ::
+          {:ok, map()} | error()
+  def write_binary(scope, vault, path, encoded, opts \\ []) do
+    with {:ok, vault} <- vault(scope, vault, :write),
+         :ok <- reachable(vault, path),
+         :ok <- attachment_path(path),
+         {:ok, bytes} <- decoded(encoded) do
+      overwrite? = opts[:overwrite] == true
+
+      case Vaults.get_entry_by_path(vault.id, path) do
+        %Entry{kind: :blob} = entry when overwrite? ->
+          with :ok <- store(entry, bytes), do: {:ok, stored(:updated, entry, bytes)}
+
+        %Entry{kind: :blob} ->
+          {:error, :unguarded}
+
+        %Entry{} ->
+          {:error, :not_an_attachment}
+
+        nil ->
+          with {:ok, entry} <- attach(vault, path, bytes),
+               do: {:ok, stored(:created, entry, bytes)}
       end
     end
   end
@@ -553,9 +584,30 @@ defmodule BabelSync.Agent do
     end
   end
 
+  defp attachment_path(path) do
+    if Vaults.Path.kind_for(path) == :blob, do: :ok, else: {:error, :not_an_attachment}
+  end
+
+  defp decoded(encoded) do
+    case Base.decode64(encoded, ignore: :whitespace, padding: false) do
+      {:ok, bytes} when byte_size(bytes) <= @written_bytes -> {:ok, bytes}
+      {:ok, _bytes} -> {:error, :too_large}
+      :error -> {:error, :invalid_encoding}
+    end
+  end
+
+  defp stored(outcome, %Entry{path: path}, bytes) do
+    %{
+      outcome: outcome,
+      path: path,
+      kind: :attachment,
+      type: MIME.from_path(path),
+      bytes: byte_size(bytes)
+    }
+  end
+
   defp attach(vault, path, content) do
-    with :ok <- may_hold_text(path),
-         {:ok, blob} <- Blobs.put(vault.id, content) do
+    with {:ok, blob} <- Blobs.put(vault.id, content) do
       attrs = %{path: path, kind: :blob, blob_hash: blob.hash, size: blob.size}
 
       case Vaults.create_entry(vault.id, attrs) do

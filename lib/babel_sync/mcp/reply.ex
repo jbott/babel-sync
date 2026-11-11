@@ -47,6 +47,17 @@ defmodule BabelSync.MCP.Reply do
     do: "Nothing exists at that path. Call list_directory or find_files to see what does."
 
   defp message(:not_a_note), do: "That path is a folder or a file that is not text."
+
+  defp message(:not_an_attachment) do
+    "That path is a note or a folder. Notes are written as text, without an encoding." <>
+      @unchanged
+  end
+
+  defp message(:invalid_encoding), do: "The content is not valid base64." <> @unchanged
+
+  defp message(:too_large),
+    do: "The decoded content is larger than the 8 MiB an agent may write at once." <> @unchanged
+
   defp message(:not_a_folder), do: "That path is a file, not a folder."
   defp message(:exists), do: "A file already exists at the destination path." <> @unchanged
   defp message(:invalid_path), do: "That is not a valid vault path."
@@ -60,7 +71,7 @@ defmodule BabelSync.MCP.Reply do
     do: "That pattern is empty or malformed. Check the brackets and braces."
 
   defp message(:unguarded) do
-    "A note already exists at that path." <>
+    "A file already exists at that path." <>
       @unchanged <>
       " Use edit_file or append_file to change part of it. To replace all of it, pass if_rev" <>
       " with the rev from read_file, or overwrite: true."

@@ -104,7 +104,7 @@ Apps register themselves without signing in, so registration is bounded: a redir
 
 Agents cannot see or change the `.obsidian` folder, which holds the plugins Obsidian runs. An owner can open it to agents per vault, in the vault's settings.
 
-Any file that holds text can be read, searched, edited and written by an agent, whatever its extension. Markdown, `.txt`, `.base` and `.canvas` files are notes, merged character by character with what people type; other text files such as `.csv` or `.json` are edited by an agent in the same way, passage by passage, but are stored as attachments, so a change made by a person at the same moment is not merged with the agent's. Images are shown to the agent; other binary files can only be listed, moved and deleted.
+Any file that holds text can be read, searched, edited and written by an agent, whatever its extension. Markdown, `.txt`, `.base` and `.canvas` files are notes, merged character by character with what people type; other text files such as `.csv` or `.json` are edited by an agent in the same way, passage by passage, but are stored as attachments, so a change made by a person at the same moment is not merged with the agent's. Images are shown to the agent, and it can write a binary file of up to 8 MiB by sending its bytes as base64.
 
 The agent gets the vault as a file system:
 
