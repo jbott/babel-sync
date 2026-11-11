@@ -12,6 +12,8 @@ defmodule BabelSync.Application do
       BabelSync.Repo.active(),
       {DNSCluster, query: Application.get_env(:babel_sync, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: BabelSync.PubSub},
+      {Registry, keys: :unique, name: BabelSync.Sync.Registry},
+      {DynamicSupervisor, name: BabelSync.Sync.Supervisor, strategy: :one_for_one},
       # Start a worker by calling: BabelSync.Worker.start_link(arg)
       # {BabelSync.Worker, arg},
       # Start to serve requests, typically the last entry

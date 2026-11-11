@@ -44,3 +44,8 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+config :babel_sync, BabelSync.Sync,
+  idle_timeout: :timer.minutes(5),
+  settle_after: :timer.minutes(5),
+  compact_after: 20

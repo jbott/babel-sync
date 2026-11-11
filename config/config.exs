@@ -21,6 +21,11 @@ config :babel_sync,
   ecto_repos: [mix_task_repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
 
+config :babel_sync, BabelSync.Sync,
+  idle_timeout: :timer.minutes(5),
+  settle_after: :timer.seconds(30),
+  compact_after: 200
+
 # Configure the endpoint
 config :babel_sync, BabelSyncWeb.Endpoint,
   url: [host: "localhost"],

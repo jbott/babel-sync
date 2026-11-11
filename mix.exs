@@ -9,6 +9,7 @@ defmodule BabelSync.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
+      dialyzer: [plt_local_path: "priv/plts", plt_add_apps: [:mix, :ex_unit]],
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader]
