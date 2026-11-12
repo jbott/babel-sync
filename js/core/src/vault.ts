@@ -113,8 +113,8 @@ export class VaultSession extends Emitter<VaultEvents> {
     return reply.entries;
   }
 
-  async remove(id: string): Promise<Entry[]> {
-    const reply = await this.request<{ entries: Entry[] }>("delete", { id });
+  async remove(id: string, options: { ifEmpty?: boolean } = {}): Promise<Entry[]> {
+    const reply = await this.request<{ entries: Entry[] }>("delete", { id, if_empty: options.ifEmpty === true });
     for (const entry of reply.entries) this.acknowledge(entry);
     return reply.entries;
   }

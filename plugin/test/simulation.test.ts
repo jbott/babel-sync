@@ -44,6 +44,15 @@ function copyOf({ fs, store }: Disk): Disk {
   return disk;
 }
 
+function watch(fs: MemoryFs, engine: SyncEngine): void {
+  fs.watcher = (event) => {
+    if (event.type === "changed") engine.localChanged(event.path);
+    else if (event.type === "deleted") engine.localDeleted(event.path);
+    else if (event.type === "folderCreated") engine.localFolderCreated(event.path);
+    else if (event.type === "renamed") engine.localRenamed(event.from, event.path);
+  };
+}
+
 async function boot(name: string, vaultId: string, disk: Disk): Promise<Device> {
   const client = new BabelSyncClient({ baseUrl, token: () => token, transport: WebSocket });
   const errors: string[] = [];
@@ -59,6 +68,7 @@ async function boot(name: string, vaultId: string, disk: Disk): Promise<Device> 
   });
   const log: string[] = [];
   engine.on("error", (message) => errors.push(message));
+  watch(disk.fs, engine);
   engine.on("log", (line) => log.push(line));
   client.connect();
   await engine.start();

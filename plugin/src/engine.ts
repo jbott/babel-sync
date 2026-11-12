@@ -57,6 +57,21 @@ const SETTLE_MS = 1_000;
 const STOP_GRACE_MS = 3_000;
 const SETTLING_PASSES = 5;
 const QUIETLY = true;
+const ATTEMPTS = 3;
+
+function folded(path: string): string {
+  return path.normalize("NFC").toLowerCase();
+}
+
+class Unplaceable extends Error {}
+
+async function placing<T>(work: Promise<T>): Promise<T> {
+  try {
+    return await work;
+  } catch (error) {
+    throw new Unplaceable(error instanceof Error ? error.message : String(error));
+  }
+}
 
 export type Progress = { direction: "receiving" | "sending"; done: number; total: number };
 
@@ -83,6 +98,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private changes = 0;
   private settled = 0;
   private passes = 0;
+  private failures = new Map<string, number>();
 
   constructor(options: EngineOptions) {
     super();
@@ -92,7 +108,8 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   async start(): Promise<void> {
     const { seq, entries } = await this.options.store.load();
     for (const entry of entries) {
-      if (entry.seq !== undefined) this.versions.set(entry.id, entry.seq);
+      const unfetched = entry.kind !== "folder" && entry.hash === null && !entry.unwanted;
+      if (entry.seq !== undefined && !unfetched) this.versions.set(entry.id, entry.seq);
       if (!entry.unwanted) this.remember(entry);
       else if (!this.ignored(entry.path)) await this.discard(entry.id);
     }
@@ -210,12 +227,25 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private async receive(remote: Entry): Promise<void> {
     try {
       await this.take(remote);
+      this.failures.delete(remote.id);
       await this.advance(remote.seq);
     } catch (error) {
       this.emit("log", `could not apply ${remote.path}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+      const attempts = error instanceof Unplaceable ? (this.failures.get(remote.id) ?? 0) + 1 : 0;
+      this.failures.set(remote.id, attempts);
+      if (attempts >= ATTEMPTS) return this.giveUp(remote);
       this.emit("error", error instanceof Error ? error.message : String(error));
       this.fallBehind();
     }
+  }
+
+  private async giveUp(remote: Entry): Promise<void> {
+    this.failures.delete(remote.id);
+    this.emit("log", `leaving ${remote.path} out after ${ATTEMPTS} attempts`);
+    this.emit("error", `${remote.path} cannot be kept on this device`);
+    if (this.byId.has(remote.id)) await this.mark(remote);
+    else await this.pass(remote);
+    await this.advance(remote.seq);
   }
 
   private async advance(seq: number): Promise<void> {
@@ -325,6 +355,10 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     return this.vault?.joined === true;
   }
 
+  private get sending(): boolean {
+    return this.online && this.vault!.writable;
+  }
+
   private run<T>(task: () => Promise<T>, quietly = false): Promise<T> {
     this.pending += 1;
     if (!quietly) {
@@ -408,7 +442,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     for (const entry of displaced) await this.drop(entry);
 
     const moved = entries().filter((entry) => entry.moved);
-    for (const entry of moved) await this.pushRename(entry);
+    for (const entry of moved) if (this.sending) await this.pushRename(entry);
 
     const outgoing = files.filter((file) => {
       const id = this.byPath.get(file.path);
@@ -465,14 +499,13 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
   private async removeLocally(local: LocalEntry): Promise<void> {
     const { fs } = this.options;
-    const unchanged = local.kind === "folder" || (await this.diskHash(local)) === local.hash;
+    const edited = local.kind !== "folder" && (local.dirty || (await this.diskHash(local)) !== local.hash);
+    if (local.kind !== "folder" && !edited) await fs.remove(local.path);
     this.forget(local);
     await this.discard(local.id);
 
     if (local.kind === "folder") return this.prune(local.path);
-    if (!unchanged) return this.pushLocal(local.path);
-
-    await fs.remove(local.path);
+    if (edited) return this.pushLocal(local.path);
     await this.prune(parentOf(local.path));
   }
 
@@ -502,7 +535,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   }
 
   private async pushFolder(folder: string): Promise<void> {
-    if (folder === "" || this.ignored(folder + "/") || this.byPath.has(folder) || !this.online) return;
+    if (folder === "" || this.ignored(folder + "/") || this.byPath.has(folder) || !this.sending) return;
     if ((await this.options.fs.folderState(folder)) !== "empty") return;
 
     try {
@@ -515,13 +548,14 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
   private async deleteFolder(folder: string): Promise<void> {
     const entry = this.folderAt(folder);
-    if (!entry || !this.online) return;
+    if (!entry || !this.sending) return;
     if ((await this.options.fs.folderState(folder)) !== "missing") return;
 
     try {
-      await this.vault!.remove(entry.id);
+      await this.vault!.remove(entry.id, { ifEmpty: true });
     } catch (error) {
-      if (!(error instanceof RequestError) || error.reason !== "not_found") throw error;
+      if (error instanceof RequestError && error.reason === "not_empty") return;
+      if (!this.gone(error)) throw error;
     }
 
     this.forget(entry);
@@ -549,7 +583,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const { fs } = this.options;
     if (remote.kind === "folder") {
       await this.keepFolder(remote);
-      if (!(await fs.stat(remote.path))) await fs.makeFolder(remote.path);
+      if (!(await fs.stat(remote.path))) await placing(fs.makeFolder(remote.path));
       return;
     }
 
@@ -610,13 +644,15 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const { fs } = this.options;
 
     if (remote.path !== local.path && !local.moved) {
-      await this.vacate(remote.path);
+      const recased = folded(remote.path) === folded(local.path);
+      if (!recased) await this.vacate(remote.path);
       const left = local.path;
-      const moved = (await fs.stat(left)) !== null;
-      const alreadyThere = !moved && (await this.diskHash({ ...local, path: remote.path })) === local.hash;
+      const own = this.byPath.get(left) === local.id;
+      const moved = own && (await fs.stat(left)) !== null;
+      const alreadyThere = recased || (!moved && (await this.diskHash({ ...local, path: remote.path })) === local.hash);
       if (!alreadyThere && (await fs.stat(remote.path))) await this.pushLocal(await this.setAside(remote.path));
-      if (moved) await fs.rename(left, remote.path);
-      this.byPath.delete(left);
+      if (moved) await placing(fs.rename(left, remote.path));
+      if (own) this.byPath.delete(left);
       local.path = remote.path;
       this.byPath.set(local.path, local.id);
       await this.persist(local);
@@ -688,7 +724,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       return;
     }
 
-    if (!this.online) return;
+    if (!this.sending) return;
 
     try {
       const created = await this.vault!.create(path, { text });
@@ -706,12 +742,8 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       if (!(await this.exchange(fresh.id))) return;
       await this.record(fresh, hash);
     } catch (error) {
-      if (error instanceof RequestError && error.reason === "exists" && error.entry) {
-        await this.applyRemote(error.entry);
-        await this.mark(error.entry);
-      } else {
-        throw error;
-      }
+      if (!(error instanceof RequestError) || error.reason !== "exists" || !error.entry) throw error;
+      await this.yieldTo(path, error.entry);
     }
   }
 
@@ -721,7 +753,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const hash = await blobHash(data);
 
     if (entry && hash === entry.hash) return this.touch(entry);
-    if (!this.online) return;
+    if (!this.sending) return;
 
     await client.upload(vaultId, data);
 
@@ -748,15 +780,25 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       if (entry && this.gone(error)) return this.sendAsNew(entry);
       if (!(error instanceof RequestError) || !error.entry) throw error;
       if (error.reason !== "exists" && error.reason !== "conflict") throw error;
-      await this.applyRemote(error.entry);
-      await this.mark(error.entry);
+      await this.yieldTo(path, error.entry);
     }
+  }
+
+  private async yieldTo(path: string, holder: Entry): Promise<void> {
+    if (holder.path !== path && !this.byPath.has(path)) {
+      const mine = this.byId.get(holder.id);
+      const files = mine ? await this.options.fs.list() : [];
+      if (mine && !files.some((file) => file.path === mine.path)) return this.renameLocal(mine.path, path);
+      await this.pushLocal(await this.setAside(path));
+    }
+    await this.applyRemote(holder);
+    await this.mark(holder);
   }
 
   private async deleteLocal(path: string): Promise<void> {
     const id = this.byPath.get(path);
     const entry = id ? this.byId.get(id) : undefined;
-    if (!entry || !this.online) return;
+    if (!entry || !this.sending) return;
     if (await this.options.fs.stat(path)) return;
 
     await this.drop(entry);
@@ -764,7 +806,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   }
 
   private async drop(entry: LocalEntry): Promise<void> {
-    if (!this.online) return;
+    if (!this.sending) return;
 
     try {
       await this.vault!.remove(entry.id);
@@ -782,15 +824,26 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (!entry) return this.pushLocal(to);
     if (this.ignored(to)) return this.deleteLocal(from);
 
-    const replaced = this.byId.get(this.byPath.get(to) ?? "");
-    if (replaced && replaced.id !== entry.id) await this.drop(replaced);
+    const { fs } = this.options;
+    const there = async (path: string) =>
+      entry.kind === "folder" ? (await fs.folderState(path)) !== "missing" : (await fs.stat(path)) !== null;
+    const left = !(await there(from)) || folded(from) === folded(to);
+    const arrived = await there(to);
+    const holder = this.byId.get(this.byPath.get(to) ?? "");
+    const replaced = holder && holder.id !== entry.id ? holder : undefined;
+
+    if (!left || !arrived || replaced) {
+      if (entry.kind === "folder") return;
+      await this.pushLocal(to);
+      return left ? this.deleteLocal(from) : this.pushLocal(from);
+    }
 
     this.byPath.delete(from);
     entry.path = to;
     entry.moved = true;
     this.byPath.set(to, entry.id);
     await this.persist(entry);
-    if (this.online) await this.pushRename(entry);
+    if (this.sending) await this.pushRename(entry);
     if (entry.kind === "doc") await this.syncDoc(entry.id);
     await this.pushFolder(parentOf(from));
   }
@@ -906,13 +959,13 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const { fs } = this.options;
     const file = await fs.stat(entry.path);
     const disk = file ? normalize(await fs.readText(entry.path)) : null;
-    if (disk !== text) await fs.writeText(entry.path, text);
+    if (disk !== text) await placing(fs.writeText(entry.path, text));
     await this.record(entry, await textHash(text));
   }
 
   private async download(entry: LocalEntry, hash: string): Promise<void> {
     const data = await this.options.client.download(this.options.vaultId, hash);
-    await this.options.fs.writeBinary(entry.path, data);
+    await placing(this.options.fs.writeBinary(entry.path, data));
     await this.record(entry, hash);
   }
 
@@ -953,6 +1006,8 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       return;
     }
 
+    const untouched = holder.kind !== "folder" && !holder.dirty && (await this.diskHash(holder)) === holder.hash;
+    if (untouched && holder.hash !== null) await this.options.fs.remove(path);
     this.forget(holder);
     await this.discard(holder.id);
   }

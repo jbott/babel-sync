@@ -25,6 +25,15 @@ function freshVault(): string {
   return vaultIds[nextVault++];
 }
 
+function watch(fs: MemoryFs, engine: SyncEngine): void {
+  fs.watcher = (event) => {
+    if (event.type === "changed") engine.localChanged(event.path);
+    else if (event.type === "deleted") engine.localDeleted(event.path);
+    else if (event.type === "folderCreated") engine.localFolderCreated(event.path);
+    else if (event.type === "renamed") engine.localRenamed(event.from, event.path);
+  };
+}
+
 async function boot(
   name: string,
   vaultId: string,
@@ -48,6 +57,7 @@ async function boot(
     ...options,
   });
   engine.on("error", (message) => errors.push(message));
+  watch(fs, engine);
   client.connect();
   await engine.start();
 
@@ -387,6 +397,7 @@ test("an attachment moved into a new folder stays one file, and a conflict copy 
   assert.equal(once, "Attachments/Pasted image (conflict Phone 2026-11-11 203101).jpg");
   assert.equal(conflictPath(once, "Phone", new Date("2026-11-11T20:32:48Z")), "Attachments/Pasted image (conflict Phone 2026-11-11 203248).jpg");
   assert.equal(conflictPath("a (conflict Phone 2026-11-11 203101) 2.md", "Desk", new Date("2026-11-11T20:32:48Z")), "a (conflict Desk 2026-11-11 203248).md");
+  assert.equal(conflictPath("a.md", "John's (work) iPad/2", new Date("2026-11-11T20:32:48Z")), "a (conflict John's work iPad 2 2026-11-11 203248).md");
 });
 
 test("attachments over the device's size limit are skipped without being deleted", async () => {
@@ -404,6 +415,140 @@ test("attachments over the device's size limit are skipped without being deleted
 
   assert.deepEqual(paths(phone), ["small.md"]);
   assert.deepEqual(paths(laptop), ["small.md", "video.mp4"]);
+
+  await shutdown(phone);
+  const roomier = await boot("phone", vault, phone);
+  await eventually(() => paths(roomier).join() === "small.md,video.mp4", "the video once the limit allows it");
+});
+
+test("a note edited offline survives another device deleting it", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "plan.md", "first draft\n");
+  await eventually(async () => (await text(phone, "plan.md")) === "first draft\n", "the plan on the phone");
+  await phone.client.disconnect();
+  await eventually(() => phone.engine.status === "offline", "the phone to notice it is offline");
+
+  await phone.fs.writeText("plan.md", "first draft\nwritten on a plane\n");
+  await phone.engine.idle();
+  await laptop.fs.remove("plan.md");
+  await eventually(() => laptop.engine.status === "synced" && paths(laptop).length === 0, "the laptop to delete the plan");
+
+  phone.client.connect();
+  await eventually(async () => (await text(laptop, "plan.md")) === "first draft\nwritten on a plane\n", "the offline edit on the laptop");
+  assert.equal(await text(phone, "plan.md"), "first draft\nwritten on a plane\n");
+});
+
+test("changing only the case of a name is a rename on devices that cannot tell cases apart", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault, { fs: new MemoryFs({ caseBlind: true }), store: new MemoryStore() });
+  const phone = await boot("phone", vault, { fs: new MemoryFs({ caseBlind: true }), store: new MemoryStore() });
+  await edit(laptop, "readme.md", "hello\n");
+  await eventually(() => paths(phone).join() === "readme.md", "the note on the phone");
+
+  await laptop.fs.rename("readme.md", "README.md");
+  await eventually(() => paths(phone).join() === "README.md", () => `the phone to follow, it has ${paths(phone).join()}`);
+  await eventually(() => laptop.engine.status === "synced" && phone.engine.status === "synced", "both to settle");
+  assert.deepEqual(paths(laptop), ["README.md"]);
+  assert.equal(await text(phone, "README.md"), "hello\n");
+
+  await phone.fs.writeText("Readme.md", "hello again\n");
+  await eventually(async () => (await text(laptop, "README.md")) === "hello again\n", "an edit through another spelling");
+  assert.deepEqual(paths(laptop), ["README.md"]);
+});
+
+test("a second note whose name differs only by case is kept under another name", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault, { fs: new MemoryFs({ caseBlind: true }), store: new MemoryStore() });
+  await edit(laptop, "todo.md", "lower\n");
+  await eventually(() => paths(phone).join() === "todo.md", "the first note on the phone");
+
+  await edit(laptop, "TODO.md", "upper\n");
+  const copy = "TODO (conflict laptop 2026-11-10 120000).md";
+  await eventually(() => paths(phone).join() === [copy, "todo.md"].join(), () => `both notes on the phone, it has ${paths(phone).join()}`);
+  assert.equal(await text(phone, "todo.md"), "lower\n");
+  assert.equal(await text(phone, copy), "upper\n");
+});
+
+test("two notes that swapped names while a device was away swap there too, with no conflict copy", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "a.md", "was a\n");
+  await edit(laptop, "b.md", "was b\n");
+  await eventually(() => paths(phone).join() === "a.md,b.md", "both notes on the phone");
+  await shutdown(phone);
+
+  const settled = () => eventually(() => laptop.engine.status === "synced", "the laptop to settle");
+  await laptop.fs.rename("a.md", "c.md");
+  await settled();
+  await laptop.fs.rename("b.md", "a.md");
+  await settled();
+  await laptop.fs.rename("c.md", "b.md");
+  await settled();
+
+  const back = await boot("phone", vault, phone);
+  await eventually(async () => (await text(back, "a.md")) === "was b\n" && (await text(back, "b.md")) === "was a\n", "the swap on the phone");
+  await eventually(() => back.engine.status === "synced" && laptop.engine.status === "synced", "both to settle");
+  assert.deepEqual(paths(back), ["a.md", "b.md"]);
+  assert.deepEqual(paths(laptop), ["a.md", "b.md"]);
+});
+
+test("deleting a folder does not delete notes in it this device never saw", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await laptop.fs.makeFolder("Projects");
+  await eventually(() => phone.fs.folders.has("Projects"), "the folder on the phone");
+  await shutdown(phone);
+
+  await edit(laptop, "Projects/idea.md", "do not lose me\n");
+  await eventually(() => laptop.engine.status === "synced", "the laptop to send the idea");
+  phone.fs.folders.delete("Projects");
+
+  const back = await boot("phone", vault, phone);
+  back.engine.localFolderDeleted("Projects");
+  await eventually(async () => (await text(back, "Projects/idea.md")) === "do not lose me\n", "the idea on the phone");
+  await eventually(() => back.engine.status === "synced" && laptop.engine.status === "synced", "both to settle");
+  assert.equal(await text(laptop, "Projects/idea.md"), "do not lose me\n");
+});
+
+test("a file this device cannot store is left out without holding up the rest", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  await edit(laptop, "what?.md", "fine on a laptop\n");
+  await eventually(() => laptop.engine.status === "synced", "the laptop to send it");
+
+  const fs = new MemoryFs({ refuses: (path) => path.includes("?") });
+  const phone = await boot("phone", vault, { fs, store: new MemoryStore() }, { retryMs: 30 });
+  await edit(laptop, "after.md", "still arrives\n");
+  await eventually(async () => (await text(phone, "after.md")) === "still arrives\n", "a later note on the phone");
+  await eventually(() => phone.engine.status === "synced", "the phone to settle");
+
+  assert.deepEqual(paths(phone), ["after.md"]);
+  assert.deepEqual(paths(laptop), ["after.md", "what?.md"]);
+  assert.ok(phone.errors.some((message) => message.includes("cannot be kept on this device")));
+});
+
+test("a note saved by writing a new file over it stays the same note", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "essay.md", "one\n");
+  await eventually(async () => (await text(phone, "essay.md")) === "one\n", "the essay on the phone");
+  const id = () => [...laptop.store.entries.values()].find((entry) => entry.path === "essay.md")?.id;
+  const original = id();
+
+  await laptop.fs.writeText("essay.md.tmp", "one\ntwo\n");
+  await eventually(() => paths(phone).length === 2, "the temporary file on the phone");
+  await laptop.fs.rename("essay.md.tmp", "essay.md");
+
+  await eventually(async () => (await text(phone, "essay.md")) === "one\ntwo\n" && paths(phone).length === 1, () => `the save on the phone, it has ${paths(phone).join()}`);
+  await eventually(() => laptop.engine.status === "synced", "the laptop to settle");
+  assert.deepEqual(paths(laptop), ["essay.md"]);
+  assert.equal(id(), original);
 });
 
 test("bases and canvases are text that merges, and a device that held one as an attachment follows", async () => {
