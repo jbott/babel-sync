@@ -164,7 +164,24 @@ defmodule BabelSync.Agent do
   end
 
   @spec read_file(Scope.t(), vault_reference(), String.t(), keyword()) :: {:ok, map()} | error()
-  def read_file(scope, vault, path, opts \\ []) do
+  def read_file(scope, vault, path, opts \\ [])
+
+  def read_file(scope, vault, path, [{:encoding, "base64"} | opts]) do
+    with {:ok, vault} <- vault(scope, vault, :read),
+         {:ok, entry} <- entry(vault, path),
+         {:ok, bytes} <- raw(entry, opts[:version]) do
+      {:ok,
+       %{
+         kind: :bytes,
+         path: entry.path,
+         type: MIME.from_path(entry.path),
+         bytes: byte_size(bytes),
+         data: Base.encode64(bytes)
+       }}
+    end
+  end
+
+  def read_file(scope, vault, path, opts) do
     with {:ok, vault} <- vault(scope, vault, :read),
          {:ok, entry} <- entry(vault, path) do
       case text(entry, opts[:version]) do
@@ -756,6 +773,22 @@ defmodule BabelSync.Agent do
     case Sync.get_version(entry.id, version_id) do
       %Version{content: content} -> {:ok, content}
       nil -> {:error, :not_found}
+    end
+  end
+
+  defp raw(%Entry{kind: :folder}, _version), do: {:error, :not_a_note}
+
+  defp raw(%Entry{kind: :blob} = entry, nil) do
+    case entry.blob_hash && Blobs.get(entry.vault_id, entry.blob_hash) do
+      %Blobs.Blob{size: size} when size > @written_bytes -> {:error, :too_large_to_read}
+      %Blobs.Blob{} = blob -> {:ok, Blobs.read(blob)}
+      _missing -> {:error, :not_found}
+    end
+  end
+
+  defp raw(entry, version) do
+    with {:ok, text} <- text(entry, version) do
+      if byte_size(text) > @written_bytes, do: {:error, :too_large_to_read}, else: {:ok, text}
     end
   end
 

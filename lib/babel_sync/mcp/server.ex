@@ -34,7 +34,8 @@ defmodule BabelSync.MCP.Server do
 
   Any file can also move outside the conversation: upload_file and download_file give an \
   HTTP link to PUT or GET its bytes with curl, for files too large for a tool call, files \
-  that are not text, or files on a disk you can reach from a shell.
+  that are not text, or files on a disk you can reach from a shell. Without a shell, \
+  read_file with encoding base64 returns any file's bytes, up to 8 MiB.
 
   Notes use Obsidian Markdown: [[wikilinks]], #tags, and YAML properties between --- lines \
   at the top.

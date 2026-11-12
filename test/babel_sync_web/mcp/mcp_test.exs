@@ -281,6 +281,35 @@ defmodule BabelSyncWeb.MCPTest do
     assert conn |> recycle() |> get(URI.parse(link(fresh)).path) |> response(200) == "new"
   end
 
+  test "an agent without a shell reads any file's bytes as base64", %{
+    session: session,
+    vault: vault
+  } do
+    pdf = :crypto.strong_rand_bytes(5_000)
+    {:ok, blob} = Blobs.put(vault.id, pdf)
+    entry(vault, "paper.pdf", %{blob_hash: blob.hash, size: blob.size})
+    {:ok, _} = call(session, "write_file", %{path: "note.md", content: "café\n"})
+
+    assert {:ok, described} = call(session, "read_file", %{path: "paper.pdf"})
+    assert described =~ "encoding base64"
+
+    assert %{"content" => [%{"text" => header}, %{"text" => data}]} =
+             result(session, "read_file", %{path: "paper.pdf", encoding: "base64"})
+
+    assert header == "paper.pdf · application/pdf · 5000 bytes · base64"
+    assert Base.decode64!(data) == pdf
+
+    assert %{"content" => [_header, %{"text" => note}]} =
+             result(session, "read_file", %{path: "note.md", encoding: "base64"})
+
+    assert Base.decode64!(note) == "café\n"
+
+    {:ok, big} = Blobs.put(vault.id, :binary.copy(<<0>>, 8 * 1024 * 1024 + 1))
+    entry(vault, "big.bin", %{blob_hash: big.hash, size: big.size})
+    assert {:error, refused} = call(session, "read_file", %{path: "big.bin", encoding: "base64"})
+    assert refused =~ "download_file"
+  end
+
   test "a link stops working once its holder loses access", %{
     bare: conn,
     owner: owner,

@@ -1,6 +1,6 @@
 defmodule BabelSync.MCP.Tools.ReadFile do
   @moduledoc """
-  Reads a note or any other text file as it is right now, including edits people are making, or shows an image attachment. The first line of the reply gives the line range, the total and the note's rev; the text follows. For a long note, call file_outline first and read only the lines you need. You do not need to read a note before edit_file or append_file.
+  Reads a note or any other text file as it is right now, including edits people are making, or shows an image attachment. With encoding base64 it returns any file's bytes instead. The first line of the reply gives the line range, the total and the note's rev; the text follows. For a long note, call file_outline first and read only the lines you need. You do not need to read a note before edit_file or append_file.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -26,6 +26,10 @@ defmodule BabelSync.MCP.Tools.ReadFile do
     field :line_numbers, :boolean,
       description: "Prefix every line with its number. The numbers are not part of the note."
 
+    field :encoding, :string,
+      description:
+        "Pass base64 to get any file's exact bytes, up to 8 MiB, for example a PDF to hand to another tool. Without a shell, this is the way to read a file that is not text."
+
     field :version, :integer,
       description: "Read this saved version, from file_history, instead of the current text."
   end
@@ -33,7 +37,9 @@ defmodule BabelSync.MCP.Tools.ReadFile do
   @impl true
   def execute(params, frame) do
     Reply.run(frame, fn scope ->
-      options = [offset: params[:offset], limit: params[:limit], version: params[:version]]
+      options =
+        [offset: params[:offset], limit: params[:limit], version: params[:version]]
+        |> then(&if(params[:encoding] == "base64", do: [{:encoding, "base64"} | &1], else: &1))
 
       with {:ok, read} <- Agent.read_file(scope, params[:vault], params.path, options) do
         {:ok, Format.read(read, params[:line_numbers] == true)}

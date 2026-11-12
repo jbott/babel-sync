@@ -49,10 +49,16 @@ defmodule BabelSync.MCP.Format do
     {:parts, ["#{read.path} · #{range} · rev #{read.rev}", text]}
   end
 
+  def read(%{kind: :bytes} = file, _numbered?) do
+    {:parts, ["#{file.path} · #{file.type} · #{file.bytes} bytes · base64", file.data]}
+  end
+
   def read(%{kind: :attachment, image: nil} = file, _numbered?) do
     {:meta,
      "#{file.path} is an attachment (#{file.type}, #{file.bytes} bytes) that cannot be shown as text. " <>
-       fetch(file.download), downloads(file.download)}
+       fetch(file.download) <>
+       " Without a shell, read_file with encoding base64 returns its bytes.",
+     downloads(file.download)}
   end
 
   def read(%{kind: :attachment} = file, _numbered?) do

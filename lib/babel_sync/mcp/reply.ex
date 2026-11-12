@@ -80,6 +80,11 @@ defmodule BabelSync.MCP.Reply do
       " Use a simpler pattern, or narrow it with glob."
   end
 
+  defp message(:too_large_to_read) do
+    "That file is larger than the 8 MiB read_file returns as base64." <>
+      " download_file gives a link to fetch it with curl from a shell."
+  end
+
   defp message(:invalid_size), do: "size must be the file's size in bytes, zero or more."
 
   defp message(:not_a_folder_target),
