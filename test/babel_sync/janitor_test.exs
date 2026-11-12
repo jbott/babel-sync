@@ -30,6 +30,11 @@ defmodule BabelSync.JanitorTest do
     entry
   end
 
+  defp age(schema, id, field) do
+    import Ecto.Query
+    Repo.update_all(from(r in schema, where: r.id == ^id), set: [{field, days_from_now(-3)}])
+  end
+
   describe "attachments recognised as text" do
     test "become notes with the same identity, text and history" do
       vault = vault()
@@ -175,6 +180,49 @@ defmodule BabelSync.JanitorTest do
       assert Blobs.get_upload(upload.id)
       assert :ok = Janitor.run(days_from_now(2))
       refute Blobs.get_upload(upload.id)
+    end
+
+    test "bytes a device has just been told it need not upload are kept" do
+      vault = vault()
+      {:ok, blob} = Blobs.put(vault.id, "about to be attached")
+      age(Blobs.Blob, blob.id, :inserted_at)
+
+      assert {:exists, _blob} =
+               Blobs.begin_upload(vault.id, %{hash: blob.hash, size: blob.size})
+
+      assert :ok = Janitor.run(DateTime.utc_now())
+      assert Blobs.get(vault.id, blob.hash)
+    end
+
+    test "an upload that is still receiving parts is not abandoned" do
+      vault = vault()
+      data = "slow upload"
+
+      {:ok, upload, [1]} =
+        Blobs.begin_upload(vault.id, %{hash: Blobs.hash_binary(data), size: byte_size(data)})
+
+      age(Blobs.Upload, upload.id, :updated_at)
+      :ok = Blobs.put_part(upload, 1, data)
+
+      assert :ok = Janitor.run(DateTime.utc_now())
+      assert Blobs.get_upload(upload.id)
+    end
+
+    test "deleting a vault deletes its attachment bytes" do
+      vault = vault()
+      {:ok, blob} = Blobs.put(vault.id, "private bytes")
+      assert Blobs.read(blob) == "private bytes"
+
+      {:ok, _deleted} = Vaults.delete_vault(vault)
+
+      gone? =
+        try do
+          Blobs.read(blob) != "private bytes"
+        rescue
+          _missing -> true
+        end
+
+      assert gone?
     end
 
     test "with retention off, history and trash are kept" do

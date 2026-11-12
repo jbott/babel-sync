@@ -106,7 +106,14 @@ defmodule BabelSync.Vaults do
   end
 
   @spec delete_vault(Vault.t()) :: {:ok, Vault.t()} | {:error, Ecto.Changeset.t()}
-  def delete_vault(%Vault{} = vault), do: Repo.delete(vault)
+  def delete_vault(%Vault{} = vault) do
+    stored = BabelSync.Blobs.stored(vault.id)
+
+    with {:ok, deleted} <- Repo.delete(vault) do
+      BabelSync.Blobs.discard(stored)
+      {:ok, deleted}
+    end
+  end
 
   @spec put_member(Vault.t(), User.t(), Member.role()) ::
           {:ok, Member.t()} | {:error, Ecto.Changeset.t()}

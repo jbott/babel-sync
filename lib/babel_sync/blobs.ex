@@ -49,7 +49,7 @@ defmodule BabelSync.Blobs do
       size > max_size() ->
         {:error, :too_large}
 
-      blob = get(vault_id, hash) ->
+      blob = claim(vault_id, hash) ->
         {:exists, blob}
 
       upload = Repo.get_by(Upload, vault_id: vault_id, hash: hash) ->
@@ -75,6 +75,8 @@ defmodule BabelSync.Blobs do
 
       true ->
         with {:ok, tag} <- Store.impl().put_part(key(upload), upload.store_ref, number, data) do
+          touch(upload)
+
           Repo.insert!(
             %Part{
               upload_id: upload.id,
@@ -95,6 +97,7 @@ defmodule BabelSync.Blobs do
   @spec complete_upload(Upload.t()) ::
           {:ok, Blob.t()} | {:error, {:missing, [pos_integer()]} | :hash_mismatch | term()}
   def complete_upload(%Upload{} = upload) do
+    touch(upload)
     parts = parts(upload)
     missing = missing(upload, parts)
     digests = Enum.map(parts, &Base.decode16!(&1.hash, case: :lower))
@@ -173,18 +176,38 @@ defmodule BabelSync.Blobs do
         where: e.vault_id == parent_as(:blob).vault_id and v.blob_hash == parent_as(:blob).hash
 
     unreferenced =
-      Repo.all(
-        from b in Blob,
-          as: :blob,
-          where: b.inserted_at < ^uploaded_before and not exists(current) and not exists(historic)
-      )
+      from b in Blob,
+        as: :blob,
+        where: b.inserted_at < ^uploaded_before and not exists(current) and not exists(historic)
 
-    Enum.each(unreferenced, fn blob ->
-      Repo.delete!(blob)
-      :ok = Store.impl().delete(key(blob))
+    unreferenced
+    |> Repo.all()
+    |> Enum.count(fn blob ->
+      {:ok, collected?} =
+        Repo.transact(fn ->
+          case Repo.delete_all(from b in unreferenced, where: b.id == ^blob.id) do
+            {1, _} -> {:ok, Store.impl().delete(key(blob)) == :ok}
+            {0, _} -> {:ok, false}
+          end
+        end)
+
+      collected?
     end)
+  end
 
-    length(unreferenced)
+  @spec stored(Ecto.UUID.t()) :: {[String.t()], [{String.t(), String.t()}]}
+  def stored(vault_id) do
+    blobs = Repo.all(from b in Blob, where: b.vault_id == ^vault_id, select: b.hash)
+    uploads = Repo.all(from u in Upload, where: u.vault_id == ^vault_id)
+
+    {Enum.map(blobs, &key(%{vault_id: vault_id, hash: &1})),
+     Enum.map(uploads, &{key(&1), &1.store_ref})}
+  end
+
+  @spec discard({[String.t()], [{String.t(), String.t()}]}) :: :ok
+  def discard({keys, uploads}) do
+    Enum.each(uploads, fn {key, ref} -> Store.impl().abort_upload(key, ref) end)
+    Enum.each(keys, fn key -> Store.impl().delete(key) end)
   end
 
   @spec abandon_stale_uploads(DateTime.t()) :: non_neg_integer()
@@ -197,6 +220,24 @@ defmodule BabelSync.Blobs do
   @spec local_path(Blob.t()) :: Path.t() | nil
   def local_path(%Blob{} = blob) do
     if Store.impl() == Store.Disk, do: Store.Disk.path(key(blob))
+  end
+
+  defp claim(vault_id, hash) do
+    with %Blob{} = blob <- get(vault_id, hash),
+         {1, _} <-
+           Repo.update_all(from(b in Blob, where: b.id == ^blob.id),
+             set: [inserted_at: DateTime.utc_now()]
+           ) do
+      blob
+    else
+      _gone -> nil
+    end
+  end
+
+  defp touch(%Upload{id: id}) do
+    Repo.update_all(from(u in Upload, where: u.id == ^id),
+      set: [updated_at: DateTime.utc_now()]
+    )
   end
 
   defp start(vault_id, hash, size) do
