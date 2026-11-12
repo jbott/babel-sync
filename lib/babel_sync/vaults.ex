@@ -68,13 +68,19 @@ defmodule BabelSync.Vaults do
       Repo.all(
         from e in Entry,
           where: e.vault_id == ^vault_id and is_nil(e.deleted_at),
-          order_by: e.seq
+          select: {e.id, e.seq}
       )
 
-    alive = MapSet.new(live, & &1.id)
+    alive = MapSet.new(live, &elem(&1, 0))
+    stale = for {id, seq} <- live, Map.get(have, id) != seq, do: id
 
-    {Enum.reject(live, &(Map.get(have, &1.id) == &1.seq)),
-     have |> Map.keys() |> Enum.reject(&MapSet.member?(alive, &1))}
+    stale_entries =
+      stale
+      |> Enum.chunk_every(500)
+      |> Enum.flat_map(&Repo.all(from e in Entry, where: e.id in ^&1))
+      |> Enum.sort_by(& &1.seq)
+
+    {stale_entries, have |> Map.keys() |> Enum.reject(&MapSet.member?(alive, &1))}
   end
 
   @spec known_version?(Entry.t(), String.t()) :: boolean()
@@ -259,8 +265,15 @@ defmodule BabelSync.Vaults do
 
       case Repo.get(Entry, id) do
         %Entry{deleted_at: deleted_at} = trashed when not is_nil(deleted_at) ->
+          path = free_path(trashed)
+
           trashed
-          |> Ecto.Changeset.change(deleted_at: nil, seq: seq, path: free_path(trashed))
+          |> Ecto.Changeset.change(
+            deleted_at: nil,
+            seq: seq,
+            path: path,
+            folded: BabelSync.Vaults.Path.fold(path)
+          )
           |> Repo.update()
 
         _missing_or_live ->
@@ -319,13 +332,13 @@ defmodule BabelSync.Vaults do
     :ok
   end
 
-  defp free_path(%Entry{vault_id: vault_id, path: path}) do
+  defp free_path(%Entry{id: id, vault_id: vault_id, path: path}) do
     extension = Elixir.Path.extname(path)
     stem = String.trim_trailing(path, extension)
 
     [path, stem <> " (restored)" <> extension]
     |> Stream.concat(Stream.map(2..1000, &"#{stem} (restored #{&1})#{extension}"))
-    |> Enum.find(&is_nil(get_entry_by_path(vault_id, &1)))
+    |> Enum.find(&is_nil(occupant(vault_id, &1, id)))
   end
 
   defp remember_blob({:ok, %Entry{kind: :blob, blob_hash: hash} = entry} = result, previous)
@@ -357,19 +370,7 @@ defmodule BabelSync.Vaults do
           {:error, {:exists, existing}}
 
         nil ->
-          [{current, seq} | with_seqs(descendants(current))]
-          |> Enum.reduce_while({:ok, []}, fn {moving, seq}, {:ok, moved} ->
-            target = new_path <> String.replace_prefix(moving.path, current.path, "")
-
-            moving
-            |> Entry.changeset(%{path: target})
-            |> Ecto.Changeset.put_change(:seq, seq)
-            |> Repo.update()
-            |> case do
-              {:ok, updated} -> {:cont, {:ok, [updated | moved]}}
-              {:error, changeset} -> {:halt, {:error, changeset}}
-            end
-          end)
+          move(current, new_path, seq)
       end
     end)
     |> announce_all()
@@ -400,16 +401,50 @@ defmodule BabelSync.Vaults do
     |> announce_all()
   end
 
+  defp move(%Entry{} = folder, new_path, seq) do
+    inside = descendants(folder)
+    depth = folder.path |> String.split("/") |> length()
+    moving = MapSet.new([folder.id | Enum.map(inside, & &1.id)])
+
+    targets =
+      for entry <- [folder | inside] do
+        rest = entry.path |> String.split("/") |> Enum.drop(depth)
+        {entry, Enum.join([new_path | rest], "/")}
+      end
+
+    blocked =
+      Enum.find_value(targets, fn {_entry, target} ->
+        occupant(folder.vault_id, target, &MapSet.member?(moving, &1))
+      end)
+
+    if blocked do
+      {:error, {:exists, blocked}}
+    else
+      targets
+      |> Enum.zip([seq | Enum.map(inside, fn _ -> next_seq(folder.vault_id) end)])
+      |> Enum.reduce_while({:ok, []}, fn {{entry, target}, seq}, {:ok, moved} ->
+        entry
+        |> Entry.changeset(%{path: target})
+        |> Ecto.Changeset.put_change(:seq, seq)
+        |> Repo.update()
+        |> case do
+          {:ok, updated} -> {:cont, {:ok, [updated | moved]}}
+          {:error, changeset} -> {:halt, {:error, changeset}}
+        end
+      end)
+    end
+  end
+
   defp occupant(vault_id, path, except \\ nil) do
     path = BabelSync.Vaults.Path.normalize(path)
-    folded = String.downcase(path)
+    folded = BabelSync.Vaults.Path.fold(path)
+    excluded? = if is_function(except), do: except, else: &(&1 == except)
 
     from(e in Entry,
-      where: e.vault_id == ^vault_id and is_nil(e.deleted_at),
-      where: e.path == ^path or fragment("lower(?)", e.path) == ^folded
+      where: e.vault_id == ^vault_id and is_nil(e.deleted_at) and e.folded == ^folded
     )
     |> Repo.all()
-    |> Enum.reject(&(&1.id == except))
+    |> Enum.reject(&excluded?.(&1.id))
     |> Enum.sort_by(&(&1.path != path))
     |> List.first()
   end
@@ -431,10 +466,14 @@ defmodule BabelSync.Vaults do
   def subscribe(vault_id), do: Phoenix.PubSub.subscribe(BabelSync.PubSub, topic(vault_id))
 
   defp descendants(%Entry{kind: :folder, vault_id: vault_id, path: path}) do
-    prefix = path <> "/"
+    pattern = path |> BabelSync.Vaults.Path.fold() |> BabelSync.Vaults.Path.like_prefix()
 
-    Repo.all(from e in Entry, where: e.vault_id == ^vault_id and is_nil(e.deleted_at))
-    |> Enum.filter(&String.starts_with?(&1.path, prefix))
+    Repo.all(
+      from e in Entry,
+        where: e.vault_id == ^vault_id and is_nil(e.deleted_at),
+        where: fragment("? LIKE ? ESCAPE '!'", e.folded, ^pattern),
+        order_by: e.path
+    )
   end
 
   defp descendants(%Entry{}), do: []

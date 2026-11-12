@@ -6,6 +6,7 @@ defmodule BabelSync.Vaults.Entry do
 
   schema "entries" do
     field :path, :string
+    field :folded, :string
     field :kind, Ecto.Enum, values: [:doc, :blob, :folder]
     field :blob_hash, :string
     field :content_hash, :string
@@ -21,9 +22,17 @@ defmodule BabelSync.Vaults.Entry do
     |> cast(attrs, [:path, :kind, :blob_hash, :content_hash, :size])
     |> validate_required([:path, :kind])
     |> update_change(:path, &BabelSync.Vaults.Path.normalize/1)
+    |> fold()
     |> validate_change(:path, fn :path, path ->
       if BabelSync.Vaults.Path.valid?(path), do: [], else: [path: "is not a valid vault path"]
     end)
     |> unique_constraint(:path, name: :entries_live_path_index)
+  end
+
+  defp fold(changeset) do
+    case fetch_change(changeset, :path) do
+      {:ok, path} -> put_change(changeset, :folded, BabelSync.Vaults.Path.fold(path))
+      :error -> changeset
+    end
   end
 end

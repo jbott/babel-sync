@@ -157,4 +157,50 @@ defmodule BabelSync.VaultsTest do
       assert seq == deleted.seq
     end
   end
+
+  describe "names that differ only by case" do
+    test "are refused for letters beyond ASCII too" do
+      vault = vault()
+      {:ok, _} = Vaults.create_entry(vault.id, %{path: "Ärger.md"})
+
+      assert {:error, {:exists, %{path: "Ärger.md"}}} =
+               Vaults.create_entry(vault.id, %{path: "ärger.md"})
+    end
+
+    test "a note restored next to a case variant of its name gets a free name" do
+      vault = vault()
+      {:ok, note} = Vaults.create_entry(vault.id, %{path: "Note.md"})
+      {:ok, _} = Vaults.delete_entry(note)
+      {:ok, _} = Vaults.create_entry(vault.id, %{path: "note.md"})
+
+      assert {:ok, %{path: "Note (restored).md"}} = Vaults.restore_entry(note)
+    end
+
+    test "a folder cannot be renamed so that a child lands on a case variant" do
+      vault = vault()
+      {:ok, folder} = Vaults.create_entry(vault.id, %{path: "B", kind: :folder})
+      {:ok, _} = Vaults.create_entry(vault.id, %{path: "B/x.md"})
+      {:ok, _} = Vaults.create_entry(vault.id, %{path: "a/x.md"})
+
+      assert {:error, {:exists, %{path: "a/x.md"}}} = Vaults.rename_entry(folder, "A")
+    end
+
+    test "a folder holds its children whatever their case" do
+      vault = vault()
+      {:ok, folder} = Vaults.create_entry(vault.id, %{path: "Notes", kind: :folder})
+      {:ok, _} = Vaults.create_entry(vault.id, %{path: "notes/x.md"})
+
+      assert {:error, :not_empty} = Vaults.delete_entry(folder, if_empty: true)
+      assert {:ok, moved} = Vaults.rename_entry(folder, "Archive")
+      assert moved |> Enum.map(& &1.path) |> Enum.sort() == ["Archive", "Archive/x.md"]
+    end
+
+    test "a name with characters LIKE treats specially only matches itself" do
+      vault = vault()
+      {:ok, folder} = Vaults.create_entry(vault.id, %{path: "a_b", kind: :folder})
+      {:ok, _} = Vaults.create_entry(vault.id, %{path: "axb/x.md"})
+
+      assert {:ok, [_folder]} = Vaults.delete_entry(folder, if_empty: true)
+    end
+  end
 end

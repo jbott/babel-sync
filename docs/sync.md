@@ -74,7 +74,8 @@ Obsidian reports every change to a file, including the ones the plugin itself ju
 
 ### Names
 
-- The server refuses two entries whose paths differ only by case, because most phones and laptops cannot hold both. A device that has such a second file keeps it under a conflict name.
+- The server refuses two entries whose paths differ only by case, because most phones and laptops cannot hold both. It compares names folded the way the plugin folds them (NFC, then Unicode lowercase), so `Ärger.md` and `ärger.md` collide as `Note.md` and `note.md` do. The check also covers a restore from the trash, which takes a free name instead, and every child of a renamed folder. A device that has such a second file keeps it under a conflict name.
+- A folder holds every entry under its name in any case, so deleting `Notes` only when empty counts `notes/x.md` as inside it.
 - A rename that changes only the case is a rename, on every device.
 - Files under `.obsidian` never get a conflict copy. When two devices change the same settings file, the one that reaches the server first wins and the other device takes it. A copy of a plugin's settings is clutter nobody reads, and the next change rewrites the file anyway.
 - Conflict copies are named `<name> (conflict <device> <date time>)`. A name never carries two such suffixes, and characters in the device name that a file name cannot hold are dropped.

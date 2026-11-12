@@ -17,6 +17,14 @@ defmodule BabelSync.Vaults.Path do
     |> :unicode.characters_to_nfc_binary()
   end
 
+  @spec fold(String.t()) :: String.t()
+  def fold(path), do: path |> normalize() |> String.downcase()
+
+  @spec like_prefix(String.t()) :: String.t()
+  def like_prefix(folded) do
+    String.replace(folded, ["!", "%", "_"], &("!" <> &1)) <> "/%"
+  end
+
   @spec valid?(String.t()) :: boolean()
   def valid?(path) do
     segments = String.split(path, "/")
