@@ -539,6 +539,7 @@ test("a note saved by writing a new file over it stays the same note", async () 
   await edit(laptop, "essay.md", "one\n");
   await eventually(async () => (await text(phone, "essay.md")) === "one\n", "the essay on the phone");
   const id = () => [...laptop.store.entries.values()].find((entry) => entry.path === "essay.md")?.id;
+  await eventually(() => id() !== undefined, "the laptop to record the essay");
   const original = id();
 
   await laptop.fs.writeText("essay.md.tmp", "one\ntwo\n");

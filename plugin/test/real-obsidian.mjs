@@ -116,7 +116,6 @@ async function signIn(device, vaultId) {
     async (server, name) => {
       const plugin = app.plugins.plugins.babelsync;
       plugin.settings.deviceName = name;
-      plugin.settings.userName = name;
       await plugin.saveSettings();
       app.setting.open();
       app.setting.openTabById("babelsync");
@@ -226,7 +225,6 @@ async function followLink(device, vaultId) {
     async (name) => {
       const plugin = app.plugins.plugins.babelsync;
       plugin.settings.deviceName = name;
-      plugin.settings.userName = name;
       await plugin.saveSettings();
     },
     name,
@@ -247,16 +245,22 @@ async function followLink(device, vaultId) {
     app.setting.open();
     app.setting.openTabById("babelsync");
   });
-  await eventually(`${name}: a synced vault shows one line with a sign-out button and no way to switch`, () =>
+  await eventually(`${name}: a synced vault shows one line, leaving has its own row, and nothing asks for a name or colour`, () =>
     page.evaluate(() => {
       const tab = document.querySelector(".vertical-tab-content");
       const heading = tab.querySelector(".setting-item-heading");
-      const next = heading.nextElementSibling;
+      const rows = [...tab.querySelectorAll(".setting-item")].map((row) => row.querySelector(".setting-item-name")?.innerText ?? "");
+      const leave = [...tab.querySelectorAll(".setting-item")].find((row) => row.querySelector(".setting-item-name")?.innerText === "Disconnect this vault");
       return (
         !tab.querySelector("select") &&
+        !tab.querySelector("input[type=color]") &&
         heading.innerText.startsWith("Syncing with ") &&
-        [...heading.querySelectorAll("button")].map((button) => button.innerText).join() === "Sign out" &&
-        next.classList.contains("setting-item-heading")
+        heading.querySelectorAll("button").length === 0 &&
+        leave?.querySelector("button")?.innerText === "Disconnect" &&
+        rows.includes("This device") &&
+        rows.includes("Verify") &&
+        !rows.includes("Your name") &&
+        !rows.includes("Compare everything again")
       );
     }),
   );
@@ -506,6 +510,20 @@ async function run() {
   await desk.page.evaluate(() => app.plugins.disablePlugin("babelsync"));
   await desk.page.evaluate(() => app.plugins.enablePlugin("babelsync"));
   await eventually("a device that joins sees a cursor already resting there, without waiting for it to move", () => desk.page.evaluate(() => !!document.querySelector(".cm-ySelectionCaret")), 6000);
+
+  await laptop.page.evaluate(() => app.vault.create("Verified.md", "as first synced\n"));
+  await eventually("a note to verify reaches the desk", async () => (await read(desk, "Verified.md")) === "as first synced\n");
+  await eventually("the desk settles before it is verified", () => desk.page.evaluate(() => app.plugins.plugins.babelsync.engine.status === "synced"));
+  await desk.page.evaluate(async () => {
+    const plugin = app.plugins.plugins.babelsync;
+    const entry = [...plugin.engine.byId.values()].find((known) => known.path === "Verified.md");
+    await app.vault.adapter.write("Verified.md", "hidden new text\n");
+    const stat = await app.vault.adapter.stat("Verified.md");
+    entry.mtime = stat.mtime;
+    entry.size = stat.size;
+    await plugin.verify();
+  });
+  await eventually("verify finds a change that the file's size and time hid", async () => (await read(laptop, "Verified.md")) === "hidden new text\n", 15000);
 
   await desk.page.evaluate(() => app.emulateMobile(true)).catch(() => {});
   const phone = await findApp(desk.browser).catch(() => null);

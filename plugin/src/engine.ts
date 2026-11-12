@@ -57,6 +57,7 @@ const SETTLE_MS = 1_000;
 const STOP_GRACE_MS = 3_000;
 const SETTLING_PASSES = 5;
 const QUIETLY = true;
+const THOROUGHLY = true;
 const ATTEMPTS = 3;
 
 function folded(path: string): string {
@@ -326,6 +327,14 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (this.online) this.run(() => this.reconcile([]));
   }
 
+  verify(): Promise<void> {
+    return this.run(() => this.reconcile([], false, UNCONDITIONAL, THOROUGHLY));
+  }
+
+  get account(): string {
+    return this.vault?.user ?? "";
+  }
+
   openDoc(path: string): Promise<OpenDoc | null> {
     return this.run(async () => {
       await this.pushLocal(path);
@@ -412,7 +421,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     this.emit("status", status);
   }
 
-  private async reconcile(changes: Entry[], complete = false, digest?: string | null): Promise<void> {
+  private async reconcile(changes: Entry[], complete = false, digest?: string | null, thoroughly = false): Promise<void> {
     if (digest === UNCONDITIONAL) this.behind = false;
     this.emit("log", `reconcile: ${changes.length} changes${complete ? ", complete listing" : ""}, ${this.byId.size} known`);
     if (complete) {
@@ -432,11 +441,11 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       await this.audit();
     }
 
-    await this.sweep();
+    await this.sweep(thoroughly);
     if (digest === UNCONDITIONAL && !this.behind) this.retryMs = this.firstRetryMs;
   }
 
-  private async sweep(): Promise<boolean> {
+  private async sweep(thoroughly = false): Promise<boolean> {
     const files = (await this.options.fs.list()).filter((file) => !this.ignored(file.path));
     const present = new Set(files.map((file) => file.path));
     const entries = () => [...this.byId.values()];
@@ -452,7 +461,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       const known = id ? this.byId.get(id) : undefined;
       const kind = known && known.kind !== "folder" ? known.kind : kindFor(file.path);
       if (kind !== "doc" && this.tooLarge(file.size)) return false;
-      return !known || known.mtime !== file.mtime || known.size !== file.size;
+      return thoroughly || !known || known.mtime !== file.mtime || known.size !== file.size;
     });
     for (const [done, file] of outgoing.entries()) {
       this.report("sending", done, outgoing.length);
@@ -467,7 +476,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     for (const entry of unsent) await this.syncDoc(entry.id);
 
     await this.tidyFolders();
-    return displaced.length + moved.length + outgoing.length + missing.length + unsent.length > 0;
+    return displaced.length + moved.length + (thoroughly ? 0 : outgoing.length) + missing.length + unsent.length > 0;
   }
 
   private settleSoon(): void {

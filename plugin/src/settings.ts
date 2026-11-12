@@ -15,8 +15,6 @@ export type Settings = {
   vaultId: string;
   vaultName: string;
   deviceName: string;
-  userName: string;
-  userColor: string;
   syncConfig: boolean;
   maxFileMebibytes: number;
 };
@@ -30,8 +28,6 @@ export const DEFAULT_SETTINGS: Settings = {
   vaultId: "",
   vaultName: "",
   deviceName: Platform.isMobile ? "Phone" : "Desktop",
-  userName: "",
-  userColor: "#7c3aed",
   syncConfig: true,
   maxFileMebibytes: Platform.isMobile ? 50 : 0,
 };
@@ -86,23 +82,15 @@ export class SettingsTab extends PluginSettingTab {
 
     if (settings.vaultId) this.connected(this.summary);
     else this.connect(containerEl);
-
-    new Setting(containerEl).setName("You").setHeading();
-
-    new Setting(containerEl)
-      .setName("Your name")
-      .setDesc("Shown next to your cursor for other people editing the same note.")
-      .addText((text) => text.setValue(settings.userName).onChange((value) => this.save({ userName: value.trim() })))
-      .addColorPicker((picker) =>
-        picker.setValue(settings.userColor).onChange((value) => this.save({ userColor: value })),
-      );
+    if (settings.vaultId) this.leaving(containerEl);
 
     new Setting(containerEl)
-      .setName("Device name")
-      .setDesc("How this device appears on the server, and the name given to the copy kept when two devices change the same attachment.")
-      .addText((text) =>
-        text.setValue(settings.deviceName).onChange((value) => this.save({ deviceName: value.trim() })),
-      );
+      .setName("This device")
+      .setDesc("Shown beside your name on your cursor, in the server's list of devices, and in the name of a copy kept when two devices change the same attachment.")
+      .addText((text) => {
+        text.setValue(settings.deviceName);
+        text.inputEl.addEventListener("change", () => void this.plugin.renameDevice(text.getValue().trim()));
+      });
 
     new Setting(containerEl).setName("What syncs").setHeading();
 
@@ -128,8 +116,8 @@ export class SettingsTab extends PluginSettingTab {
       .setName(this.plugin.updated ? "Update ready" : "Version")
       .setDesc(
         this.plugin.updated
-          ? `A newer plugin has synced to this device. This one is build ${this.plugin.build}; reload to switch.`
-          : `Build ${this.plugin.build || "unknown"}. Updates arrive through sync; reload after one to use it.`,
+          ? `A newer plugin has arrived from the server. This one is build ${this.plugin.build}; reload to switch.`
+          : `Build ${this.plugin.build || "unknown"}. Updates come from the server; reload after one to use it.`,
       )
       .addButton((button) => {
         button.setButtonText("Reload plugin").onClick(() => this.plugin.reload());
@@ -152,9 +140,9 @@ export class SettingsTab extends PluginSettingTab {
       .addButton((button) => button.setButtonText("Reconnect").onClick(() => this.plugin.restart(true)));
 
     new Setting(containerEl)
-      .setName("Compare everything again")
-      .setDesc("Forget what this device has synced and compare every file with the server. Nothing is deleted.")
-      .addButton((button) => button.setButtonText("Compare").onClick(() => this.plugin.resync()));
+      .setName("Verify")
+      .setDesc("Read every file here again and check what this device holds against the server. Nothing is forgotten or deleted.")
+      .addButton((button) => button.setButtonText("Verify").onClick(() => this.plugin.verify()));
 
     containerEl.createEl("p", {
       cls: "setting-item-description babelsync-colophon",
@@ -221,9 +209,32 @@ export class SettingsTab extends PluginSettingTab {
       );
     }
 
-    summary.addButton((button) =>
-      button.setButtonText("Sign out").onClick(() => new DisconnectModal(this.app, this.plugin, () => void this.check()).open()),
-    );
+  }
+
+  private leaving(containerEl: HTMLElement): void {
+    const { serverUrl, vaultName, tokens } = this.plugin.settings;
+
+    if (tokens) {
+      new Setting(containerEl)
+        .setName("Sign out")
+        .setDesc(`Sign this device out of ${hostOf(serverUrl)}. It stays linked to ${vaultName || "its vault"}, and signing in again carries on from where it stopped.`)
+        .addButton((button) =>
+          button.setButtonText("Sign out").onClick(async () => {
+            await this.plugin.signOut();
+            await this.check();
+          }),
+        );
+    }
+
+    new Setting(containerEl)
+      .setName("Disconnect this vault")
+      .setDesc("Stop syncing this Obsidian vault and sign out. Notes stay here and on the server.")
+      .addButton((button) =>
+        button
+          .setButtonText("Disconnect")
+          .setWarning()
+          .onClick(() => new DisconnectModal(this.app, this.plugin, () => void this.check()).open()),
+      );
   }
 
   private async begin(value: string): Promise<void> {

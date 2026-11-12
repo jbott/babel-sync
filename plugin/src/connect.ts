@@ -170,20 +170,20 @@ export class DisconnectModal extends Modal {
 
   onOpen(): void {
     const { vaultName, serverUrl } = this.plugin.settings;
-    this.setTitle("Sign out and stop syncing?");
+    this.setTitle("Disconnect this vault?");
     this.contentEl.createEl("p", {
       text: `This Obsidian vault will no longer sync with ${vaultName ? `“${vaultName}”` : "its vault"} on ${hostOf(serverUrl)}. Your notes stay here and on the server; nothing is deleted.`,
     });
     this.contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "This device is signed out of the server. Signing in again later compares everything afresh.",
+      text: "This device is signed out and forgets what it has synced. Connecting again later compares every file afresh.",
     });
 
     new Setting(this.contentEl)
       .addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()))
       .addButton((button) =>
         button
-          .setButtonText("Sign out")
+          .setButtonText("Disconnect")
           .setWarning()
           .onClick(async () => {
             await this.plugin.disconnect();

@@ -24,6 +24,7 @@ const TOKEN_CHECK_MS = 60_000;
 const UPDATE_CHECK_MS = 60_000;
 const UPDATE_FETCH_MS = 3_600_000;
 const SHIPPED = ["manifest.json", "main.js"];
+const CURSOR_COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#ca8a04", "#ea580c", "#dc2626", "#db2777"];
 const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\//, /^\.obsidian\/cache$/, /^\.trash\//];
 
 export type VaultsReply =
@@ -77,7 +78,7 @@ export default class BabelSyncPlugin extends Plugin {
     this.collab = new Collab(
       this.app,
       () => this.engine,
-      () => ({ name: this.settings.userName || this.settings.deviceName, color: this.settings.userColor }),
+      () => this.presence(),
     );
 
     this.statusBar = this.addStatusBarItem();
@@ -85,7 +86,7 @@ export default class BabelSyncPlugin extends Plugin {
     this.addSettingTab(new SettingsTab(this.app, this));
     this.registerEditorExtension(this.collab.extension);
 
-    this.addCommand({ id: "resync", name: "Compare everything with the server again", callback: () => this.resync() });
+    this.addCommand({ id: "verify", name: "Verify this vault against the server", callback: () => this.verify() });
     this.addCommand({ id: "reconnect", name: "Reconnect", callback: () => this.restart(true) });
     this.registerInterval(window.setInterval(() => void this.noticeUpdate(), UPDATE_CHECK_MS));
     this.registerInterval(window.setInterval(() => void this.fetchUpdate(), UPDATE_FETCH_MS));
@@ -295,7 +296,7 @@ export default class BabelSyncPlugin extends Plugin {
     }
 
     try {
-      this.settings.clientId = await registerClient(nativeFetch, serverUrl, `Obsidian (${deviceName})`);
+      this.settings.clientId = await registerClient(nativeFetch, serverUrl, deviceName || "Obsidian");
       this.settings.clientServer = serverUrl;
 
       const { url, pending } = await beginAuthorization(serverUrl, this.settings.clientId);
@@ -431,15 +432,52 @@ export default class BabelSyncPlugin extends Plugin {
     });
   }
 
-  resync(): Promise<void> {
-    return this.serial(async () => {
-      await this.halt();
-      const store = new IdbStore(this.storeName());
-      await store.clear();
-      await store.close();
-      await this.launch();
-      this.notify("Babel Sync is comparing this vault with the server.");
+  async verify(): Promise<void> {
+    if (!this.engine || this.status === "offline") return this.notify("Babel Sync: connect to the server first.");
+    this.notify("Babel Sync is checking every file against the server.");
+    await this.engine.verify();
+    this.record("verified every file against the server");
+  }
+
+  private async device(name?: string): Promise<string | null> {
+    const token = await this.accessToken();
+    if (!token) return null;
+
+    const response = await requestUrl({
+      url: `${this.settings.serverUrl}/api/device`,
+      method: name === undefined ? "GET" : "PUT",
+      contentType: "application/json",
+      body: name === undefined ? undefined : JSON.stringify({ name }),
+      headers: { authorization: `Bearer ${token}` },
+      throw: false,
     });
+    return response.status === 200 ? (response.json as { name: string }).name : null;
+  }
+
+  private async adoptDeviceName(): Promise<void> {
+    const name = await this.device().catch(() => null);
+    if (!name || name === this.settings.deviceName) return;
+
+    this.record(`this device is now called ${name}`);
+    this.settings.deviceName = name;
+    await this.saveSettings();
+    await this.restart();
+  }
+
+  async renameDevice(name: string): Promise<void> {
+    if (!name || name === this.settings.deviceName) return;
+    this.settings.deviceName = name;
+    await this.saveSettings();
+    await this.device(name).catch(() => null);
+  }
+
+  private presence(): { name: string; color: string } {
+    const { deviceName, clientId } = this.settings;
+    const account = this.engine?.account ?? "";
+    const name = account && deviceName ? `${account} (${deviceName})` : account || deviceName;
+    let mix = 0;
+    for (const letter of `${clientId}/${deviceName}`) mix = (mix * 31 + letter.codePointAt(0)!) >>> 0;
+    return { name, color: CURSOR_COLORS[mix % CURSOR_COLORS.length] };
   }
 
   private shutdown(): Promise<void> {
@@ -490,6 +528,7 @@ export default class BabelSyncPlugin extends Plugin {
     client.socket.onOpen(() => {
       this.record("connection opened");
       void this.fetchUpdate();
+      void this.adoptDeviceName();
     });
     client.socket.onClose((event: unknown) => {
       const { code, reason } = (event ?? {}) as { code?: number; reason?: string };

@@ -15,7 +15,7 @@ export type Entry = {
   updated_at: string;
 };
 
-type JoinReply = { seq: number; digest?: string; name: string; writable: boolean; complete: boolean; entries: Entry[] };
+type JoinReply = { seq: number; digest?: string; name: string; user?: string | null; writable: boolean; complete: boolean; entries: Entry[] };
 
 type VaultEvents = {
   entry: Entry;
@@ -40,6 +40,7 @@ export class VaultSession extends Emitter<VaultEvents> {
   readonly vaultId: string;
   readonly entries = new Map<string, Entry>();
   name = "";
+  user = "";
   writable = false;
   seq: number;
   joined = false;
@@ -60,6 +61,7 @@ export class VaultSession extends Emitter<VaultEvents> {
       .join()
       .receive("ok", (reply: JoinReply) => {
         this.name = reply.name;
+        this.user = reply.user ?? "";
         this.writable = reply.writable;
         this.joined = true;
         if (reply.complete) this.entries.clear();
