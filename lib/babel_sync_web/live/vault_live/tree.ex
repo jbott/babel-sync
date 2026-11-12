@@ -39,7 +39,15 @@ defmodule BabelSyncWeb.VaultLive.Tree do
         children: to_nodes(node.children)
       }
     end)
-    |> Enum.sort_by(&{not folder?(&1), String.downcase(&1.name)})
+    |> Enum.sort_by(&{not folder?(&1), natural(&1.name), &1.name})
+  end
+
+  defp natural(name) do
+    ~r/\d+/
+    |> Regex.split(String.downcase(name), include_captures: true, trim: true)
+    |> Enum.map(fn part ->
+      if part =~ ~r/\A\d+\z/, do: {0, String.to_integer(part)}, else: {1, part}
+    end)
   end
 
   def folder?(%__MODULE__{entry: %Entry{kind: :folder}}), do: true
