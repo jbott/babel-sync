@@ -158,14 +158,14 @@ defmodule BabelSyncWeb.AuthLive.Login do
               id="landing-desktop"
               src={~p"/images/landing/editor-desktop.png"}
               alt="A trip note open in Obsidian on a Mac, with Maya's cursor on a checklist line"
-              class="hidden w-[86%] sm:block"
+              class="w-full sm:w-[88%]"
             />
             <.iphone
               id="landing-phone"
               src={~p"/images/landing/editor-phone.png"}
               height="1930"
               alt="The same note in Obsidian on an iPhone, with Maya's cursor on another line"
-              class="mx-auto w-[17.5rem] sm:absolute sm:bottom-0 sm:right-0 sm:w-[23%]"
+              class="relative -mt-[13%] ml-auto w-[46%] sm:absolute sm:bottom-0 sm:right-0 sm:mt-0 sm:w-[22%]"
             />
           </div>
         </section>
@@ -185,14 +185,14 @@ defmodule BabelSyncWeb.AuthLive.Login do
               id="landing-settings"
               src={~p"/images/landing/sync-settings.png"}
               alt="The Babel Sync settings in Obsidian on a Mac, showing the vault is up to date"
-              class="hidden w-[86%] sm:ml-auto sm:block"
+              class="w-full sm:ml-auto sm:w-[88%]"
             />
             <.iphone
               id="landing-settings-phone"
               src={~p"/images/landing/sync-settings-phone.png"}
               height="1790"
               alt="The Babel Sync settings in Obsidian on an iPhone, showing the vault is up to date"
-              class="mx-auto w-[17.5rem] sm:absolute sm:bottom-0 sm:left-0 sm:w-[23%]"
+              class="relative -mt-[13%] mr-auto w-[46%] sm:absolute sm:bottom-0 sm:left-0 sm:mt-0 sm:w-[22%]"
             />
           </div>
         </section>
@@ -245,13 +245,21 @@ defmodule BabelSyncWeb.AuthLive.Login do
   defp mac(assigns) do
     ~H"""
     <figure id={@id} class={["@container", @class]}>
-      <div class="relative overflow-hidden rounded-[1.1cqw] border border-line-strong shadow-float">
-        <span class="absolute left-[1.9cqw] top-[1.3cqw] flex gap-[0.8cqw]" aria-hidden="true">
-          <i class="size-[1.2cqw] rounded-full bg-[#ff5f57]"></i>
-          <i class="size-[1.2cqw] rounded-full bg-[#febc2e]"></i>
-          <i class="size-[1.2cqw] rounded-full bg-[#28c840]"></i>
-        </span>
-        <img src={@src} width="2048" height="1230" loading="lazy" alt={@alt} class="block w-full" />
+      <div class="mx-[6%] rounded-t-[2.2cqw] border border-b-0 border-[#48484a] bg-[#1c1c1e] p-[1.1cqw] pb-[1.4cqw] shadow-float">
+        <div class="relative overflow-hidden rounded-[0.9cqw]">
+          <span class="absolute left-[1.7cqw] top-[1.15cqw] flex gap-[0.7cqw]" aria-hidden="true">
+            <i class="size-[1.05cqw] rounded-full bg-[#ff5f57]"></i>
+            <i class="size-[1.05cqw] rounded-full bg-[#febc2e]"></i>
+            <i class="size-[1.05cqw] rounded-full bg-[#28c840]"></i>
+          </span>
+          <img src={@src} width="2048" height="1230" loading="lazy" alt={@alt} class="block w-full" />
+        </div>
+      </div>
+      <div
+        class="relative h-[1.7cqw] rounded-b-[1.6cqw] rounded-t-[0.3cqw] border border-[#8e8e93] bg-linear-to-b from-[#d1d1d6] to-[#a1a1a6] shadow-float"
+        aria-hidden="true"
+      >
+        <span class="absolute left-1/2 top-0 h-[0.6cqw] w-[13cqw] -translate-x-1/2 rounded-b-[0.6cqw] bg-[#8e8e93]"></span>
       </div>
     </figure>
     """
