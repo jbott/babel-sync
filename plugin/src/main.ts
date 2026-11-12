@@ -515,6 +515,7 @@ export default class BabelSyncPlugin extends Plugin {
       device: deviceName,
       maxBlobBytes: maxBlobBytes(this.settings),
       ignore: (path) => this.ignored(path),
+      disposable: (path) => path.startsWith(".obsidian/"),
     });
 
     let cameOnline = false;

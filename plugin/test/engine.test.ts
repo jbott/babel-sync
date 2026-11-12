@@ -38,7 +38,7 @@ async function boot(
   name: string,
   vaultId: string,
   previous?: Pick<Device, "fs" | "store">,
-  options: { maxBlobBytes?: number; sessionIdleMs?: number; retryMs?: number; ignore?: (path: string) => boolean } = {},
+  options: { maxBlobBytes?: number; sessionIdleMs?: number; retryMs?: number; ignore?: (path: string) => boolean; disposable?: (path: string) => boolean } = {},
 ): Promise<Device> {
   const fs = previous?.fs ?? new MemoryFs();
   const store = previous?.store ?? new MemoryStore();
@@ -335,6 +335,26 @@ test("an attachment replaced on two devices keeps both versions", async () => {
   await eventually(async () => (await laptop.fs.stat(copy)) !== null, "the conflict copy on the laptop");
   assert.deepEqual(await back.fs.readBinary("logo.png"), new Uint8Array([2, 2, 2]));
   assert.deepEqual(await laptop.fs.readBinary(copy), new Uint8Array([3, 3, 3]));
+});
+
+test("settings changed on two devices take the server's version without a conflict copy", async () => {
+  const vault = freshVault();
+  const settings = { disposable: (path: string) => path.startsWith("config/") };
+  const laptop = await boot("laptop", vault, undefined, settings);
+  const phone = await boot("phone", vault, undefined, settings);
+  await laptop.fs.writeBinary("config/data.json", new Uint8Array([1]));
+  await eventually(async () => (await phone.fs.stat("config/data.json")) !== null, "the settings on the phone");
+  await shutdown(phone);
+
+  await phone.fs.writeBinary("config/data.json", new Uint8Array([3]));
+  await laptop.fs.writeBinary("config/data.json", new Uint8Array([2]));
+  await eventually(() => laptop.engine.status === "synced", "the laptop to send its settings");
+
+  const back = await boot("phone", vault, phone, settings);
+  await eventually(async () => (await back.fs.readBinary("config/data.json"))[0] === 2, "the server's settings on the phone");
+  await eventually(() => back.engine.status === "synced" && laptop.engine.status === "synced", "both to settle");
+  assert.deepEqual(paths(back), ["config/data.json"]);
+  assert.deepEqual(paths(laptop), ["config/data.json"]);
 });
 
 test("an older version of an attachment on a device with no sync history is replaced, not kept as a conflict", async () => {

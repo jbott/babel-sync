@@ -27,6 +27,7 @@ export type EngineOptions = {
   device: string;
   maxBlobBytes?: number;
   ignore?: (path: string) => boolean;
+  disposable?: (path: string) => boolean;
   sessionIdleMs?: number;
   retryMs?: number;
   settleMs?: number;
@@ -620,7 +621,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
       const here = (await fs.stat(remote.path)) ? normalize(await fs.readText(remote.path)) : text;
       if (here !== text && !(await this.superseded(remote, await textHash(here)))) {
-        await this.pushLocal(await this.setAside(remote.path));
+        await this.keepCopy(remote.path);
       }
       await this.writeBack(entry, text);
       return;
@@ -635,7 +636,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     const here = (await fs.stat(remote.path)) ? await blobHash(await fs.readBinary(remote.path)) : remote.blob_hash;
     if (here !== remote.blob_hash && !(await this.superseded(remote, here))) {
-      await this.pushLocal(await this.setAside(remote.path));
+      await this.keepCopy(remote.path);
     }
 
     this.remember(entry);
@@ -662,7 +663,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       const own = this.byPath.get(left) === local.id;
       const moved = own && (await fs.stat(left)) !== null;
       const alreadyThere = recased || (!moved && (await this.diskHash({ ...local, path: remote.path })) === local.hash);
-      if (!alreadyThere && (await fs.stat(remote.path))) await this.pushLocal(await this.setAside(remote.path));
+      if (!alreadyThere && (await fs.stat(remote.path))) await this.keepCopy(remote.path);
       if (moved) await placing(fs.rename(left, remote.path));
       if (own) this.byPath.delete(left);
       local.path = remote.path;
@@ -679,7 +680,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     if (remote.kind === "doc" && local.kind === "blob") {
       const disk = await this.diskHash(local);
-      if (disk !== null && disk !== local.hash) await this.pushLocal(await this.setAside(local.path));
+      if (disk !== null && disk !== local.hash) await this.keepCopy(local.path);
       local.kind = "doc";
       local.hash = null;
       await this.persist(local);
@@ -696,7 +697,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       if (this.tooLarge(remote.size)) return;
       const disk = await this.diskHash(local);
       if (disk !== null && disk !== local.hash && disk !== remote.blob_hash) {
-        await this.pushLocal(await this.setAside(local.path));
+        await this.keepCopy(local.path);
       }
       if (disk !== remote.blob_hash) await this.download(local, remote.blob_hash);
       else await this.record(local, remote.blob_hash);
@@ -801,7 +802,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       const mine = this.byId.get(holder.id);
       const files = mine ? await this.options.fs.list() : [];
       if (mine && !files.some((file) => file.path === mine.path)) return this.renameLocal(mine.path, path);
-      await this.pushLocal(await this.setAside(path));
+      await this.keepCopy(path);
     }
     await this.applyRemote(holder);
     await this.mark(holder);
@@ -993,6 +994,12 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     entry.size = file?.size ?? 0;
     entry.mtime = file?.mtime ?? 0;
     await this.persist(entry);
+  }
+
+  private async keepCopy(path: string): Promise<void> {
+    if (!this.options.disposable?.(path)) return this.pushLocal(await this.setAside(path));
+    this.emit("log", `replaced ${path} with the server's version`);
+    await this.options.fs.remove(path);
   }
 
   private async setAside(path: string): Promise<string> {
