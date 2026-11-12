@@ -38,7 +38,7 @@ async function boot(
   name: string,
   vaultId: string,
   previous?: Pick<Device, "fs" | "store">,
-  options: { maxBlobBytes?: number; sessionIdleMs?: number; retryMs?: number } = {},
+  options: { maxBlobBytes?: number; sessionIdleMs?: number; retryMs?: number; ignore?: (path: string) => boolean } = {},
 ): Promise<Device> {
   const fs = previous?.fs ?? new MemoryFs();
   const store = previous?.store ?? new MemoryStore();
@@ -692,6 +692,26 @@ test("a device that skipped changes in the past notices the count is off and fet
   await eventually(async () => (await text(back, "b.md")) === "b\n", "the skipped note to arrive");
   assert.equal(await text(laptop, "b.md"), "b\n");
   assert.deepEqual(back.errors, []);
+});
+
+test("a path that starts being ignored is left alone on the device and on the server", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "own/build.md", "first\n");
+  await eventually(async () => (await text(phone, "own/build.md")) === "first\n", "the file on the phone");
+  await shutdown(phone);
+
+  const back = await boot("phone", vault, phone, { ignore: (path) => path.startsWith("own/") });
+  await back.fs.writeText("own/build.md", "the phone's own\n");
+  await edit(laptop, "own/build.md", "second\n");
+  await edit(laptop, "other.md", "arrives\n");
+  await eventually(async () => (await text(back, "other.md")) === "arrives\n", "a later note on the phone");
+  await eventually(() => back.engine.status === "synced", "the phone to settle");
+
+  assert.equal(await text(back, "own/build.md"), "the phone's own\n");
+  assert.equal(await text(laptop, "own/build.md"), "second\n");
+  assert.equal(back.engine.fileCount, 1);
 });
 
 test("ignored paths never leave the device", async () => {

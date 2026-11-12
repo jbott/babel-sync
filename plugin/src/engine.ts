@@ -99,6 +99,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private settled = 0;
   private passes = 0;
   private failures = new Map<string, number>();
+  private buried = new Map<string, number>();
 
   constructor(options: EngineOptions) {
     super();
@@ -110,7 +111,8 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     for (const entry of entries) {
       const unfetched = entry.kind !== "folder" && entry.hash === null && !entry.unwanted;
       if (entry.seq !== undefined && !unfetched) this.versions.set(entry.id, entry.seq);
-      if (!entry.unwanted) this.remember(entry);
+      if (!entry.unwanted && this.ignored(entry.path)) await this.options.store.put({ ...entry, doc: undefined, hash: null, unwanted: true });
+      else if (!entry.unwanted) this.remember(entry);
       else if (!this.ignored(entry.path)) await this.discard(entry.id);
     }
 
@@ -151,8 +153,9 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   }
 
   private acknowledge(entry: Entry): void {
-    if (entry.deleted) this.versions.delete(entry.id);
-    else this.versions.set(entry.id, entry.seq);
+    if (!entry.deleted) return void this.versions.set(entry.id, entry.seq);
+    this.versions.delete(entry.id);
+    this.buried.set(entry.id, entry.seq);
   }
 
   private async audit(): Promise<void> {
@@ -183,7 +186,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   }
 
   private async take(remote: Entry): Promise<void> {
-    const seen = this.versions.get(remote.id);
+    const seen = this.versions.get(remote.id) ?? this.buried.get(remote.id);
     if (seen !== undefined && seen >= remote.seq) return;
 
     if (this.ignored(remote.path) && !this.byId.has(remote.id)) return this.pass(remote);
@@ -958,6 +961,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private async writeBack(entry: LocalEntry, text: string): Promise<void> {
     const { fs } = this.options;
     const file = await fs.stat(entry.path);
+    if (!file && entry.hash !== null) return;
     const disk = file ? normalize(await fs.readText(entry.path)) : null;
     if (disk !== text) await placing(fs.writeText(entry.path, text));
     await this.record(entry, await textHash(text));
