@@ -87,6 +87,8 @@ defmodule BabelSync.MixProject do
   #     $ mix setup
   #
   # See the documentation for `Mix` for more info on aliases.
+  @js "assets/js js/core plugin/src plugin/test plugin/esbuild.config.mjs test/e2e"
+
   defp aliases do
     [
       setup: ["deps.get", "cmd npm install", "ecto.setup", "assets.setup", "assets.build"],
@@ -106,7 +108,18 @@ defmodule BabelSync.MixProject do
         "cmd mkdir -p priv/plugin",
         "cmd cp plugin/main.js plugin/manifest.json priv/plugin/"
       ],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      "js.check": [
+        "cmd oxfmt #{@js}",
+        "cmd oxlint --deny-warnings #{@js}",
+        "cmd --cd plugin npx tsc --noEmit"
+      ],
+      precommit: [
+        "compile --warnings-as-errors",
+        "deps.unlock --unused",
+        "format",
+        "js.check",
+        "test"
+      ]
     ]
   end
 end

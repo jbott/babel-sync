@@ -6,6 +6,7 @@ Babel Sync is a self-hosted live-sync server for Obsidian vaults: a Phoenix/Live
 - Run every tool through the Nix dev shell: `nix develop --command <cmd>`, or `direnv allow` once and use the shell directly. Nothing is installed globally
 - Run `mix precommit` before every commit. The git hook in `.githooks/pre-commit` runs it too, but `jj` does not run git hooks, so run it by hand when committing with `jj`
 - Run `mix dialyzer` after major changes. It is not part of `mix precommit`
+- JavaScript and TypeScript are formatted with `oxfmt` and linted with `oxlint`, both from the Nix dev shell and configured in `.oxfmtrc.json` and `.oxlintrc.json`. `mix js.check` runs them and the plugin's type check, and `mix precommit` runs it. Never use biome
 - After changing `mix.lock`, run `mix deps.nix --output nix/deps.nix`; after changing `package-lock.json`, refresh the npm hash in `nix/package.nix`. When `y_ex` or `mdex_native` changes version, refresh its crates hash there too. Then check that `nix build` still works
 - If a library is poor, write the piece in-tree instead of working around it, and say so in the commit message
 
@@ -13,6 +14,7 @@ Babel Sync is a self-hosted live-sync server for Obsidian vaults: a Phoenix/Live
 
 - Elixir 1.20 on Erlang/OTP 28, Phoenix 1.8, LiveView 1.2
 - Node.js 24 for `assets/` and the Obsidian plugin
+- `oxfmt` and `oxlint` for JavaScript and TypeScript
 - Rust (`rustc`, `cargo`) to build the `y_ex` Yjs NIF from source
 - SQLite for local mode, PostgreSQL 18 for remote mode
 - `versitygw` as the local S3-compatible server for remote-mode blob storage

@@ -53,6 +53,8 @@
               beam.elixir_1_20
               beam.erlang
               pkgs.nodejs_24
+              pkgs.oxfmt
+              pkgs.oxlint
               pkgs.rustc
               pkgs.cargo
               pkgs.sqlite
