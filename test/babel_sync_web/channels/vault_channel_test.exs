@@ -280,4 +280,21 @@ defmodule BabelSyncWeb.VaultChannelTest do
       reason: "forbidden"
     }
   end
+
+  test "a member who is removed or whose role changes is disconnected", %{vault: vault} do
+    member = user()
+    {:ok, _} = Vaults.put_member(vault, member, :editor)
+    {:ok, _reply, _socket} = join_vault(member, vault)
+    BabelSyncWeb.Endpoint.subscribe("user_socket:" <> member.id)
+
+    {:ok, _} = Vaults.put_member(vault, member, :editor)
+    refute_receive %Phoenix.Socket.Broadcast{event: "disconnect"}, 50
+
+    {:ok, _} = Vaults.put_member(vault, member, :viewer)
+    assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
+
+    :ok = Vaults.remove_member(vault, member)
+    assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
+    assert {:error, _refused} = join_vault(member, vault)
+  end
 end

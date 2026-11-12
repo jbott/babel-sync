@@ -304,6 +304,17 @@ defmodule BabelSyncWeb.Auth.LoginTest do
       assert :error = Auth.scope_from_token(Auth.socket_token(Accounts.Scope.for_user(ghost)))
     end
 
+    test "a page's socket token stops working when its browser session ends" do
+      owner = Accounts.single_user!()
+      session = Accounts.Sessions.start(owner, "a browser")
+      scope = %{Accounts.Scope.for_user(owner) | session_id: session.id}
+      token = Auth.socket_token(scope)
+
+      assert {:ok, %Accounts.Scope{}} = Auth.scope_from_token(token)
+      :ok = Accounts.Sessions.finish(owner, session.id)
+      assert :error = Auth.scope_from_token(token)
+    end
+
     test "browsers are listed, and any of them can be signed out from another", %{conn: conn} do
       with_auth([:passkey])
       owner = user()

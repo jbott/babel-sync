@@ -32,8 +32,8 @@ defmodule BabelSync.Auth do
   end
 
   @spec socket_token(Scope.t()) :: String.t()
-  def socket_token(%Scope{user: user, read_only: read_only}) do
-    Phoenix.Token.sign(BabelSyncWeb.Endpoint, @socket_salt, {user.id, read_only})
+  def socket_token(%Scope{user: user, read_only: read_only, session_id: session_id}) do
+    Phoenix.Token.sign(BabelSyncWeb.Endpoint, @socket_salt, {user.id, read_only, session_id})
   end
 
   @spec session_token(Session.t()) :: String.t()
@@ -78,10 +78,11 @@ defmodule BabelSync.Auth do
   end
 
   defp scope_from_socket_token(token) do
-    with {:ok, {user_id, read_only}} <-
+    with {:ok, {user_id, read_only, session_id}} <-
            Phoenix.Token.verify(BabelSyncWeb.Endpoint, @socket_salt, token,
              max_age: @socket_max_age
            ),
+         true <- session_id == nil or match?({:ok, _session}, Sessions.fetch(session_id)),
          %User{} = user <- Accounts.get_user(user_id) do
       {:ok, Scope.for_user(user, read_only: read_only)}
     else

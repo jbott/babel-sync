@@ -9,7 +9,7 @@ defmodule BabelSync.Vaults do
 
   import Ecto.Query
 
-  alias BabelSync.Accounts.User
+  alias BabelSync.Accounts.{Sessions, User}
   alias BabelSync.Repo
   alias BabelSync.Vaults.{BlobVersion, Entry, Member, Vault}
 
@@ -107,15 +107,22 @@ defmodule BabelSync.Vaults do
   def put_member(%Vault{id: vault_id}, %User{id: user_id}, role) do
     member = Repo.get_by(Member, vault_id: vault_id, user_id: user_id)
 
-    (member || %Member{vault_id: vault_id, user_id: user_id})
-    |> Member.changeset(%{role: role})
-    |> Repo.insert_or_update()
+    result =
+      (member || %Member{vault_id: vault_id, user_id: user_id})
+      |> Member.changeset(%{role: role})
+      |> Repo.insert_or_update()
+
+    with {:ok, %Member{role: changed}} when member != nil and changed != member.role <- result do
+      Sessions.reconnect(user_id)
+    end
+
+    result
   end
 
   @spec remove_member(Vault.t(), User.t()) :: :ok
   def remove_member(%Vault{id: vault_id}, %User{id: user_id}) do
     Repo.delete_all(from m in Member, where: m.vault_id == ^vault_id and m.user_id == ^user_id)
-    :ok
+    Sessions.reconnect(user_id)
   end
 
   @spec list_members(Vault.t()) :: [Member.t()]

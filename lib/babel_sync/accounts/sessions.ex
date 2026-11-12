@@ -59,6 +59,15 @@ defmodule BabelSync.Accounts.Sessions do
     :ok
   end
 
+  @spec reconnect(Ecto.UUID.t()) :: :ok
+  def reconnect(user_id) do
+    BabelSyncWeb.Endpoint.broadcast("user_socket:" <> user_id, "disconnect", %{})
+
+    from(s in Session, where: s.user_id == ^user_id, select: s.id)
+    |> Repo.all()
+    |> Enum.each(&BabelSyncWeb.Endpoint.broadcast(topic(&1), "disconnect", %{}))
+  end
+
   @spec topic(Ecto.UUID.t()) :: String.t()
   def topic(id), do: "sessions:" <> id
 
