@@ -118,6 +118,7 @@
   --danger: oklch(51% 0.18 28);
   --danger-ink: oklch(98.5% 0.01 28);
   --warn: oklch(58% 0.13 70);
+  --added: oklch(50% 0.12 150);
   --elev-1: 0 1px 2px oklch(30% 0.03 70 / 0.07), 0 0 0 1px oklch(30% 0.03 70 / 0.02);
   --elev-2: 0 18px 40px -12px oklch(30% 0.03 70 / 0.22), 0 3px 8px oklch(30% 0.03 70 / 0.08);
   --ff-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
@@ -141,6 +142,7 @@
   --danger: oklch(73% 0.15 28);
   --danger-ink: oklch(18% 0.04 28);
   --warn: oklch(80% 0.13 80);
+  --added: oklch(78% 0.12 150);
   --elev-1: 0 1px 2px oklch(0% 0 0 / 0.35), 0 0 0 1px oklch(100% 0 0 / 0.02);
   --elev-2: 0 18px 44px -12px oklch(0% 0 0 / 0.65), 0 3px 8px oklch(0% 0 0 / 0.35);
 }
@@ -161,6 +163,7 @@
     --danger: oklch(73% 0.15 28);
     --danger-ink: oklch(18% 0.04 28);
     --warn: oklch(80% 0.13 80);
+    --added: oklch(78% 0.12 150);
     --elev-1: 0 1px 2px oklch(0% 0 0 / 0.35), 0 0 0 1px oklch(100% 0 0 / 0.02);
     --elev-2: 0 18px 44px -12px oklch(0% 0 0 / 0.65), 0 3px 8px oklch(0% 0 0 / 0.35);
   }
@@ -183,6 +186,7 @@
   --color-danger: var(--danger);
   --color-danger-ink: var(--danger-ink);
   --color-warn: var(--warn);
+  --color-added: var(--added);
   --font-sans: var(--ff-sans);
   --font-serif: var(--ff-serif);
   --font-mono: var(--ff-mono);

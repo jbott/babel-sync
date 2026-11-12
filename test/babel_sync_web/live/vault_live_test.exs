@@ -257,8 +257,15 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
       view |> element("#history-button") |> render_click()
       [_second, first] = Sync.list_versions(note.id)
-      html = view |> element("#history button[phx-value-id='#{first.id}']") |> render_click()
+      html = view |> element("#version-#{first.id}") |> render_click()
       assert html =~ "first draft"
+      assert has_element?(view, "#version-changes")
+
+      view |> element("#compare-now") |> render_click()
+      assert has_element?(view, "#version-changes span", "second")
+
+      view |> element("#compare-text") |> render_click()
+      assert has_element?(view, "#version-content", "first draft")
 
       view |> element("#restore-button") |> render_click()
       assert Sync.text(note.id) == "first draft"
