@@ -173,7 +173,7 @@ defmodule BabelSync.Agent do
           {:ok, Map.merge(part, %{path: entry.path, kind: :note, rev: Text.rev(text)})}
 
         {:error, :not_a_note} when entry.kind == :blob ->
-          {:ok, attachment(entry)}
+          {:ok, Map.put(attachment(entry), :download, download(scope, entry, entry.size))}
 
         refused ->
           refused
@@ -231,6 +231,123 @@ defmodule BabelSync.Agent do
       end
     end
   end
+
+  @spec upload_link(Scope.t(), vault_reference(), String.t(), non_neg_integer(), keyword()) ::
+          {:ok, map()} | error()
+  def upload_link(%Scope{user: user} = scope, vault, path, size, opts \\ []) do
+    path = Vaults.Path.normalize(path)
+    overwrite? = opts[:overwrite] == true
+    note? = Vaults.Path.kind_for(path) == :doc
+
+    with {:ok, vault} <- vault(scope, vault, :write),
+         :ok <- reachable(vault, path),
+         true <- Vaults.Path.valid?(path) || {:error, :invalid_path},
+         true <- (is_integer(size) and size >= 0) || {:error, :invalid_size},
+         true <-
+           size <= if(note?, do: @written_bytes, else: Blobs.max_size()) || {:error, :too_large},
+         :ok <- replaceable(Vaults.get_entry_by_path(vault.id, path), note?, overwrite?) do
+      target =
+        BabelSync.Transfers.upload_target(%{
+          user_id: user.id,
+          vault_id: vault.id,
+          path: path,
+          size: size,
+          overwrite: overwrite?
+        })
+
+      {:ok, Map.merge(target, %{path: path, size: size})}
+    end
+  end
+
+  @spec download_link(Scope.t(), vault_reference(), String.t()) :: {:ok, map()} | error()
+  def download_link(scope, vault, path) do
+    with {:ok, vault} <- vault(scope, vault, :read),
+         {:ok, entry} <- entry(vault, path) do
+      case entry do
+        %Entry{kind: :folder} ->
+          {:error, :not_a_note}
+
+        %Entry{kind: :doc} ->
+          with {:ok, text} <- content(entry),
+               do: {:ok, Map.put(download(scope, entry, byte_size(text)), :path, entry.path)}
+
+        %Entry{kind: :blob} ->
+          {:ok, Map.put(download(scope, entry, entry.size), :path, entry.path)}
+      end
+    end
+  end
+
+  @spec place_upload(Scope.t(), Ecto.UUID.t(), String.t(), Path.t(), boolean()) ::
+          {:ok, map()} | error()
+  def place_upload(scope, vault_id, path, file, overwrite?) do
+    with {:ok, vault} <- vault(scope, vault_id, :write),
+         :ok <- reachable(vault, path) do
+      if Vaults.Path.kind_for(path) == :doc do
+        place_text(scope, vault, path, File.read!(file), overwrite?)
+      else
+        place_blob(vault, path, file, overwrite?)
+      end
+    end
+  end
+
+  defp place_text(scope, vault, path, text, overwrite?) do
+    if String.valid?(text),
+      do: write_file(scope, vault.id, path, text, overwrite: overwrite?),
+      else: {:error, :not_text}
+  end
+
+  defp place_blob(vault, path, file, overwrite?) do
+    with {:ok, blob} <- put_blob_file(vault.id, file) do
+      attrs = %{blob_hash: blob.hash, size: blob.size}
+
+      case Vaults.get_entry_by_path(vault.id, path) do
+        %Entry{kind: :blob} = entry when overwrite? ->
+          with {:ok, entry} <- Vaults.update_entry(entry, attrs),
+               do:
+                 {:ok,
+                  %{outcome: :updated, path: entry.path, kind: :attachment, bytes: blob.size}}
+
+        %Entry{kind: :blob} ->
+          {:error, :unguarded}
+
+        %Entry{} ->
+          {:error, :not_an_attachment}
+
+        nil ->
+          case Vaults.create_entry(vault.id, Map.merge(attrs, %{path: path, kind: :blob})) do
+            {:ok, entry} ->
+              {:ok, %{outcome: :created, path: entry.path, kind: :attachment, bytes: blob.size}}
+
+            {:error, {:exists, _entry}} ->
+              {:error, :exists}
+
+            {:error, %Ecto.Changeset{}} ->
+              {:error, :invalid_path}
+          end
+      end
+    end
+  end
+
+  defp put_blob_file(vault_id, file) do
+    case Blobs.put_file(vault_id, file) do
+      {:ok, blob} ->
+        {:ok, blob}
+
+      {:error, :too_large} ->
+        {:error, :too_large}
+
+      {:error, reason} ->
+        Logger.error("could not store an uploaded file: #{inspect(reason)}")
+        {:error, :storage_unavailable}
+    end
+  end
+
+  defp replaceable(nil, _note?, _overwrite?), do: :ok
+  defp replaceable(%Entry{kind: :folder}, _note?, _overwrite?), do: {:error, :not_a_folder_target}
+  defp replaceable(%Entry{kind: :doc}, true, true), do: :ok
+  defp replaceable(%Entry{kind: :blob}, false, true), do: :ok
+  defp replaceable(%Entry{}, _note?, true), do: {:error, :not_an_attachment}
+  defp replaceable(%Entry{}, _note?, false), do: {:error, :unguarded}
 
   @spec write_binary(Scope.t(), vault_reference(), String.t(), String.t(), keyword()) ::
           {:ok, map()} | error()
@@ -640,6 +757,17 @@ defmodule BabelSync.Agent do
       %Version{content: content} -> {:ok, content}
       nil -> {:error, :not_found}
     end
+  end
+
+  defp download(%Scope{user: user}, %Entry{} = entry, size) do
+    BabelSync.Transfers.download_target(
+      %{user_id: user.id, vault_id: entry.vault_id, entry_id: entry.id},
+      %{
+        name: Elixir.Path.basename(entry.path),
+        mimeType: MIME.from_path(entry.path),
+        size: size
+      }
+    )
   end
 
   defp attachment(%Entry{} = entry) do

@@ -157,6 +157,48 @@ defmodule BabelSync.Blobs do
     end
   end
 
+  @spec put_file(Ecto.UUID.t(), Path.t()) :: {:ok, Blob.t()} | {:error, term()}
+  def put_file(vault_id, path) do
+    size = File.stat!(path).size
+    digests = path |> File.stream!(@part_size) |> Enum.map(&:crypto.hash(:sha256, &1))
+    digests = if digests == [], do: [:crypto.hash(:sha256, <<>>)], else: digests
+
+    case begin_upload(vault_id, %{hash: hash(digests), size: size}) do
+      {:exists, blob} ->
+        {:ok, blob}
+
+      {:ok, upload, missing} ->
+        {:ok, file} = :file.open(path, [:read, :binary, :raw])
+
+        try do
+          Enum.reduce_while(missing, :ok, fn number, :ok ->
+            {:ok, data} = read_part(file, upload, number)
+
+            case put_part(upload, number, data) do
+              :ok -> {:cont, :ok}
+              error -> {:halt, error}
+            end
+          end)
+        after
+          :file.close(file)
+        end
+        |> case do
+          :ok -> complete_upload(upload)
+          error -> error
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp read_part(file, upload, number) do
+    case :file.pread(file, (number - 1) * upload.part_size, expected_size(upload, number)) do
+      :eof -> {:ok, <<>>}
+      result -> result
+    end
+  end
+
   @spec stream(Blob.t(), Store.range()) :: Enumerable.t()
   def stream(%Blob{} = blob, range \\ nil), do: Store.impl().stream(key(blob), range)
 

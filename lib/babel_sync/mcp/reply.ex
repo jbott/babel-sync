@@ -13,6 +13,11 @@ defmodule BabelSync.MCP.Reply do
     end
   end
 
+  defp reply({:ok, {:meta, inner, meta}}, frame) do
+    {:reply, response, frame} = reply({:ok, inner}, frame)
+    {:reply, Response.meta(response, meta), frame}
+  end
+
   defp reply({:ok, text}, frame) when is_binary(text) do
     {:reply, Response.text(Response.tool(), text), frame}
   end
@@ -74,6 +79,11 @@ defmodule BabelSync.MCP.Reply do
     "The search took longer than ten seconds and was stopped." <>
       " Use a simpler pattern, or narrow it with glob."
   end
+
+  defp message(:invalid_size), do: "size must be the file's size in bytes, zero or more."
+
+  defp message(:not_a_folder_target),
+    do: "A folder exists at that path." <> @unchanged
 
   defp message(:invalid_pattern),
     do: "That pattern is empty or malformed. Check the brackets and braces."

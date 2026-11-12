@@ -102,7 +102,7 @@ defmodule BabelSyncWeb.MCPTest do
     %{"result" => %{"tools" => tools}} = decode(response)
 
     assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==
-             ~w(append_file create_directory delete_file edit_file file_history file_outline find_files list_changes list_directory list_properties list_trash list_vaults move_file query_notes read_file restore_file search_files write_file)
+             ~w(append_file create_directory delete_file download_file edit_file file_history file_outline find_files list_changes list_directory list_properties list_trash list_vaults move_file query_notes read_file restore_file search_files upload_file write_file)
 
     write = Enum.find(tools, &(&1["name"] == "write_file"))
     assert write["description"] =~ "if_rev"
@@ -210,11 +210,95 @@ defmodule BabelSyncWeb.MCPTest do
     assert %{"content" => [%{"type" => "text", "text" => header}, image]} =
              result(session, "read_file", %{path: "pixel.png"})
 
-    assert header == "pixel.png · image/png · 70 bytes"
+    assert header =~ "pixel.png · image/png · 70 bytes. To save it: curl -sfo 'pixel.png' "
     assert image == %{"type" => "image", "data" => pixel, "mimeType" => "image/png"}
 
     assert {:ok, described} = call(session, "read_file", %{path: "paper.pdf"})
     assert described =~ "application/pdf, 9 bytes"
+  end
+
+  defp link(text), do: Regex.run(~r{'(https?://[^']+/files/[^']+)'}, text) |> List.last()
+
+  defp put_file(conn, url, body) do
+    conn
+    |> recycle()
+    |> put_req_header("content-type", "application/octet-stream")
+    |> put_req_header("content-length", Integer.to_string(byte_size(body)))
+    |> put(URI.parse(url).path, body)
+  end
+
+  test "any file moves through upload and download links", %{
+    session: session,
+    bare: conn,
+    vault: vault
+  } do
+    pdf = :crypto.strong_rand_bytes(20_000)
+
+    {:ok, upload} =
+      call(session, "upload_file", %{path: "Papers/paper.pdf", size: byte_size(pdf)})
+
+    url = link(upload)
+    refute url =~ vault.id
+    refute url =~ "Papers"
+
+    stored = put_file(conn, url, pdf)
+    assert %{"path" => "Papers/paper.pdf", "outcome" => "created"} = json_response(stored, 200)
+    assert put_file(conn, url, pdf).status == 404
+
+    assert {:error, refused} = call(session, "upload_file", %{path: "Papers/paper.pdf", size: 3})
+    assert refused =~ "overwrite"
+
+    {:ok, again} =
+      call(session, "upload_file", %{path: "Papers/notes.pdf", size: 3})
+
+    entry(vault, "Papers/notes.pdf")
+    assert put_file(conn, link(again), "new").status == 422
+
+    {:ok, short} = call(session, "upload_file", %{path: "Papers/short.pdf", size: 10})
+    assert put_file(conn, link(short), "abc").status == 400
+
+    {:ok, note} = call(session, "upload_file", %{path: "Inbox/from-disk.md", size: 6})
+    assert json_response(put_file(conn, link(note), "# Hi\n\n"), 200)["outcome"] == "created"
+    assert Sync.text(Vaults.get_entry_by_path(vault.id, "Inbox/from-disk.md").id) == "# Hi\n\n"
+
+    downloaded = result(session, "download_file", %{path: "Papers/paper.pdf"})
+    [download] = downloaded["_meta"]["io.modelcontextprotocol/files"]["downloads"]
+    assert download["mimeType"] == "application/pdf"
+    assert download["size"] == byte_size(pdf)
+    assert conn |> recycle() |> get(URI.parse(download["url"]).path) |> response(200) == pdf
+
+    {:ok, text} = call(session, "download_file", %{path: "Inbox/from-disk.md"})
+    assert conn |> recycle() |> get(URI.parse(link(text)).path) |> response(200) == "# Hi\n\n"
+
+    {:ok, described} = call(session, "read_file", %{path: "Papers/paper.pdf"})
+    assert conn |> recycle() |> get(URI.parse(link(described)).path) |> response(200) == pdf
+
+    {:ok, replace} =
+      call(session, "upload_file", %{path: "Papers/paper.pdf", size: 3, overwrite: true})
+
+    assert json_response(put_file(conn, link(replace), "new"), 200)["outcome"] == "updated"
+    {:ok, fresh} = call(session, "download_file", %{path: "Papers/paper.pdf"})
+    assert conn |> recycle() |> get(URI.parse(link(fresh)).path) |> response(200) == "new"
+  end
+
+  test "a link stops working once its holder loses access", %{
+    bare: conn,
+    owner: owner,
+    vault: vault
+  } do
+    viewer = user()
+    {:ok, _} = Vaults.put_member(vault, viewer, :editor)
+    session = start_session(conn, viewer)
+    entry(vault, "shared.md")
+
+    {:ok, upload} = call(session, "upload_file", %{path: "late.pdf", size: 3})
+    {:ok, download} = call(session, "download_file", %{path: "shared.md"})
+    :ok = Vaults.remove_member(vault, viewer)
+
+    assert put_file(conn, link(upload), "abc").status == 403
+    assert conn |> recycle() |> get(URI.parse(link(download)).path) |> response(404)
+    assert Vaults.get_entry_by_path(vault.id, "late.pdf") == nil
+    assert owner
   end
 
   test "an agent changes a note by sending only the passage it changes", %{

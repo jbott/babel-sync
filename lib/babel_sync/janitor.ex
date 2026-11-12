@@ -48,6 +48,7 @@ defmodule BabelSync.Janitor do
       )
 
     :ok = MagicLink.prune(now)
+    :ok = BabelSync.Transfers.prune(now)
   end
 
   @impl true

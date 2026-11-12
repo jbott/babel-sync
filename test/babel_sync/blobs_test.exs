@@ -23,6 +23,22 @@ defmodule BabelSync.BlobsTest do
     assert Blobs.read(blob) == "hello attachment"
   end
 
+  @tag :tmp_dir
+  test "a file on disk is stored in parts and named like the same bytes in memory", %{
+    vault: vault,
+    tmp_dir: dir
+  } do
+    data = :crypto.strong_rand_bytes(2 * @part + 12_345)
+    file = Path.join(dir, "big.bin")
+    File.write!(file, data)
+
+    assert {:ok, blob} = Blobs.put_file(vault.id, file)
+    assert blob.hash == Blobs.hash_binary(data)
+    assert blob.size == byte_size(data)
+    assert Blobs.read(blob) == data
+    assert {:ok, ^blob} = Blobs.put_file(vault.id, file)
+  end
+
   test "empty content is a valid blob", %{vault: vault} do
     assert {:ok, blob} = Blobs.put(vault.id, "")
     assert Blobs.read(blob) == ""

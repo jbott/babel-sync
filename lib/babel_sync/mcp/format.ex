@@ -50,13 +50,41 @@ defmodule BabelSync.MCP.Format do
   end
 
   def read(%{kind: :attachment, image: nil} = file, _numbered?) do
-    "#{file.path} is an attachment (#{file.type}, #{file.bytes} bytes) that cannot be shown as text."
+    {:meta,
+     "#{file.path} is an attachment (#{file.type}, #{file.bytes} bytes) that cannot be shown as text. " <>
+       fetch(file.download), downloads(file.download)}
   end
 
   def read(%{kind: :attachment} = file, _numbered?) do
-    {:parts,
-     ["#{file.path} · #{file.type} · #{file.bytes} bytes", {:image, file.image, file.type}]}
+    {:meta,
+     {:parts,
+      [
+        "#{file.path} · #{file.type} · #{file.bytes} bytes. " <> fetch(file.download),
+        {:image, file.image, file.type}
+      ]}, downloads(file.download)}
   end
+
+  def upload_link(link) do
+    command =
+      "curl -sf -X PUT -H 'Content-Type: application/octet-stream' -T <local file> '#{link.url}'"
+
+    {:meta,
+     "Upload #{link.size} bytes to #{link.path} with:\n#{command}\n" <>
+       "The link works once, until #{link.expiresAt}. The reply is JSON naming the file stored.",
+     %{"io.modelcontextprotocol/files" => %{"uploads" => [Map.drop(link, [:path, :size])]}}}
+  end
+
+  def download_link(link) do
+    {:meta, "#{link.path} (#{link.mimeType}, #{link.size} bytes). " <> fetch(link),
+     downloads(link)}
+  end
+
+  defp fetch(link) do
+    "To save it: curl -sfo '#{link.name}' '#{link.url}' (until #{link.expiresAt})."
+  end
+
+  defp downloads(link),
+    do: %{"io.modelcontextprotocol/files" => %{"downloads" => [Map.drop(link, [:path])]}}
 
   def outline(outline) do
     properties =

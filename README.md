@@ -116,6 +116,8 @@ Agents cannot see or change the `.obsidian` folder, which holds the plugins Obsi
 
 Any file that holds text can be read, searched, edited and written by an agent, whatever its extension. Markdown, `.txt`, `.base` and `.canvas` files are notes, merged character by character with what people type; other text files such as `.csv` or `.json` are edited by an agent in the same way, passage by passage, but are stored as attachments, so a change made by a person at the same moment is not merged with the agent's. Images are shown to the agent, and it can write a binary file of up to 8 MiB by sending its bytes as base64.
 
+Any file, note or attachment, can also move outside the conversation. `upload_file` and `download_file` return an HTTPS link, and the agent moves the bytes with `curl` from a shell, up to the attachment size limit. A link carries only a random handle; who may use it, for which vault and file, is kept on the server, so a link in a log or transcript says nothing about the vault. Links last an hour, an upload link works once and only for the size it was made for, and access to the vault is checked again when a link is used. An upload is staged in the data directory, then stored in parts like any device's upload (a multipart upload on S3), so the server needs free disk as large as the file while it arrives. The replies also carry the links in the shape of the draft `io.modelcontextprotocol/files` extension's upload and download targets.
+
 The agent gets the vault as a file system:
 
 | Tool | What it does |
@@ -126,6 +128,7 @@ The agent gets the vault as a file system:
 | `file_outline`, `read_file` | Headings and properties with line numbers, then any line range; image attachments are shown as images |
 | `edit_file`, `append_file` | Replace exact passages, or add to the end of a note or of the section under a heading |
 | `write_file` | Create a note, or replace a whole one |
+| `upload_file`, `download_file` | A link to PUT or GET any file's bytes with curl, for files too large for a tool call or kept on a disk the agent can reach |
 | `create_directory`, `move_file`, `delete_file` | Folders move and are deleted with their contents; deleted files go to the trash |
 | `list_trash`, `restore_file`, `file_history` | Bring back deleted files and earlier versions of a note |
 | `list_changes` | What was written or deleted since a cursor |

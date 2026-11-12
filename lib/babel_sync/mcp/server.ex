@@ -32,6 +32,10 @@ defmodule BabelSync.MCP.Server do
   files both changes are kept; in other text files pass if_rev to be refused instead of \
   overwriting theirs. Images are shown. Binary files are written whole, as base64, with write_file.
 
+  Any file can also move outside the conversation: upload_file and download_file give an \
+  HTTP link to PUT or GET its bytes with curl, for files too large for a tool call, files \
+  that are not text, or files on a disk you can reach from a shell.
+
   Notes use Obsidian Markdown: [[wikilinks]], #tags, and YAML properties between --- lines \
   at the top.
   """
@@ -53,6 +57,8 @@ defmodule BabelSync.MCP.Server do
   component(Tools.ReadFile)
   component(Tools.FileOutline)
   component(Tools.WriteFile)
+  component(Tools.UploadFile)
+  component(Tools.DownloadFile)
   component(Tools.EditFile)
   component(Tools.AppendFile)
   component(Tools.CreateDirectory)
