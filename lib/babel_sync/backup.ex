@@ -30,9 +30,11 @@ defmodule BabelSync.Backup do
 
   defp snapshot!(target) do
     database = Application.fetch_env!(:babel_sync, BabelSync.Repo.SQLite)[:database]
-    {:ok, connection} = Exqlite.Sqlite3.open(database, mode: :readonly)
+    {:ok, connection} = Exqlite.Sqlite3.open(database)
 
     try do
+      :ok = Exqlite.Sqlite3.execute(connection, "PRAGMA busy_timeout = 10000")
+
       :ok =
         Exqlite.Sqlite3.execute(connection, "VACUUM INTO '#{String.replace(target, "'", "''")}'")
     after
