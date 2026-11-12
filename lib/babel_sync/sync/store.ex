@@ -21,6 +21,24 @@ defmodule BabelSync.Sync.Store do
     {state, updates}
   end
 
+  @spec load_many([Ecto.UUID.t()]) :: %{Ecto.UUID.t() => [binary()]}
+  def load_many(entry_ids) do
+    states =
+      Repo.all(from s in State, where: s.entry_id in ^entry_ids, select: {s.entry_id, s.data})
+
+    updates =
+      Repo.all(
+        from u in Update,
+          where: u.entry_id in ^entry_ids,
+          order_by: u.id,
+          select: {u.entry_id, u.data}
+      )
+
+    empty = Map.new(entry_ids, &{&1, []})
+    stored = Enum.group_by(states ++ updates, &elem(&1, 0), &elem(&1, 1))
+    Map.merge(empty, stored)
+  end
+
   @spec append(Ecto.UUID.t(), binary()) :: integer()
   def append(entry_id, update) do
     Repo.insert!(%Update{entry_id: entry_id, data: update, inserted_at: DateTime.utc_now()}).id

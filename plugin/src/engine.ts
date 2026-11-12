@@ -49,6 +49,8 @@ type Live = {
 };
 
 const DISK = Symbol("disk");
+const FETCHED = Symbol("fetched");
+const PREFETCH_BATCH = 100;
 const MAX_RESTING_SESSIONS = 16;
 const FIRST_RETRY_MS = 20_000;
 const LONGEST_RETRY_MS = 300_000;
@@ -102,6 +104,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private passes = 0;
   private failures = new Map<string, number>();
   private buried = new Map<string, number>();
+  private fetched = new Map<string, Uint8Array[]>();
 
   constructor(options: EngineOptions) {
     super();
@@ -435,10 +438,12 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     }
 
     const incoming = [...changes].sort((a, b) => a.seq - b.seq);
+    await this.prefetch(incoming);
     for (const [done, change] of incoming.entries()) {
       this.report("receiving", done, incoming.length);
       await this.receive(change);
     }
+    this.fetched.clear();
 
     if (digest === UNCONDITIONAL || (digest !== undefined && !this.behind && digest !== (await this.digest()))) {
       await this.audit();
@@ -594,6 +599,23 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     return paths.sort((a, b) => b.length - a.length);
   }
 
+  private async prefetch(incoming: Entry[]): Promise<void> {
+    const wanted = incoming
+      .filter((change) => change.kind === "doc" && !change.deleted && !this.byId.has(change.id) && !this.ignored(change.path))
+      .map((change) => change.id);
+
+    for (let start = 0; start < wanted.length && this.online; start += PREFETCH_BATCH) {
+      this.report("receiving", start, wanted.length);
+      try {
+        const docs = await this.options.client.docs(this.options.vaultId, wanted.slice(start, start + PREFETCH_BATCH));
+        for (const [id, updates] of docs) this.fetched.set(id, updates);
+      } catch (error) {
+        this.emit("log", `could not fetch notes in bulk, fetching them one by one: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+    }
+  }
+
   private async adopt(remote: Entry): Promise<void> {
     const { fs } = this.options;
     if (remote.kind === "folder") {
@@ -618,7 +640,10 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (remote.kind === "doc") {
       this.remember(entry);
       const doc = this.doc(entry.id);
-      if (!(await this.exchange(entry.id))) return;
+      const fetched = this.fetched.get(entry.id);
+      this.fetched.delete(entry.id);
+      if (fetched) Y.transact(doc, () => fetched.forEach((update) => Y.applyUpdate(doc, update)), FETCHED);
+      else if (!(await this.exchange(entry.id))) return;
       const text = doc.getText("content").toString();
 
       const here = (await fs.stat(remote.path)) ? normalize(await fs.readText(remote.path)) : text;

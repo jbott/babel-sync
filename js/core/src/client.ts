@@ -2,6 +2,7 @@ import { Socket } from "phoenix";
 import type * as Y from "yjs";
 import { type BlobApi, type Fetch, downloadBlob, uploadBlob } from "./blobs.ts";
 import { DocSession } from "./doc.ts";
+import { fetchDocs } from "./docs.ts";
 import { VaultSession } from "./vault.ts";
 
 export type ClientOptions = {
@@ -63,6 +64,10 @@ export class BabelSyncClient {
 
   upload(vaultId: string, data: Uint8Array, onProgress?: (sent: number, total: number) => void) {
     return uploadBlob(this.api, vaultId, data, onProgress);
+  }
+
+  docs(vaultId: string, ids: string[]): Promise<Map<string, Uint8Array[]>> {
+    return fetchDocs(this.api, vaultId, ids);
   }
 
   download(vaultId: string, hash: string): Promise<Uint8Array> {

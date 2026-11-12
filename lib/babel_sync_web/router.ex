@@ -79,6 +79,7 @@ defmodule BabelSyncWeb.Router do
     put "/uploads/:id/parts/:number", BlobController, :part
     post "/uploads/:id/complete", BlobController, :complete
     get "/blobs/:hash", BlobController, :show
+    post "/docs", DocController, :index
   end
 
   scope "/", BabelSyncWeb do

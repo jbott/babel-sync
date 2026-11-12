@@ -98,6 +98,6 @@ async function send(api: BlobApi, url: string, init: RequestInit): Promise<Respo
   return response;
 }
 
-async function json(api: BlobApi, url: string, init: RequestInit): Promise<unknown> {
+export async function json(api: BlobApi, url: string, init: RequestInit): Promise<unknown> {
   return (await send(api, url, init)).json();
 }

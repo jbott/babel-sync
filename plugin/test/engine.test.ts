@@ -38,7 +38,7 @@ async function boot(
   name: string,
   vaultId: string,
   previous?: Pick<Device, "fs" | "store">,
-  options: { maxBlobBytes?: number; sessionIdleMs?: number; retryMs?: number; ignore?: (path: string) => boolean; disposable?: (path: string) => boolean } = {},
+  { logs, ...options }: { logs?: string[]; maxBlobBytes?: number; sessionIdleMs?: number; retryMs?: number; ignore?: (path: string) => boolean; disposable?: (path: string) => boolean } = {},
 ): Promise<Device> {
   const fs = previous?.fs ?? new MemoryFs();
   const store = previous?.store ?? new MemoryStore();
@@ -57,6 +57,7 @@ async function boot(
     ...options,
   });
   engine.on("error", (message) => errors.push(message));
+  if (logs) engine.on("log", (line) => logs.push(line));
   watch(fs, engine);
   client.connect();
   await engine.start();
@@ -496,6 +497,22 @@ test("text saved while a note is being released is merged, not overwritten", asy
 
   await eventually(async () => (await text(laptop, "trip.md")) === saved, "the later typing on the laptop");
   assert.equal(await text(phone, "trip.md"), saved);
+});
+
+test("a new device fills an empty vault from notes fetched in bulk", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  for (let n = 0; n < 150; n++) await laptop.fs.writeText(`many/note ${n}.md`, `note ${n}\n`);
+  laptop.engine.rescan();
+  await eventually(() => laptop.engine.status === "synced" && paths(laptop).length === 150, "the laptop to send every note");
+  await laptop.engine.idle();
+
+  const logged: string[] = [];
+  const phone = await boot("phone", vault, undefined, { logs: logged });
+  await eventually(() => paths(phone).length === 150, "every note on the phone");
+  assert.equal(await text(phone, "many/note 149.md"), "note 149\n");
+  assert.ok(logged.some((line) => line.includes("150 changes")), logged.join("\n"));
+  assert.ok(!logged.some((line) => line.includes("one by one")), logged.join("\n"));
 });
 
 test("changing only the case of a name is a rename on devices that cannot tell cases apart", async () => {
