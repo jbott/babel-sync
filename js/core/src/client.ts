@@ -32,6 +32,23 @@ export class BabelSyncClient {
     this.socket.connect();
   }
 
+  probe(timeoutMs = 5000): void {
+    const socket = this.socket;
+    if (!socket.isConnected()) return void socket.connect();
+
+    const ref = socket.makeRef();
+    let answered = false;
+    const listening = socket.onMessage((message: { ref?: string | null }) => {
+      if (message.ref === ref) answered = true;
+    });
+    socket.push({ topic: "phoenix", event: "heartbeat", payload: {}, ref });
+
+    setTimeout(() => {
+      socket.off([listening]);
+      if (!answered) (socket as unknown as { connection?: { close(code: number, reason: string): void } }).connection?.close(4000, "no answer");
+    }, timeoutMs);
+  }
+
   disconnect(): Promise<void> {
     return new Promise((resolve) => this.socket.disconnect(() => resolve()));
   }

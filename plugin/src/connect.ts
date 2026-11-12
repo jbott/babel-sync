@@ -56,6 +56,14 @@ export class ConnectModal extends Modal {
         cls: "setting-item-description",
         text: "The server receives every note in this vault.",
       });
+      new Setting(this.contentEl)
+        .setName("Obsidian settings")
+        .setDesc(
+          there === 0
+            ? "Also send this device's themes, hotkeys, plugins and plugin settings, which can hold API keys."
+            : `Also take the themes, hotkeys, plugins and plugin settings in ${remote}, replacing this device's. Plugin settings can hold API keys.`,
+        )
+        .addToggle((toggle) => toggle.setValue(settings.syncConfig).onChange((on) => (settings.syncConfig = on)));
     }
 
     const merging = switching || (here > 0 && there !== 0);

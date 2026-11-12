@@ -17,6 +17,7 @@ export type Settings = {
   deviceName: string;
   syncConfig: boolean;
   maxFileMebibytes: number;
+  storeName: string;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   deviceName: Platform.isMobile ? "Phone" : "Desktop",
   syncConfig: true,
   maxFileMebibytes: Platform.isMobile ? 50 : 0,
+  storeName: "",
 };
 
 export function maxBlobBytes(settings: Settings): number | undefined {

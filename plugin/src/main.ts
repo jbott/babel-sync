@@ -19,10 +19,11 @@ import {
 import { ObsidianFs } from "./obsidian-fs.ts";
 import { DEFAULT_SETTINGS, type RemoteVault, type Settings, SettingsTab, maxBlobBytes } from "./settings.ts";
 
-const CONFIG_SCAN_MS = 30_000;
+const CONFIG_SCAN_MS = Platform.isMobile ? 300_000 : 60_000;
 const TOKEN_CHECK_MS = 60_000;
-const UPDATE_CHECK_MS = 60_000;
 const UPDATE_FETCH_MS = 3_600_000;
+const UPDATE_FETCH_AFTER_MS = 600_000;
+const AWAY_MS = 20_000;
 const SHIPPED = ["manifest.json", "main.js"];
 const PASSING = /^(timed out waiting for (synced|joined)|timeout)$/;
 const CURSOR_COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#ca8a04", "#ea580c", "#dc2626", "#db2777"];
@@ -53,6 +54,8 @@ export default class BabelSyncPlugin extends Plugin {
   revision = BABELSYNC_REVISION;
   updated = false;
   private fetching = false;
+  private lastFetched = 0;
+  private hiddenAt = 0;
   lastError = "";
   lastSynced: number | null = null;
 
@@ -89,7 +92,6 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.addCommand({ id: "verify", name: "Verify this vault against the server", callback: () => this.verify() });
     this.addCommand({ id: "reconnect", name: "Reconnect", callback: () => this.restart(true) });
-    this.registerInterval(window.setInterval(() => void this.noticeUpdate(), UPDATE_CHECK_MS));
     this.registerInterval(window.setInterval(() => void this.fetchUpdate(), UPDATE_FETCH_MS));
     void this.fingerprintOnDisk().then((build) => (this.build = build));
 
@@ -111,11 +113,20 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.registerEvent(this.app.workspace.on("layout-change", () => this.rebind()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.rebind()));
-    this.registerInterval(window.setInterval(() => this.settings.syncConfig && this.engine?.rescan(), CONFIG_SCAN_MS));
+    this.registerInterval(window.setInterval(() => this.visible() && this.scanConfig(), CONFIG_SCAN_MS));
 
     this.registerInterval(window.setInterval(() => void this.accessToken().catch(() => {}), TOKEN_CHECK_MS));
     this.registerDomEvent(document, "visibilitychange", () => {
-      if (document.visibilityState === "visible") void this.accessToken().catch(() => {});
+      if (!this.visible()) {
+        this.hiddenAt = Date.now();
+        return this.scanConfig();
+      }
+      void this.accessToken().catch(() => {});
+      if (this.hiddenAt && Date.now() - this.hiddenAt > AWAY_MS) {
+        this.client?.probe();
+        this.scanConfig();
+      }
+      this.hiddenAt = 0;
     });
     this.registerObsidianProtocolHandler("babelsync", ({ code, state, error }) => void this.finishSignIn({ code, state, error }));
 
@@ -168,9 +179,19 @@ export default class BabelSyncPlugin extends Plugin {
     return response;
   }
 
-  private async fetchUpdate(): Promise<void> {
+  private visible(): boolean {
+    return document.visibilityState === "visible";
+  }
+
+  private scanConfig(): void {
+    if (this.settings.syncConfig) this.engine?.rescan();
+  }
+
+  private async fetchUpdate(force = true): Promise<void> {
     if (this.fetching || this.updated || !this.build || !this.settings.serverUrl) return;
+    if (!force && Date.now() - this.lastFetched < UPDATE_FETCH_AFTER_MS) return;
     this.fetching = true;
+    this.lastFetched = Date.now();
 
     try {
       const { build } = (await this.fromServer("")).json as { build: string | null };
@@ -213,6 +234,7 @@ export default class BabelSyncPlugin extends Plugin {
 
     if (this.settings.vaultId && (serverUrl !== server || this.settings.vaultId !== vaultId)) await this.forgetSyncState();
 
+    if (this.settings.vaultId !== vaultId) this.settings.storeName = "";
     Object.assign(this.settings, { serverUrl: server, vaultId, vaultName });
     await this.saveSettings();
     await this.restart();
@@ -220,7 +242,7 @@ export default class BabelSyncPlugin extends Plugin {
 
   async disconnect(): Promise<void> {
     await this.forgetSyncState();
-    Object.assign(this.settings, { vaultId: "", vaultName: "" });
+    Object.assign(this.settings, { vaultId: "", vaultName: "", storeName: "" });
     await this.saveSettings();
     await this.restart(true);
   }
@@ -529,7 +551,7 @@ export default class BabelSyncPlugin extends Plugin {
     client.socket.onError(() => void this.accessToken().catch(() => {}));
     client.socket.onOpen(() => {
       this.record("connection opened");
-      void this.fetchUpdate();
+      void this.fetchUpdate(false);
       void this.adoptDeviceName();
     });
     client.socket.onClose((event: unknown) => {
@@ -584,7 +606,11 @@ export default class BabelSyncPlugin extends Plugin {
   }
 
   private storeName(): string {
-    return `babelsync-${this.app.vault.getName()}-${this.settings.vaultId}`;
+    if (!this.settings.storeName) {
+      this.settings.storeName = `babelsync-${this.app.vault.getName()}-${this.settings.vaultId}`;
+      void this.saveSettings();
+    }
+    return this.settings.storeName;
   }
 
   get progress(): Progress | null {
