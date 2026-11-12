@@ -5,7 +5,7 @@ defmodule BabelSync.Auth do
   """
 
   alias BabelSync.Accounts
-  alias BabelSync.Accounts.{Scope, User}
+  alias BabelSync.Accounts.{Scope, Session, Sessions, User}
   alias BabelSync.OAuth
 
   @socket_salt "socket"
@@ -36,10 +36,13 @@ defmodule BabelSync.Auth do
     Phoenix.Token.sign(BabelSyncWeb.Endpoint, @socket_salt, {user.id, read_only})
   end
 
-  @spec session_token(User.t()) :: String.t()
-  def session_token(%User{id: id}) do
-    Phoenix.Token.sign(BabelSyncWeb.Endpoint, @session_salt, id)
+  @spec session_token(Session.t()) :: String.t()
+  def session_token(%Session{id: id}) do
+    Phoenix.Token.sign(BabelSyncWeb.Endpoint, @session_salt, {:session, id})
   end
+
+  @spec session_lifetime() :: pos_integer()
+  def session_lifetime, do: @session_max_age
 
   @spec handoff_token(User.t()) :: String.t()
   def handoff_token(%User{id: id}) do
@@ -53,9 +56,15 @@ defmodule BabelSync.Auth do
   def scope_from_session(nil), do: anonymous()
 
   def scope_from_session(token) when is_binary(token) do
-    case user_from(token, @session_salt, @session_max_age) do
-      {:ok, user} -> {:ok, Scope.for_user(user)}
-      :error -> anonymous()
+    with {:ok, {:session, id}} <-
+           Phoenix.Token.verify(BabelSyncWeb.Endpoint, @session_salt, token,
+             max_age: @session_max_age
+           ),
+         {:ok, %Session{user: user}} <- Sessions.fetch(id) do
+      {:ok, Scope.for_user(user, session_id: id)}
+    else
+      {:ok, user_id} when is_binary(user_id) -> before_sessions(user_id)
+      _invalid -> anonymous()
     end
   end
 
@@ -87,6 +96,13 @@ defmodule BabelSync.Auth do
       {:ok, user}
     else
       _invalid -> :error
+    end
+  end
+
+  defp before_sessions(user_id) do
+    case Accounts.get_user(user_id) do
+      %User{} = user -> {:ok, Scope.for_user(user)}
+      nil -> anonymous()
     end
   end
 

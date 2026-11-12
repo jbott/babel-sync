@@ -17,7 +17,7 @@ defmodule BabelSync.OAuth.Client do
   def changeset(client, attrs) do
     client
     |> cast(attrs, [:name, :redirect_uris])
-    |> update_change(:name, &String.slice(String.trim(&1), 0, 100))
+    |> update_change(:name, &(&1 && String.slice(String.trim(&1), 0, 100)))
     |> validate_required([:name, :redirect_uris])
     |> validate_length(:redirect_uris, min: 1, max: 10)
     |> validate_change(:redirect_uris, fn :redirect_uris, uris ->

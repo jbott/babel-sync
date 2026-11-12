@@ -8,13 +8,21 @@ defmodule BabelSync.Accounts.Scope do
   alias BabelSync.Accounts.User
   alias BabelSync.Vaults
 
-  @type t :: %__MODULE__{user: User.t(), read_only: boolean()}
+  @type t :: %__MODULE__{
+          user: User.t(),
+          read_only: boolean(),
+          session_id: Ecto.UUID.t() | nil
+        }
 
-  defstruct [:user, read_only: false]
+  defstruct [:user, :session_id, read_only: false]
 
   @spec for_user(User.t(), keyword()) :: t()
   def for_user(%User{} = user, opts \\ []) do
-    %__MODULE__{user: user, read_only: Keyword.get(opts, :read_only, false)}
+    %__MODULE__{
+      user: user,
+      read_only: Keyword.get(opts, :read_only, false),
+      session_id: Keyword.get(opts, :session_id)
+    }
   end
 
   @spec authorize(t(), Ecto.UUID.t(), Vaults.access()) :: :ok | {:error, :forbidden}

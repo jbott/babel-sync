@@ -39,6 +39,7 @@ defmodule BabelSyncWeb.VaultChannel do
         digest: Vaults.digest(vault_id),
         complete: complete,
         name: vault.name,
+        user: scope.user.name || scope.user.email,
         writable: Scope.authorize(scope, vault_id, :write) == :ok,
         entries: Enum.map(entries, &EntryJSON.entry/1)
       }

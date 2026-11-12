@@ -129,8 +129,23 @@ defmodule BabelSyncWeb.OAuthControllerTest do
 
     {:ok, account, _html} = live(browser, ~p"/account")
     assert has_element?(account, "#grants li", "Research agent")
-    account |> element("#grants li button") |> render_click()
-    refute has_element?(account, "#grants li", "Research agent")
+
+    device = put_req_header(conn, "authorization", "Bearer " <> rotated)
+    assert %{"name" => "Research agent"} = device |> get(~p"/api/device") |> json_response(200)
+
+    account |> element("#grants li button[phx-click=rename]") |> render_click()
+    account |> form("#grants form", %{name: "Lab notebook"}) |> render_submit()
+    assert has_element?(account, "#grants li", "Lab notebook")
+    assert %{"name" => "Lab notebook"} = device |> get(~p"/api/device") |> json_response(200)
+
+    assert %{"name" => "Field laptop"} =
+             device |> put(~p"/api/device", %{name: " Field laptop "}) |> json_response(200)
+
+    assert device |> put(~p"/api/device", %{name: "  "}) |> json_response(422)
+    assert browser |> get(~p"/api/device") |> json_response(404)
+
+    account |> element("#grants li button[phx-click=revoke]") |> render_click()
+    refute has_element?(account, "#grants li")
 
     assert conn
            |> put_req_header("authorization", "Bearer " <> rotated)

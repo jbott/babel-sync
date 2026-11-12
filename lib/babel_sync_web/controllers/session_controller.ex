@@ -54,7 +54,7 @@ defmodule BabelSyncWeb.SessionController do
   end
 
   def delete(conn, _params) do
-    conn |> configure_session(drop: true) |> redirect(to: ~p"/login")
+    conn |> Scope.sign_out() |> redirect(to: ~p"/login")
   end
 
   defp sign_in(conn, user) do
@@ -63,7 +63,7 @@ defmodule BabelSyncWeb.SessionController do
     conn
     |> configure_session(renew: true)
     |> clear_session()
-    |> put_session(Scope.session_key(), Auth.session_token(user))
+    |> Scope.sign_in(user)
     |> redirect(to: destination)
   end
 

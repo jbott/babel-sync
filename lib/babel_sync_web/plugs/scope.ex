@@ -10,10 +10,15 @@ defmodule BabelSyncWeb.Plugs.Scope do
   A browser session lasts 30 days from its last use, not from sign-in:
   once a day, a request made with a valid session is answered with a
   freshly dated one.
+
+  The cookie names a row in the sessions table, so a session can be
+  listed and ended from another browser. A cookie from before that
+  table existed is exchanged for a row the first time it is seen.
   """
 
   import Plug.Conn
 
+  alias BabelSync.Accounts.{Session, Sessions}
   alias BabelSync.Auth
   alias BabelSyncWeb.Origin
 
@@ -36,15 +41,49 @@ defmodule BabelSyncWeb.Plugs.Scope do
     end
   end
 
-  defp prolong(conn, %{user: user}) do
+  @doc """
+  Starts a browser session for the user and names it in the cookie.
+  """
+  def sign_in(conn, user) do
+    agent = conn |> get_req_header("user-agent") |> List.first("")
+    session = Sessions.start(user, agent)
+
+    conn
+    |> put_session(@session_key, Auth.session_token(session))
+    |> put_session(@prolonged_key, System.system_time(:second))
+    |> put_session(:live_socket_id, Sessions.topic(session.id))
+  end
+
+  @doc """
+  Ends the browser session the request came with.
+  """
+  def sign_out(conn) do
+    with %{user: user, session_id: id} when is_binary(id) <- conn.assigns[:current_scope] do
+      Sessions.finish(user, id)
+    end
+
+    configure_session(conn, drop: true)
+  end
+
+  defp prolong(conn, %{user: user, session_id: id}) do
     now = System.system_time(:second)
 
-    if bearer(conn) == nil and session_token(conn) != nil and not Auth.open?() and due?(conn, now) do
-      conn
-      |> put_session(@session_key, Auth.session_token(user))
-      |> put_session(@prolonged_key, now)
-    else
-      conn
+    cond do
+      bearer(conn) != nil or session_token(conn) == nil or Auth.open?() ->
+        conn
+
+      id == nil ->
+        sign_in(conn, user)
+
+      due?(conn, now) ->
+        Sessions.seen(id)
+
+        conn
+        |> put_session(@session_key, Auth.session_token(%Session{id: id}))
+        |> put_session(@prolonged_key, now)
+
+      true ->
+        conn
     end
   end
 

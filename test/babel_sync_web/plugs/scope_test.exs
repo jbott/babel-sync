@@ -18,7 +18,7 @@ defmodule BabelSyncWeb.Plugs.ScopeTest do
   defp cookie(conn), do: conn.resp_cookies["_babel_sync_key"]
 
   test "a session in use is dated afresh once a day, so it does not run out", %{conn: conn} do
-    token = Auth.session_token(user())
+    token = Auth.session_token(BabelSync.Accounts.Sessions.start(user(), ""))
     now = System.system_time(:second)
 
     first = visit(conn, %{Scope.session_key() => token})
@@ -35,7 +35,12 @@ defmodule BabelSyncWeb.Plugs.ScopeTest do
 
   test "a server that needs no sign-in has no session to prolong", %{conn: conn} do
     with_auth([])
-    open = visit(conn, %{Scope.session_key() => Auth.session_token(user())})
+
+    open =
+      visit(conn, %{
+        Scope.session_key() => Auth.session_token(BabelSync.Accounts.Sessions.start(user(), ""))
+      })
+
     assert get_session(open, "scope_prolonged") == nil
   end
 

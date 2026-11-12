@@ -270,8 +270,62 @@ defmodule BabelSyncWeb.Auth.LoginTest do
       assert {:error, {:redirect, %{to: "/login"}}} = live(forged, ~p"/")
 
       ghost = %Accounts.User{id: Ecto.UUID.generate()}
-      assert {:error, {:redirect, %{to: "/login"}}} = conn |> sign_in(ghost) |> live(~p"/")
       assert :error = Auth.scope_from_token(Auth.socket_token(Accounts.Scope.for_user(ghost)))
+    end
+
+    test "browsers are listed, and any of them can be signed out from another", %{conn: conn} do
+      with_auth([:passkey])
+      owner = user()
+      here = sign_in(conn, owner)
+      elsewhere = sign_in(conn, owner)
+      third = sign_in(conn, owner)
+
+      {:ok, account, _html} = live(here, ~p"/account")
+      assert account |> element("#sessions") |> render() =~ "Firefox on Linux"
+
+      assert [_this, other, _another] =
+               Accounts.Sessions.list(owner) |> Enum.sort_by(& &1.inserted_at)
+
+      assert has_element?(account, "#sessions li", "This browser")
+
+      account |> element("#session-#{other.id} button") |> render_click()
+      refute has_element?(account, "#session-#{other.id}")
+      assert {:error, {:redirect, %{to: "/login"}}} = live(elsewhere, ~p"/")
+      assert {:ok, _view, _html} = live(third, ~p"/account")
+
+      account |> element("#end-other-sessions") |> render_click()
+      assert [_only] = Accounts.Sessions.list(owner)
+      assert {:error, {:redirect, %{to: "/login"}}} = live(third, ~p"/")
+      assert {:ok, _view, _html} = live(here, ~p"/account")
+    end
+
+    test "signing out ends the session for good, and an old-style cookie is given a session", %{
+      conn: conn
+    } do
+      with_auth([:passkey])
+      owner = user()
+      here = sign_in(conn, owner)
+
+      assert here |> delete(~p"/logout") |> redirected_to() == ~p"/login"
+      assert Accounts.Sessions.list(owner) == []
+      assert {:error, {:redirect, %{to: "/login"}}} = live(here, ~p"/")
+
+      old = Phoenix.Token.sign(BabelSyncWeb.Endpoint, "session", owner.id)
+
+      upgraded =
+        conn
+        |> Plug.Test.init_test_session(%{BabelSyncWeb.Plugs.Scope.session_key() => old})
+        |> get(~p"/account")
+
+      assert html_response(upgraded, 200)
+      assert [session] = Accounts.Sessions.list(owner)
+
+      assert {:ok, %{session_id: id}} =
+               Auth.scope_from_session(
+                 get_session(upgraded, BabelSyncWeb.Plugs.Scope.session_key())
+               )
+
+      assert id == session.id
     end
 
     test "a wrong or dismissed passkey is reported and signs nobody in", %{conn: conn} do

@@ -172,23 +172,43 @@ defmodule BabelSync.OAuth do
 
   @spec scope_from_access_token(String.t()) :: {:ok, Scope.t()} | :error
   def scope_from_access_token(token) do
-    hash = digest(token)
-    now = DateTime.utc_now()
-
-    grant =
-      Repo.one(
-        from g in Grant,
-          where: g.access_hash == ^hash and g.access_expires_at > ^now,
-          preload: :user
-      )
-
-    case grant do
+    case grant_for_access_token(token) do
       %Grant{user: %User{} = user, read_only: read_only} ->
         {:ok, Scope.for_user(user, read_only: read_only)}
 
       nil ->
         :error
     end
+  end
+
+  @spec grant_for_access_token(String.t()) :: Grant.t() | nil
+  def grant_for_access_token(token) do
+    hash = digest(token)
+    now = DateTime.utc_now()
+
+    Repo.one(
+      from g in Grant,
+        where: g.access_hash == ^hash and g.access_expires_at > ^now,
+        preload: [:user, :client]
+    )
+  end
+
+  @spec rename_grant(User.t(), Ecto.UUID.t(), String.t()) :: {:ok, Client.t()} | :error
+  def rename_grant(%User{id: user_id}, grant_id, name) do
+    with %Grant{client: client} <-
+           Repo.one(
+             from g in Grant, where: g.id == ^grant_id and g.user_id == ^user_id, preload: :client
+           ),
+         {:ok, client} <- client |> Client.changeset(%{name: name}) |> Repo.update() do
+      {:ok, client}
+    else
+      _missing_or_invalid -> :error
+    end
+  end
+
+  @spec revoke_grants(User.t()) :: :ok
+  def revoke_grants(%User{id: user_id}) do
+    Repo.all(from g in Grant, where: g.user_id == ^user_id) |> Enum.each(&drop/1)
   end
 
   @spec list_grants(User.t()) :: [Grant.t()]

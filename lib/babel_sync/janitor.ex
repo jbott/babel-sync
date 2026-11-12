@@ -41,6 +41,12 @@ defmodule BabelSync.Janitor do
     _collected = Blobs.collect_garbage(recent)
     _abandoned = Blobs.abandon_stale_uploads(recent)
     :ok = OAuth.prune(now)
+
+    :ok =
+      BabelSync.Accounts.Sessions.prune(
+        DateTime.add(now, -BabelSync.Auth.session_lifetime(), :second)
+      )
+
     :ok = MagicLink.prune(now)
   end
 

@@ -2,6 +2,7 @@ defmodule BabelSyncWeb.AuthLive.Account do
   use BabelSyncWeb, :live_view
 
   alias BabelSync.{Accounts, Auth, OAuth, Vaults}
+  alias BabelSync.Accounts.{Session, Sessions}
   alias BabelSync.Auth.Passkeys
   alias BabelSync.Vaults.Vault
   alias BabelSyncWeb.Paths
@@ -25,6 +26,7 @@ defmodule BabelSyncWeb.AuthLive.Account do
      |> assign(:passkeys?, Auth.enabled?(:passkey))
      |> assign(:signed_in?, not Auth.open?())
      |> assign(:challenge, nil)
+     |> assign(:renaming, nil)
      |> assign(:profile, to_form(Accounts.change_user(user)))
      |> assign(:vault_form, to_form(Vault.changeset(%Vault{}, %{})))
      |> assign(:roles, roles(user, vaults, multi?))
@@ -50,6 +52,7 @@ defmodule BabelSyncWeb.AuthLive.Account do
     socket
     |> assign(:passkeys, Passkeys.list(user))
     |> assign(:grants, OAuth.list_grants(user))
+    |> assign(:sessions, Sessions.list(user))
   end
 
   @impl true
@@ -115,6 +118,47 @@ defmodule BabelSyncWeb.AuthLive.Account do
     {:noreply, load(socket)}
   end
 
+  def handle_event("rename", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.grants, &(&1.id == id)) do
+      nil ->
+        {:noreply, socket}
+
+      grant ->
+        {:noreply, assign(socket, :renaming, {id, to_form(%{"name" => grant.client.name})})}
+    end
+  end
+
+  def handle_event("cancel_rename", _params, socket),
+    do: {:noreply, assign(socket, :renaming, nil)}
+
+  def handle_event("save_name", %{"name" => name}, %{assigns: %{renaming: {id, _form}}} = socket) do
+    case OAuth.rename_grant(socket.assigns.current_scope.user, id, name) do
+      {:ok, _client} -> {:noreply, socket |> assign(:renaming, nil) |> load()}
+      :error -> {:noreply, put_flash(socket, :error, "A name cannot be empty.")}
+    end
+  end
+
+  def handle_event("save_name", _params, socket), do: {:noreply, socket}
+
+  def handle_event("end_session", %{"id" => id}, socket) do
+    scope = socket.assigns.current_scope
+    if id != scope.session_id, do: :ok = Sessions.finish(scope.user, id)
+    {:noreply, load(socket)}
+  end
+
+  def handle_event("end_other_sessions", _params, socket) do
+    scope = socket.assigns.current_scope
+    :ok = Sessions.finish_others(scope.user, scope.session_id)
+    {:noreply, socket |> load() |> put_flash(:info, "Every other browser was signed out.")}
+  end
+
+  def handle_event("revoke_all", _params, socket) do
+    :ok = OAuth.revoke_grants(socket.assigns.current_scope.user)
+
+    {:noreply,
+     socket |> load() |> put_flash(:info, "Every device and agent has to sign in again.")}
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -164,17 +208,6 @@ defmodule BabelSyncWeb.AuthLive.Account do
                     <span :for={part <- standing(assigns)} class="min-w-0 truncate">{part}</span>
                   </div>
                 </div>
-                <.button
-                  :if={@signed_in?}
-                  id="sign-out"
-                  href={~p"/logout"}
-                  method="delete"
-                  variant="secondary"
-                  size="sm"
-                  class="flex-none"
-                >
-                  <.icon name="hero-arrow-right-start-on-rectangle-mini" class="size-4" /> Sign out
-                </.button>
               </div>
               <p :if={not @signed_in?} id="open-mode" class="px-4 py-3 text-sm text-muted">
                 Sign-in is off on this server, so anyone who can reach it reads and edits as the
@@ -323,6 +356,73 @@ defmodule BabelSyncWeb.AuthLive.Account do
               </.group>
             </.panel>
 
+            <.panel :if={@signed_in?} id="sessions" title="Browsers" class="scroll-mt-8">
+              <.group>
+                <ul class="divide-y divide-line">
+                  <li
+                    :for={session <- @sessions}
+                    id={"session-#{session.id}"}
+                    class="flex min-h-14 items-center gap-3 py-2 pl-4 pr-2.5"
+                  >
+                    <.icon name="hero-globe-alt" class="size-5 shrink-0 text-muted" />
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2">
+                        <span class="truncate text-base font-medium text-ink">
+                          {Session.label(session)}
+                        </span>
+                        <.badge :if={session.id == @current_scope.session_id} class="flex-none">
+                          This browser
+                        </.badge>
+                      </div>
+                      <div class="flex flex-wrap gap-x-1.5 text-xs tabular-nums text-faint">
+                        <span>Signed in {day(session.inserted_at)}</span>
+                        <span>Last active {minute(session.last_seen_at)}</span>
+                      </div>
+                    </div>
+                    <.button
+                      :if={session.id != @current_scope.session_id}
+                      phx-click="end_session"
+                      phx-value-id={session.id}
+                      data-confirm={"Sign out #{Session.label(session)}?"}
+                      variant="danger-ghost"
+                      size="sm"
+                    >
+                      Sign out
+                    </.button>
+                  </li>
+                </ul>
+                <div
+                  :if={length(@sessions) > 1}
+                  class="flex items-center gap-3 border-t border-line py-2 pl-4 pr-2.5"
+                >
+                  <span class="min-w-0 flex-1 text-sm text-muted">
+                    Sign out every browser but this one
+                  </span>
+                  <.button
+                    id="end-other-sessions"
+                    phx-click="end_other_sessions"
+                    data-confirm="Sign out every other browser?"
+                    variant="danger-ghost"
+                    size="sm"
+                  >
+                    Sign out others
+                  </.button>
+                </div>
+                <div class="flex items-center gap-3 border-t border-line bg-canvas/60 py-2.5 pl-4 pr-2.5">
+                  <span class="min-w-0 flex-1 text-sm text-muted">Sign out of this browser</span>
+                  <.button
+                    id="sign-out"
+                    href={~p"/logout"}
+                    method="delete"
+                    variant="secondary"
+                    size="sm"
+                  >
+                    <.icon name="hero-arrow-right-start-on-rectangle-mini" class="size-4" /> Sign out
+                  </.button>
+                </div>
+              </.group>
+            </.panel>
+
             <.panel id="grants" title="Devices and agents" class="scroll-mt-8">
               <.group>
                 <div :if={@grants == []} class="px-4 py-4 text-sm text-muted">
@@ -348,15 +448,49 @@ defmodule BabelSyncWeb.AuthLive.Account do
                         </span>
                         <.badge class="flex-none">{kind(grant)}</.badge>
                       </div>
-                      <div class="flex flex-wrap gap-x-1.5 text-xs tabular-nums text-faint">
+                      <.form
+                        :if={renaming?(@renaming, grant)}
+                        for={elem(@renaming, 1)}
+                        id={"rename-#{grant.id}"}
+                        phx-submit="save_name"
+                        class="mt-1.5 flex items-center gap-2"
+                      >
+                        <div class="min-w-0 flex-1">
+                          <.input
+                            field={elem(@renaming, 1)[:name]}
+                            aria-label="Name"
+                            maxlength="100"
+                            phx-mounted={JS.focus()}
+                          />
+                        </div>
+                        <.button variant="secondary" size="sm">Save</.button>
+                        <.button type="button" phx-click="cancel_rename" variant="ghost" size="sm">
+                          Cancel
+                        </.button>
+                      </.form>
+                      <div
+                        :if={not renaming?(@renaming, grant)}
+                        class="flex flex-wrap gap-x-1.5 text-xs tabular-nums text-faint"
+                      >
                         <span>{if(grant.read_only, do: "Read only", else: "Reads and edits")}</span>
                         <span>Last active {minute(grant.last_used_at)}</span>
                       </div>
                     </div>
                     <.button
+                      :if={not renaming?(@renaming, grant)}
+                      id={"rename-grant-#{grant.id}"}
+                      phx-click="rename"
+                      phx-value-id={grant.id}
+                      variant="ghost"
+                      size="sm"
+                    >
+                      Rename
+                    </.button>
+                    <.button
+                      :if={not renaming?(@renaming, grant)}
                       phx-click="revoke"
                       phx-value-id={grant.id}
-                      data-confirm={"Disconnect #{grant.client.name}?"}
+                      data-confirm={"Disconnect #{grant.client.name}? It will have to sign in again."}
                       variant="danger-ghost"
                       size="sm"
                     >
@@ -364,6 +498,23 @@ defmodule BabelSyncWeb.AuthLive.Account do
                     </.button>
                   </li>
                 </ul>
+                <div
+                  :if={length(@grants) > 1}
+                  class="flex items-center gap-3 border-t border-line py-2 pl-4 pr-2.5"
+                >
+                  <span class="min-w-0 flex-1 text-sm text-muted">
+                    Make every device and agent sign in again
+                  </span>
+                  <.button
+                    id="revoke-all"
+                    phx-click="revoke_all"
+                    data-confirm="Disconnect every device and agent? Each will have to sign in again."
+                    variant="danger-ghost"
+                    size="sm"
+                  >
+                    Disconnect all
+                  </.button>
+                </div>
                 <.link
                   :if={@connect_vault}
                   id="connect-device"
@@ -394,6 +545,7 @@ defmodule BabelSyncWeb.AuthLive.Account do
       {"profile", "Profile"},
       {"appearance", "Appearance"},
       assigns.passkeys? && {"passkeys", "Passkeys"},
+      assigns.signed_in? && {"sessions", "Browsers"},
       {"grants", "Devices and agents"}
     ]
     |> Enum.filter(& &1)
@@ -422,6 +574,9 @@ defmodule BabelSyncWeb.AuthLive.Account do
 
   defp kind_icon(grant),
     do: if(obsidian?(grant), do: "hero-device-phone-mobile", else: "hero-cpu-chip")
+
+  defp renaming?({id, _form}, grant), do: id == grant.id
+  defp renaming?(nil, _grant), do: false
 
   defp day(at), do: Calendar.strftime(at, "%-d %b %Y")
   defp minute(at), do: Calendar.strftime(at, "%-d %b %Y, %H:%M UTC")

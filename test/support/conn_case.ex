@@ -38,7 +38,8 @@ defmodule BabelSyncWeb.ConnCase do
 
   def sign_in(conn, user) do
     Plug.Test.init_test_session(conn, %{
-      BabelSyncWeb.Plugs.Scope.session_key() => BabelSync.Auth.session_token(user)
+      BabelSyncWeb.Plugs.Scope.session_key() =>
+        BabelSync.Auth.session_token(BabelSync.Accounts.Sessions.start(user, "Firefox on Linux"))
     })
   end
 
