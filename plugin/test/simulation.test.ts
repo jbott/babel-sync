@@ -10,16 +10,7 @@ const vaultIds = process.env.BABELSYNC_VAULT_IDS!.split(",");
 const steps = Number(process.env.BABELSYNC_STEPS ?? 70);
 
 const NAMES = ["laptop", "phone", "tablet"];
-const PATHS = [
-  "inbox.md",
-  "todo.md",
-  "Daily/monday.md",
-  "Daily/tuesday.md",
-  "Places/cafe.md",
-  "Places/park.md",
-  "Places/list.base",
-  "Attachments/photo.png",
-];
+const PATHS = ["inbox.md", "todo.md", "Daily/monday.md", "Daily/tuesday.md", "Places/cafe.md", "Places/park.md", "Places/list.base", "Attachments/photo.png"];
 
 type Disk = { fs: MemoryFs; store: MemoryStore };
 type Device = Disk & { name: string; client: BabelSyncClient; engine: SyncEngine; errors: string[]; log: string[] };
@@ -103,7 +94,11 @@ async function act(disk: Disk, engine: SyncEngine | null, name: string, step: nu
 
   if (roll < 0.5 || existing.length === 0) {
     const path = pick(PATHS);
-    if (path.endsWith(".png")) await fs.writeBinary(path, Uint8Array.from({ length: 64 }, () => Math.floor(chance() * 256)));
+    if (path.endsWith(".png"))
+      await fs.writeBinary(
+        path,
+        Uint8Array.from({ length: 64 }, () => Math.floor(chance() * 256)),
+      );
     else if (fs.files.has(path) && chance() < 0.7) await fs.writeText(path, `${await fs.readText(path)}${name} adds ${step}\n`);
     else await fs.writeText(path, `${name} wrote ${step}\n`);
     engine?.localChanged(path);
@@ -140,7 +135,9 @@ async function settled(devices: Device[]): Promise<string[]> {
     if (calm >= 4) return [];
     await pause(250);
   }
-  return differing.length > 0 ? differing : devices.filter((device) => device.engine.status !== "synced").map((device) => `${device.name} is ${device.engine.status}`);
+  return differing.length > 0
+    ? differing
+    : devices.filter((device) => device.engine.status !== "synced").map((device) => `${device.name} is ${device.engine.status}`);
 }
 
 for (const [index, vaultId] of vaultIds.entries()) {
@@ -204,11 +201,21 @@ for (const [index, vaultId] of vaultIds.entries()) {
             return `${path} on ${device.name}: ${file ? JSON.stringify(Buffer.from(file.data).toString().slice(0, 200)) : "absent"} mtime ${file?.mtime} known as ${JSON.stringify(known.map(({ doc, ...rest }) => rest))}`;
           }),
         ),
-        ...devices.map((device) => `${device.name} knows: ${[...device.store.entries.values()].map((entry) => `${entry.path}=${entry.hash?.slice(0, 6)}/${entry.seq}${entry.dirty ? "/dirty" : ""}`).sort().join(", ")}`),
+        ...devices.map(
+          (device) =>
+            `${device.name} knows: ${[...device.store.entries.values()]
+              .map((entry) => `${entry.path}=${entry.hash?.slice(0, 6)}/${entry.seq}${entry.dirty ? "/dirty" : ""}`)
+              .sort()
+              .join(", ")}`,
+        ),
       ].join("\n");
 
     assert.deepEqual(differing, [], report());
-    assert.deepEqual(devices.flatMap((device) => device.errors), [], report());
+    assert.deepEqual(
+      devices.flatMap((device) => device.errors),
+      [],
+      report(),
+    );
 
     await Promise.all(devices.map((device) => device.engine.stop().then(() => device.client.disconnect())));
   });

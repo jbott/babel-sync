@@ -1,14 +1,6 @@
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import {
-  type BabelSyncClient,
-  type DocSession,
-  type Entry,
-  type VaultSession,
-  Emitter,
-  RequestError,
-  blobHash,
-} from "@babelsync/core";
+import { type BabelSyncClient, type DocSession, type Entry, type VaultSession, Emitter, RequestError, blobHash } from "@babelsync/core";
 import { type LocalEntry, type StateStore, type VaultFs, parentOf } from "./fs.ts";
 import { applyTextChange, conflictPath, kindFor, normalize, textHash } from "./text.ts";
 
@@ -184,9 +176,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   }
 
   private async digest(): Promise<string> {
-    const lines = [...this.held()]
-      .sort(([one], [other]) => (one < other ? -1 : 1))
-      .map(([id, seq]) => `${id}:${seq}\n`);
+    const lines = [...this.held()].sort(([one], [other]) => (one < other ? -1 : 1)).map(([id, seq]) => `${id}:${seq}\n`);
     return textHash(lines.join(""));
   }
 
@@ -362,7 +352,12 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
         writable: live.session.writable,
         release: () => {
           this.run(async () => {
-            const sent = this.online && (await live.session.flush().then(() => true, () => false));
+            const sent =
+              this.online &&
+              (await live.session.flush().then(
+                () => true,
+                () => false,
+              ));
             if (live.session.writable && !sent) entry.dirty = true;
             if (this.byId.has(entry.id)) entry.doc = Y.encodeStateAsUpdate(this.doc(entry.id));
             this.open.delete(entry.id);
@@ -871,8 +866,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (this.ignored(to)) return this.deleteLocal(from);
 
     const { fs } = this.options;
-    const there = async (path: string) =>
-      entry.kind === "folder" ? (await fs.folderState(path)) !== "missing" : (await fs.stat(path)) !== null;
+    const there = async (path: string) => (entry.kind === "folder" ? (await fs.folderState(path)) !== "missing" : (await fs.stat(path)) !== null);
     const left = !(await there(from)) || folded(from) === folded(to);
     const arrived = await there(to);
     const holder = this.byId.get(this.byPath.get(to) ?? "");

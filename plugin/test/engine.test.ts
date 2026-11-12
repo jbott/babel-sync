@@ -38,7 +38,17 @@ async function boot(
   name: string,
   vaultId: string,
   previous?: Pick<Device, "fs" | "store">,
-  { logs, ...options }: { logs?: string[]; maxBlobBytes?: number; sessionIdleMs?: number; retryMs?: number; ignore?: (path: string) => boolean; disposable?: (path: string) => boolean } = {},
+  {
+    logs,
+    ...options
+  }: {
+    logs?: string[];
+    maxBlobBytes?: number;
+    sessionIdleMs?: number;
+    retryMs?: number;
+    ignore?: (path: string) => boolean;
+    disposable?: (path: string) => boolean;
+  } = {},
 ): Promise<Device> {
   const fs = previous?.fs ?? new MemoryFs();
   const store = previous?.store ?? new MemoryStore();
@@ -163,10 +173,7 @@ test("typing in an open note reaches a device that has it open, live", async () 
   await eventually(() => onLaptop.text.toString() === merged && onPhone.text.toString() === merged, "live merge");
 
   onPhone.awareness.setLocalStateField("user", { name: "phone" });
-  await eventually(
-    () => [...onLaptop.awareness.getStates().values()].some((state: any) => state.user?.name === "phone"),
-    "the phone's cursor on the laptop",
-  );
+  await eventually(() => [...onLaptop.awareness.getStates().values()].some((state: any) => state.user?.name === "phone"), "the phone's cursor on the laptop");
 
   onLaptop.release();
   onPhone.release();
@@ -249,13 +256,19 @@ test("an empty folder someone made is kept everywhere, and one nobody made is cl
   phone.fs.folders.delete("Inbox");
   phone.fs.folders.add("Box");
   phone.engine.localFolderRenamed("Inbox", "Box");
-  await eventually(() => [...laptop.fs.folders].sort().join() === "Box,Old", () => `the laptop to follow the rename, it has ${[...laptop.fs.folders].join()}`);
+  await eventually(
+    () => [...laptop.fs.folders].sort().join() === "Box,Old",
+    () => `the laptop to follow the rename, it has ${[...laptop.fs.folders].join()}`,
+  );
 
   for (const folder of ["Box", "Old"]) {
     laptop.fs.folders.delete(folder);
     laptop.engine.localFolderDeleted(folder);
   }
-  await eventually(() => phone.fs.folders.size === 0, () => `the deleted folders to go, the phone has ${[...phone.fs.folders].join()}`);
+  await eventually(
+    () => phone.fs.folders.size === 0,
+    () => `the deleted folders to go, the phone has ${[...phone.fs.folders].join()}`,
+  );
 });
 
 test("changes made while a device was off are caught up on return", async () => {
@@ -390,7 +403,10 @@ test("a note renamed over one that was deleted while the device was off replaces
   await phone.fs.rename("draft.md", "old.md");
   const back = await boot("phone", vault, phone);
 
-  await eventually(() => paths(laptop).join() === "old.md", () => `the laptop to hold only old.md, it has ${paths(laptop).join()}`);
+  await eventually(
+    () => paths(laptop).join() === "old.md",
+    () => `the laptop to hold only old.md, it has ${paths(laptop).join()}`,
+  );
   assert.equal(await text(laptop, "old.md"), "draft\n");
   assert.deepEqual(paths(back), ["old.md"]);
 });
@@ -410,7 +426,10 @@ test("an attachment moved into a new folder stays one file, and a conflict copy 
   phone.engine.localChanged("Attachments/Pasted image.jpg");
   phone.engine.rescan();
 
-  await eventually(() => paths(laptop).join() === "Attachments/Pasted image.jpg", () => `the laptop to hold only the moved image, it has ${paths(laptop).join()}`);
+  await eventually(
+    () => paths(laptop).join() === "Attachments/Pasted image.jpg",
+    () => `the laptop to hold only the moved image, it has ${paths(laptop).join()}`,
+  );
   await eventually(() => phone.engine.status === "synced", "the phone to settle");
   assert.deepEqual(paths(phone), ["Attachments/Pasted image.jpg"]);
 
@@ -511,7 +530,10 @@ test("a new device fills an empty vault from notes fetched in bulk", async () =>
   const phone = await boot("phone", vault, undefined, { logs: logged });
   await eventually(() => paths(phone).length === 150, "every note on the phone");
   assert.equal(await text(phone, "many/note 149.md"), "note 149\n");
-  assert.ok(logged.some((line) => line.includes("150 changes")), logged.join("\n"));
+  assert.ok(
+    logged.some((line) => line.includes("150 changes")),
+    logged.join("\n"),
+  );
   assert.ok(!logged.some((line) => line.includes("one by one")), logged.join("\n"));
 });
 
@@ -523,7 +545,10 @@ test("changing only the case of a name is a rename on devices that cannot tell c
   await eventually(() => paths(phone).join() === "readme.md", "the note on the phone");
 
   await laptop.fs.rename("readme.md", "README.md");
-  await eventually(() => paths(phone).join() === "README.md", () => `the phone to follow, it has ${paths(phone).join()}`);
+  await eventually(
+    () => paths(phone).join() === "README.md",
+    () => `the phone to follow, it has ${paths(phone).join()}`,
+  );
   await eventually(() => laptop.engine.status === "synced" && phone.engine.status === "synced", "both to settle");
   assert.deepEqual(paths(laptop), ["README.md"]);
   assert.equal(await text(phone, "README.md"), "hello\n");
@@ -542,7 +567,10 @@ test("a second note whose name differs only by case is kept under another name",
 
   await edit(laptop, "TODO.md", "upper\n");
   const copy = "TODO (conflict laptop 2026-11-10 120000).md";
-  await eventually(() => paths(phone).join() === [copy, "todo.md"].join(), () => `both notes on the phone, it has ${paths(phone).join()}`);
+  await eventually(
+    () => paths(phone).join() === [copy, "todo.md"].join(),
+    () => `both notes on the phone, it has ${paths(phone).join()}`,
+  );
   assert.equal(await text(phone, "todo.md"), "lower\n");
   assert.equal(await text(phone, copy), "upper\n");
 });
@@ -621,7 +649,10 @@ test("a note saved by writing a new file over it stays the same note", async () 
   await eventually(() => paths(phone).length === 2, "the temporary file on the phone");
   await laptop.fs.rename("essay.md.tmp", "essay.md");
 
-  await eventually(async () => (await text(phone, "essay.md")) === "one\ntwo\n" && paths(phone).length === 1, () => `the save on the phone, it has ${paths(phone).join()}`);
+  await eventually(
+    async () => (await text(phone, "essay.md")) === "one\ntwo\n" && paths(phone).length === 1,
+    () => `the save on the phone, it has ${paths(phone).join()}`,
+  );
   await eventually(() => laptop.engine.status === "synced", "the laptop to settle");
   assert.deepEqual(paths(laptop), ["essay.md"]);
   assert.equal(id(), original);
@@ -631,7 +662,10 @@ test("bases and canvases are text that merges, and a device that held one as an 
   const vault = freshVault();
   const laptop = await boot("laptop", vault);
   await edit(laptop, "Places/Food.base", "views:\n");
-  await eventually(() => [...laptop.store.entries.values()].some((entry) => entry.path === "Places/Food.base" && entry.hash !== null), "the base on the server");
+  await eventually(
+    () => [...laptop.store.entries.values()].some((entry) => entry.path === "Places/Food.base" && entry.hash !== null),
+    "the base on the server",
+  );
   const created = [...laptop.store.entries.values()].find((entry) => entry.path === "Places/Food.base")!;
   assert.equal(created.kind, "doc");
 
@@ -654,7 +688,8 @@ test("bases and canvases are text that merges, and a device that held one as an 
   const merged = "filters: none\nviews:\n  - type: table\n";
   await eventually(
     async () => (await text(laptop, "Places/Food.base")) === merged && (await text(phone, "Places/Food.base")) === merged,
-    async () => `both edits in the base, laptop has ${JSON.stringify(await text(laptop, "Places/Food.base"))} and phone ${JSON.stringify(await text(phone, "Places/Food.base"))}`,
+    async () =>
+      `both edits in the base, laptop has ${JSON.stringify(await text(laptop, "Places/Food.base"))} and phone ${JSON.stringify(await text(phone, "Places/Food.base"))}`,
   );
 });
 
@@ -696,10 +731,7 @@ test("a note the server deleted without this device hearing of it is cleared awa
   back.engine.localChanged("kept.md");
 
   await eventually(async () => (await text(back, "old.md")) === null, "the deleted note to leave the phone");
-  await eventually(
-    async () => (await text(laptop, "kept.md")) === "draft, with more written offline\n",
-    "the note edited offline to come back as a new note",
-  );
+  await eventually(async () => (await text(laptop, "kept.md")) === "draft, with more written offline\n", "the note edited offline to come back as a new note");
   assert.deepEqual(back.errors, []);
 });
 

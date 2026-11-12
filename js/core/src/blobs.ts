@@ -10,9 +10,7 @@ export type BlobApi = {
 
 export const PART_SIZE = 8 * 1024 * 1024;
 
-type BeginReply =
-  | { status: "exists" }
-  | { status: "upload"; id: string; part_size: number; missing: number[] };
+type BeginReply = { status: "exists" } | { status: "upload"; id: string; part_size: number; missing: number[] };
 
 export async function sha256(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", data as BufferSource));

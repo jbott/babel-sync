@@ -64,7 +64,10 @@ test("an agent works a vault like a file system", async () => {
   assert.equal(whole.text, "# Trip\n\n## Tasks\n- book flights 😀\n\n## Notes\nnone\n");
   assert.match(whole.header, /^Plans\/trip\.md · lines 1-7 of 7 · rev [0-9a-f]{8}$/);
   assert.equal((await agent.read("Plans/trip.md", { offset: 3, limit: 2 })).text, "## Tasks\n- book flights 😀");
-  assert.equal((await agent.call("file_outline", { path: "Plans/trip.md" })).text, `Plans/trip.md · 7 lines · rev ${whole.rev}\n1\t# Trip\n3\t## Tasks\n6\t## Notes`);
+  assert.equal(
+    (await agent.call("file_outline", { path: "Plans/trip.md" })).text,
+    `Plans/trip.md · 7 lines · rev ${whole.rev}\n1\t# Trip\n3\t## Tasks\n6\t## Notes`,
+  );
 
   const edited = await agent.call("edit_file", {
     path: "Plans/trip.md",
@@ -85,7 +88,10 @@ test("an agent works a vault like a file system", async () => {
 
   assert.equal((await agent.call("search_files", { query: "TRAIN" })).text, "Plans/Old/2019.md\n1: went by train\n\nPlans/trip.md\n4: - book trains 😀");
   assert.equal((await agent.call("search_files", { query: "^- \\w+$", regex: true, glob: "Plans/*.md" })).text, "Plans/trip.md\n5: - pack");
-  assert.equal((await agent.call("query_notes", { folder: "Plans", where: 'file.name.contains("trip")', select: ["file.ext"], limit: 5 })).text, "1 note\nfile.path\tfile.ext\nPlans/trip.md\tmd");
+  assert.equal(
+    (await agent.call("query_notes", { folder: "Plans", where: 'file.name.contains("trip")', select: ["file.ext"], limit: 5 })).text,
+    "1 note\nfile.path\tfile.ext\nPlans/trip.md\tmd",
+  );
   assert.equal((await agent.call("query_notes", { near: "48.85, 2.35", radius_km: 5 })).text, "No note matches.");
 
   const careless = await agent.call("write_file", { path: "Plans/trip.md", content: "gone" });
@@ -116,7 +122,10 @@ test("an agent works a vault like a file system", async () => {
   const ambiguous = await agent.call("edit_file", { path: "Done/Plans/trip.md", edits: [{ old_text: "## ", new_text: "### " }] });
   assert.equal(ambiguous.failed, true);
   assert.match(ambiguous.text, /Edit 1.*more than once/);
-  assert.equal((await agent.call("edit_file", { path: "Done/Plans/trip.md", edits: [{ old_text: "## ", new_text: "### ", replace_all: true }] })).failed, false);
+  assert.equal(
+    (await agent.call("edit_file", { path: "Done/Plans/trip.md", edits: [{ old_text: "## ", new_text: "### ", replace_all: true }] })).failed,
+    false,
+  );
 
   await assert.rejects(agent.client.callTool({ name: "edit_file", arguments: { path: "Done/Plans/trip.md" } }));
   await assert.rejects(agent.client.callTool({ name: "edit_file", arguments: { path: "Done/Plans/trip.md", edits: [{ old_text: "x" }] } }));

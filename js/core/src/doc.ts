@@ -1,11 +1,6 @@
 import type { Channel, Socket } from "phoenix";
 import * as Y from "yjs";
-import {
-  Awareness,
-  applyAwarenessUpdate,
-  encodeAwarenessUpdate,
-  removeAwarenessStates,
-} from "y-protocols/awareness";
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from "y-protocols/awareness";
 import { Emitter } from "./events.ts";
 import { fromBase64, toArrayBuffer, toBase64 } from "./encoding.ts";
 
@@ -135,10 +130,7 @@ export class DocSession extends Emitter<DocEvents> {
     this.send(update);
   };
 
-  private onAwarenessUpdate = (
-    changes: { added: number[]; updated: number[]; removed: number[] },
-    origin: unknown,
-  ): void => {
+  private onAwarenessUpdate = (changes: { added: number[]; updated: number[]; removed: number[] }, origin: unknown): void => {
     if (!this.joined) return;
 
     if (origin === this) {

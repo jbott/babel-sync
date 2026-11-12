@@ -55,9 +55,7 @@ if (phase === "write") {
     bobDoc.text.insert(bobDoc.text.length, "bob was here\n");
 
     await eventually(
-      () =>
-        aliceDoc.text.toString() === "a😀😃b 日本語\nbob was here\n" &&
-        bobDoc.text.toString() === aliceDoc.text.toString(),
+      () => aliceDoc.text.toString() === "a😀😃b 日本語\nbob was here\n" && bobDoc.text.toString() === aliceDoc.text.toString(),
       "both editors to converge",
     );
     await Promise.all([aliceDoc.whenSynced(), bobDoc.whenSynced()]);
@@ -101,10 +99,7 @@ if (phase === "write") {
 
     aliceDoc.awareness.setLocalStateField("user", { name: "Alice" });
 
-    await eventually(
-      () => (bobDoc.awareness.getStates().get(aliceDoc.doc.clientID) as any)?.user?.name === "Alice",
-      "bob to see alice's cursor",
-    );
+    await eventually(() => (bobDoc.awareness.getStates().get(aliceDoc.doc.clientID) as any)?.user?.name === "Alice", "bob to see alice's cursor");
   });
 
   test("a large attachment uploads in parts, downloads intact and detects conflicts", async () => {
@@ -130,10 +125,7 @@ if (phase === "write") {
 
     const replacement = await alice.upload(vaultId, new TextEncoder().encode("v2"));
     await vault.setBlob(entry.id, replacement, hash);
-    await assert.rejects(
-      vault.setBlob(entry.id, hash, hash),
-      (error: unknown) => error instanceof RequestError && error.reason === "conflict",
-    );
+    await assert.rejects(vault.setBlob(entry.id, hash, hash), (error: unknown) => error instanceof RequestError && error.reason === "conflict");
   });
 
   test("renames and deletions reach other clients and a returning client catches up", async () => {

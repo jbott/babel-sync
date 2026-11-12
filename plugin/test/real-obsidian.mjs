@@ -45,10 +45,7 @@ async function device(name, port) {
   cpSync(join(repo, "plugin/main.js"), join(pluginDir, "main.js"));
   cpSync(join(repo, "plugin/manifest.json"), join(pluginDir, "manifest.json"));
   writeFileSync(join(vault, ".obsidian/community-plugins.json"), JSON.stringify(["babelsync"]));
-  writeFileSync(
-    join(profile, "obsidian.json"),
-    JSON.stringify({ vaults: { [`babelsynctest${name}`]: { path: vault, ts: Date.now(), open: true } } }),
-  );
+  writeFileSync(join(profile, "obsidian.json"), JSON.stringify({ vaults: { [`babelsynctest${name}`]: { path: vault, ts: Date.now(), open: true } } }));
 
   const child = spawn(binary, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`], { stdio: "ignore" });
   children.push(child);
@@ -110,7 +107,7 @@ async function approve(url) {
   return Object.fromEntries(new URL(location).searchParams);
 }
 
-async function signIn(device, vaultId) {
+async function signIn(device) {
   const { page, name } = device;
   await page.evaluate(
     async (server, name) => {
@@ -167,7 +164,9 @@ async function signIn(device, vaultId) {
     await page.evaluate(() => app.plugins.plugins.babelsync.signIn());
     await consent("signing in on a server that does not demand it");
   }
-  await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("Babel Sync: synced")));
+  await eventually(`${name}: status bar reports synced`, () =>
+    page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("Babel Sync: synced")),
+  );
 }
 
 async function followLink(device, vaultId) {
@@ -192,14 +191,11 @@ async function followLink(device, vaultId) {
   );
   check(`${name}: Obsidian hands the connect link to the plugin`, handled);
   await eventually(`${name}: the connect link asks before changing anything`, () =>
-    page.evaluate(
-      (host) => {
-        const modal = document.querySelector(".modal-container .modal");
-        const unset = !app.plugins.plugins.babelsync.settings.serverUrl;
-        return unset && !!modal?.innerText.includes(`“Linked” on ${host}`);
-      },
-      new URL(server).host,
-    ),
+    page.evaluate((host) => {
+      const modal = document.querySelector(".modal-container .modal");
+      const unset = !app.plugins.plugins.babelsync.settings.serverUrl;
+      return unset && !!modal?.innerText.includes(`“Linked” on ${host}`);
+    }, new URL(server).host),
   );
   if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `connect-${name}.png`) });
   await page.evaluate(() => [...document.querySelectorAll(".modal-container .modal button")].find((button) => button.innerText === "Connect").click());
@@ -216,20 +212,23 @@ async function followLink(device, vaultId) {
   }
 
   await eventually(`${name}: the connect link alone sets the server and the vault`, () =>
-    page.evaluate((server, id) => {
-      const { serverUrl, vaultId } = app.plugins.plugins.babelsync.settings;
-      return serverUrl === server && vaultId === id;
-    }, server, vaultId),
+    page.evaluate(
+      (server, id) => {
+        const { serverUrl, vaultId } = app.plugins.plugins.babelsync.settings;
+        return serverUrl === server && vaultId === id;
+      },
+      server,
+      vaultId,
+    ),
   );
-  await page.evaluate(
-    async (name) => {
-      const plugin = app.plugins.plugins.babelsync;
-      plugin.settings.deviceName = name;
-      await plugin.saveSettings();
-    },
-    name,
+  await page.evaluate(async (name) => {
+    const plugin = app.plugins.plugins.babelsync;
+    plugin.settings.deviceName = name;
+    await plugin.saveSettings();
+  }, name);
+  await eventually(`${name}: status bar reports synced`, () =>
+    page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("Babel Sync: synced")),
   );
-  await eventually(`${name}: status bar reports synced`, () => page.evaluate(() => document.querySelector(".status-bar")?.innerText.includes("Babel Sync: synced")));
 
   await page.evaluate((server) => window.OBS_ACT({ action: "babelsync-connect", server, id: "00000000-0000-4000-8000-000000000000", name: "Other" }), server);
   await eventually(`${name}: pointing a synced vault at another one is warned against`, () =>
@@ -351,14 +350,17 @@ async function deskPicture(laptop, desk) {
     app.setting.open();
     app.setting.openTabById("babelsync");
   });
-  await eventually("the settings picture shows a vault in sync", () => desk.page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.includes("Up to date")));
+  await eventually("the settings picture shows a vault in sync", () =>
+    desk.page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.includes("Up to date")),
+  );
   await dressSettings(desk.page, "MacBook Pro");
   await desk.page.screenshot({ path: join(process.env.SHOTS, "sync-settings.png") });
   await desk.page.evaluate(() => app.setting.close());
 }
 
 async function history(page, path, shot) {
-  const pane = (script) => page.evaluate(`(() => { const view = app.workspace.getLeavesOfType("babelsync-history")[0]?.view; const el = view?.contentEl; return (${script}); })()`);
+  const pane = (script) =>
+    page.evaluate(`(() => { const view = app.workspace.getLeavesOfType("babelsync-history")[0]?.view; const el = view?.contentEl; return (${script}); })()`);
   await page.bringToFront();
   await page.evaluate((path) => app.vault.create(path, "Pack the quick fox\nand the sun hat\n"), path);
   await eventually(`${shot}: the new note is known to the server`, () => page.evaluate((path) => !!app.plugins.plugins.babelsync.engine?.noteId(path), path));
@@ -367,10 +369,16 @@ async function history(page, path, shot) {
   await eventually(`${shot}: the history pane lists a version`, () => pane(`el?.querySelectorAll(".babelsync-history-version").length >= 1`));
 
   await page.evaluate((path) => app.vault.modify(app.vault.getAbstractFileByPath(path), "Pack the slow fox\nand the sun hat\nand a towel\n"), path);
-  await eventually(`${shot}: an edit becomes a second version`, () => pane(`view.refresh().then(() => el.querySelectorAll(".babelsync-history-version").length >= 2)`), 30000);
+  await eventually(
+    `${shot}: an edit becomes a second version`,
+    () => pane(`view.refresh().then(() => el.querySelectorAll(".babelsync-history-version").length >= 2)`),
+    30000,
+  );
   await pane(`el.querySelector(".babelsync-history-version").click()`);
   await eventually(`${shot}: the newest version shows the words it changed`, () =>
-    pane(`el.querySelector(".babelsync-history-content .is-added")?.textContent === "slow" && el.querySelector(".babelsync-history-content .is-removed")?.textContent === "quick"`),
+    pane(
+      `el.querySelector(".babelsync-history-content .is-added")?.textContent === "slow" && el.querySelector(".babelsync-history-content .is-removed")?.textContent === "quick"`,
+    ),
   );
   if (process.env.SHOTS) {
     await page.evaluate(() => document.querySelectorAll(".notice").forEach((notice) => notice.remove()));
@@ -379,7 +387,9 @@ async function history(page, path, shot) {
   }
 
   await pane(`el.querySelectorAll(".babelsync-history-version")[1].click()`);
-  await eventually(`${shot}: the older version is chosen`, () => pane(`el.querySelectorAll(".babelsync-history-version")[1].classList.contains("is-chosen") && !!el.querySelector(".babelsync-history-line")`));
+  await eventually(`${shot}: the older version is chosen`, () =>
+    pane(`el.querySelectorAll(".babelsync-history-version")[1].classList.contains("is-chosen") && !!el.querySelector(".babelsync-history-line")`),
+  );
   await pane(`el.querySelector(".babelsync-history-restore").click()`);
   await pane(`el.querySelector(".babelsync-history-restore").click()`);
   await eventually(`${shot}: restoring brings the old text back`, async () => (await read({ page }, path)) === "Pack the quick fox\nand the sun hat\n", 20000);
@@ -415,7 +425,7 @@ async function run() {
 
   await enablePlugin(laptop);
   await enablePlugin(desk);
-  await signIn(laptop, vaultId);
+  await signIn(laptop);
   await followLink(desk, vaultId);
 
   await laptop.page.evaluate(() => app.vault.create("Hello.md", "hi from the laptop 😀\n"));
@@ -423,7 +433,10 @@ async function run() {
 
   await openNote(laptop, "Hello.md");
   await openNote(desk, "Hello.md");
-  await eventually("both editors show the note", async () => (await editorText(laptop)) === "hi from the laptop 😀\n" && (await editorText(desk)) === "hi from the laptop 😀\n");
+  await eventually(
+    "both editors show the note",
+    async () => (await editorText(laptop)) === "hi from the laptop 😀\n" && (await editorText(desk)) === "hi from the laptop 😀\n",
+  );
 
   await laptop.page.bringToFront();
   await laptop.page.evaluate(() => {
@@ -444,7 +457,9 @@ async function run() {
     editor.replaceRange("\ntyped before the note was bound", { line: editor.lastLine(), ch: editor.getLine(editor.lastLine()).length });
     collab.refresh();
   });
-  await eventually("typing that was not saved yet survives the note being bound", async () => (await editorText(laptop))?.includes("typed before the note was bound"));
+  await eventually("typing that was not saved yet survives the note being bound", async () =>
+    (await editorText(laptop))?.includes("typed before the note was bound"),
+  );
   check("and stays in the editor it was typed in", (await editorText(desk))?.includes("typed before the note was bound"));
 
   await desk.page.bringToFront();
@@ -455,18 +470,28 @@ async function run() {
   });
   await desk.page.keyboard.type("desk says hello\n");
   let merged = "desk says hello\nhi from the laptop 😀\ntyped on the laptop\ntyped before the note was bound";
-  await eventually("simultaneous typing converges to the same text in both editors", async () => (await editorText(laptop)) === merged && (await editorText(desk)) === merged);
-  await eventually("the merged text is written to both vaults on disk", () => readFileSync(join(laptop.vault, "Hello.md"), "utf8") === merged && readFileSync(join(desk.vault, "Hello.md"), "utf8") === merged, 30000);
+  await eventually(
+    "simultaneous typing converges to the same text in both editors",
+    async () => (await editorText(laptop)) === merged && (await editorText(desk)) === merged,
+  );
+  await eventually(
+    "the merged text is written to both vaults on disk",
+    () => readFileSync(join(laptop.vault, "Hello.md"), "utf8") === merged && readFileSync(join(desk.vault, "Hello.md"), "utf8") === merged,
+    30000,
+  );
 
   const note = { vault: vaultId, path: "Hello.md" };
   const agent = await connectAgent(server, await laptop.page.evaluate(() => app.plugins.plugins.babelsync.settings.tokens.accessToken));
   await agent.call("append_file", { ...note, content: "the agent adds a line\n" });
-  await eventually("an agent's append shows up in both open Obsidian editors", async () =>
-    (await editorText(laptop))?.endsWith("\nthe agent adds a line\n") && (await editorText(desk))?.endsWith("\nthe agent adds a line\n"),
+  await eventually(
+    "an agent's append shows up in both open Obsidian editors",
+    async () => (await editorText(laptop))?.endsWith("\nthe agent adds a line\n") && (await editorText(desk))?.endsWith("\nthe agent adds a line\n"),
   );
   await agent.call("edit_file", { ...note, edits: [{ old_text: "desk says hello", new_text: "desk says hello to the agent" }] });
-  await eventually("an agent's edit shows up in both open Obsidian editors", async () =>
-    (await editorText(laptop))?.startsWith("desk says hello to the agent\n") && (await editorText(desk))?.startsWith("desk says hello to the agent\n"),
+  await eventually(
+    "an agent's edit shows up in both open Obsidian editors",
+    async () =>
+      (await editorText(laptop))?.startsWith("desk says hello to the agent\n") && (await editorText(desk))?.startsWith("desk says hello to the agent\n"),
   );
 
   await laptop.page.bringToFront();
@@ -483,7 +508,8 @@ async function run() {
   const afterAgent = (await agent.read(note.path, { vault: vaultId })).text;
   check(
     "typing in Obsidian while an agent appends loses neither",
-    afterAgent.includes("typed in Obsidian while the agent wrote hi from the laptop 😀") && Array.from({ length: 12 }, (_, n) => `agent line ${n + 1}\n`).every((line) => afterAgent.includes(line)),
+    afterAgent.includes("typed in Obsidian while the agent wrote hi from the laptop 😀") &&
+      Array.from({ length: 12 }, (_, n) => `agent line ${n + 1}\n`).every((line) => afterAgent.includes(line)),
     JSON.stringify(afterAgent),
   );
   await eventually("both Obsidian editors match what the agent reads", async () => {
@@ -501,12 +527,17 @@ async function run() {
     } else {
       await web.waitForSelector(".cm-content");
       await eventually("the web editor shows what Obsidian and the agent wrote", () =>
-        web.evaluate(() => document.querySelector(".cm-content").innerText.includes("agent line 12") && document.querySelector(".cm-content").innerText.includes("typed in Obsidian while the agent wrote")),
+        web.evaluate(
+          () =>
+            document.querySelector(".cm-content").innerText.includes("agent line 12") &&
+            document.querySelector(".cm-content").innerText.includes("typed in Obsidian while the agent wrote"),
+        ),
       );
       await web.focus(".cm-content");
       await web.keyboard.type("typed in the browser\n");
-      await eventually("typing in the web editor shows up live in both Obsidian editors", async () =>
-        (await editorText(laptop))?.startsWith("typed in the browser\n") && (await editorText(desk))?.startsWith("typed in the browser\n"),
+      await eventually(
+        "typing in the web editor shows up live in both Obsidian editors",
+        async () => (await editorText(laptop))?.startsWith("typed in the browser\n") && (await editorText(desk))?.startsWith("typed in the browser\n"),
       );
       await eventually("the web editor shows Obsidian's cursor", () => web.evaluate(() => !!document.querySelector(".cm-ySelectionCaret")));
       await laptop.page.bringToFront();
@@ -516,7 +547,9 @@ async function run() {
         editor.setCursor({ line: 0, ch: 0 });
       });
       await laptop.page.keyboard.type("Obsidian answers the browser\n");
-      await eventually("typing in Obsidian shows up live in the web editor", () => web.evaluate(() => document.querySelector(".cm-content").innerText.startsWith("Obsidian answers the browser")));
+      await eventually("typing in Obsidian shows up live in the web editor", () =>
+        web.evaluate(() => document.querySelector(".cm-content").innerText.startsWith("Obsidian answers the browser")),
+      );
     }
     await browser.close();
   } else {
@@ -525,24 +558,38 @@ async function run() {
 
   merged = (await agent.read(note.path, { vault: vaultId })).text;
   await agent.close();
-  await eventually("everything written by all three is on disk in both vaults", () => readFileSync(join(laptop.vault, "Hello.md"), "utf8") === merged && readFileSync(join(desk.vault, "Hello.md"), "utf8") === merged, 30000);
+  await eventually(
+    "everything written by all three is on disk in both vaults",
+    () => readFileSync(join(laptop.vault, "Hello.md"), "utf8") === merged && readFileSync(join(desk.vault, "Hello.md"), "utf8") === merged,
+    30000,
+  );
 
   const picture = [...Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64")];
-  await laptop.page.evaluate((bytes) => app.vault.createBinary("Attachments/pixel.png", new Uint8Array(bytes).buffer), picture).catch(async () => {
-    await laptop.page.evaluate(async (bytes) => {
-      await app.vault.createFolder("Attachments").catch(() => {});
-      await app.vault.createBinary("Attachments/pixel.png", new Uint8Array(bytes).buffer);
-    }, picture);
-  });
-  await eventually("an attachment added in one Obsidian is downloaded by the other", () => existsSync(join(desk.vault, "Attachments/pixel.png")) && readFileSync(join(desk.vault, "Attachments/pixel.png")).equals(Buffer.from(picture)));
-
-  await laptop.page.evaluate(() => app.fileManager.renameFile(app.vault.getAbstractFileByPath("Hello.md"), "Moved/Greeting.md")).catch(async () => {
-    await laptop.page.evaluate(async () => {
-      await app.vault.createFolder("Moved").catch(() => {});
-      await app.fileManager.renameFile(app.vault.getAbstractFileByPath("Hello.md"), "Moved/Greeting.md");
+  await laptop.page
+    .evaluate((bytes) => app.vault.createBinary("Attachments/pixel.png", new Uint8Array(bytes).buffer), picture)
+    .catch(async () => {
+      await laptop.page.evaluate(async (bytes) => {
+        await app.vault.createFolder("Attachments").catch(() => {});
+        await app.vault.createBinary("Attachments/pixel.png", new Uint8Array(bytes).buffer);
+      }, picture);
     });
-  });
-  await eventually("a rename in one Obsidian is followed by the other", async () => (await exists(desk, "Moved/Greeting.md")) && !(await exists(desk, "Hello.md")));
+  await eventually(
+    "an attachment added in one Obsidian is downloaded by the other",
+    () => existsSync(join(desk.vault, "Attachments/pixel.png")) && readFileSync(join(desk.vault, "Attachments/pixel.png")).equals(Buffer.from(picture)),
+  );
+
+  await laptop.page
+    .evaluate(() => app.fileManager.renameFile(app.vault.getAbstractFileByPath("Hello.md"), "Moved/Greeting.md"))
+    .catch(async () => {
+      await laptop.page.evaluate(async () => {
+        await app.vault.createFolder("Moved").catch(() => {});
+        await app.fileManager.renameFile(app.vault.getAbstractFileByPath("Hello.md"), "Moved/Greeting.md");
+      });
+    });
+  await eventually(
+    "a rename in one Obsidian is followed by the other",
+    async () => (await exists(desk, "Moved/Greeting.md")) && !(await exists(desk, "Hello.md")),
+  );
   await eventually("the renamed note keeps its text", async () => (await read(desk, "Moved/Greeting.md")) === merged);
 
   await desk.page.evaluate(() => app.vault.create("Scratch.md", "delete me\n"));
@@ -555,7 +602,10 @@ async function run() {
     await app.vault.create("Box/a.md", "a\n");
     await app.vault.create("Box/Inner/b.md", "b\n");
   });
-  await eventually("notes in nested folders reach the other Obsidian", async () => (await exists(laptop, "Box/a.md")) && (await exists(laptop, "Box/Inner/b.md")));
+  await eventually(
+    "notes in nested folders reach the other Obsidian",
+    async () => (await exists(laptop, "Box/a.md")) && (await exists(laptop, "Box/Inner/b.md")),
+  );
   await desk.page.evaluate(() => app.fileManager.renameFile(app.vault.getAbstractFileByPath("Box"), "Crate"));
   await eventually(
     "a folder renamed in one Obsidian is renamed in the other, leaving no empty folder",
@@ -565,12 +615,16 @@ async function run() {
   await desk.page.evaluate(() => app.fileManager.trashFile(app.vault.getAbstractFileByPath("Crate")));
   await eventually("a folder deleted in one Obsidian is gone from the other, folder and all", async () => !(await exists(laptop, "Crate")), 12000);
   const leftovers = await (await fetch(`${server}/api/vaults/${vaultId}/entries`)).json().catch(() => null);
-  if (leftovers?.entries) check("the server keeps nothing of the deleted folder", !leftovers.entries.some((entry) => !entry.deleted && entry.path.startsWith("Crate/")));
+  if (leftovers?.entries)
+    check("the server keeps nothing of the deleted folder", !leftovers.entries.some((entry) => !entry.deleted && entry.path.startsWith("Crate/")));
 
   await desk.page.evaluate(() => app.vault.create("Food.base", "views:\n  - type: table\n    name: Table\n"));
   await eventually("a base file reaches the other Obsidian", async () => (await read(laptop, "Food.base")) === "views:\n  - type: table\n    name: Table\n");
   await laptop.page.evaluate(() => app.vault.modify(app.vault.getAbstractFileByPath("Food.base"), "views:\n  - type: table\n    name: Renamed\n"));
-  await eventually("an edit to a base file is merged into the other Obsidian", async () => (await read(desk, "Food.base")) === "views:\n  - type: table\n    name: Renamed\n");
+  await eventually(
+    "an edit to a base file is merged into the other Obsidian",
+    async () => (await read(desk, "Food.base")) === "views:\n  - type: table\n    name: Renamed\n",
+  );
 
   await desk.page.evaluate(() => app.vault.createFolder("Made on purpose"));
   await eventually("an empty folder made in one Obsidian appears in the other", () => exists(laptop, "Made on purpose"));
@@ -580,7 +634,11 @@ async function run() {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await app.plugins.enablePlugin("babelsync");
   });
-  await eventually("an empty folder left from before the plugin started is cleared away, and the made one stays", async () => !(await exists(laptop, "Leftover")) && (await exists(laptop, "Made on purpose")), 15000);
+  await eventually(
+    "an empty folder left from before the plugin started is cleared away, and the made one stays",
+    async () => !(await exists(laptop, "Leftover")) && (await exists(laptop, "Made on purpose")),
+    15000,
+  );
   await desk.page.evaluate(() => app.fileManager.trashFile(app.vault.getAbstractFileByPath("Made on purpose")));
   await eventually("deleting the empty folder in one Obsidian removes it from the other", async () => !(await exists(laptop, "Made on purpose")), 12000);
   const build = await laptop.page.evaluate(() => app.plugins.plugins.babelsync.build);
@@ -593,24 +651,49 @@ async function run() {
     await app.vault.createFolder("Pasted");
     await app.fileManager.renameFile(app.vault.getAbstractFileByPath("Pasted image 1.jpg"), "Pasted/Pasted image 1.jpg");
   });
-  await eventually("moving it into a new attachments folder moves it on the other", async () => (await exists(desk, "Pasted/Pasted image 1.jpg")) && !(await exists(desk, "Pasted image 1.jpg")), 12000);
+  await eventually(
+    "moving it into a new attachments folder moves it on the other",
+    async () => (await exists(desk, "Pasted/Pasted image 1.jpg")) && !(await exists(desk, "Pasted image 1.jpg")),
+    12000,
+  );
   await new Promise((resolve) => setTimeout(resolve, 2500));
-  const copies = await laptop.page.evaluate(() => app.vault.getFiles().map((file) => file.path).filter((path) => path.includes("Pasted image")));
+  const copies = await laptop.page.evaluate(() =>
+    app.vault
+      .getFiles()
+      .map((file) => file.path)
+      .filter((path) => path.includes("Pasted image")),
+  );
   check("and the move makes no conflict copies", copies.length === 1 && copies[0] === "Pasted/Pasted image 1.jpg", copies.join(" | "));
 
   await laptop.page.evaluate(async () => {
     window.oldBabelSync = app.plugins.plugins.babelsync;
     await app.commands.executeCommandById("babelsync:reload");
   });
-  await eventually("after the reload command the new copy of the plugin syncs", () => laptop.page.evaluate(() => app.plugins.plugins.babelsync !== window.oldBabelSync && app.plugins.plugins.babelsync?.engine?.status === "synced"), 20000);
+  await eventually(
+    "after the reload command the new copy of the plugin syncs",
+    () => laptop.page.evaluate(() => app.plugins.plugins.babelsync !== window.oldBabelSync && app.plugins.plugins.babelsync?.engine?.status === "synced"),
+    20000,
+  );
   const copiesRunning = await laptop.page.evaluate(async () => {
     const held = (await navigator.locks.query()).held.filter((lock) => lock.name.startsWith("babelsync:"));
     return { held: held.length, oldStopped: window.oldBabelSync.engine === null, log: app.plugins.plugins.babelsync.debugLog() };
   });
-  check("only one copy of the plugin holds the vault, and the old one has stopped", copiesRunning.held === 1 && copiesRunning.oldStopped, JSON.stringify({ held: copiesRunning.held, oldStopped: copiesRunning.oldStopped }));
-  check("the debug log survives the reload and tells the copies apart", /plugin unloaded/.test(copiesRunning.log) && new Set(copiesRunning.log.match(/ \[[0-9a-f]{4}\] /g)).size >= 2, copiesRunning.log.split("\n").slice(-6).join(" | "));
+  check(
+    "only one copy of the plugin holds the vault, and the old one has stopped",
+    copiesRunning.held === 1 && copiesRunning.oldStopped,
+    JSON.stringify({ held: copiesRunning.held, oldStopped: copiesRunning.oldStopped }),
+  );
+  check(
+    "the debug log survives the reload and tells the copies apart",
+    /plugin unloaded/.test(copiesRunning.log) && new Set(copiesRunning.log.match(/ \[[0-9a-f]{4}\] /g)).size >= 2,
+    copiesRunning.log.split("\n").slice(-6).join(" | "),
+  );
 
-  await eventually("the laptop settles once nothing is left to send", () => laptop.page.evaluate(() => app.plugins.plugins.babelsync.engine.status === "synced"), 15000);
+  await eventually(
+    "the laptop settles once nothing is left to send",
+    () => laptop.page.evaluate(() => app.plugins.plugins.babelsync.engine.status === "synced"),
+    15000,
+  );
   const stamp = await laptop.page.evaluate(() => {
     const plugin = app.plugins.plugins.babelsync;
     return { revision: plugin.revision, log: plugin.debugLog() };
@@ -618,7 +701,9 @@ async function run() {
   check("the plugin knows which commit it was built from", /^[0-9a-f]{7,}/.test(stamp.revision), stamp.revision);
   check(
     "the debug log names the build and what the plugin did, and holds no token",
-    stamp.log.includes(`commit ${stamp.revision}, build ${build}`) && stamp.log.includes("status: synced") && !/accessToken|refreshToken|Bearer/.test(stamp.log),
+    stamp.log.includes(`commit ${stamp.revision}, build ${build}`) &&
+      stamp.log.includes("status: synced") &&
+      !/accessToken|refreshToken|Bearer/.test(stamp.log),
     stamp.log.split("\n").slice(-30).join(" | "),
   );
 
@@ -626,10 +711,16 @@ async function run() {
   await laptop.page.evaluate(() => app.plugins.plugins.babelsync.engine.rescan());
   await eventually(
     "an Obsidian setting changed on one device reaches the other's .obsidian folder",
-    () => existsSync(join(desk.vault, ".obsidian/app.json")) && JSON.parse(readFileSync(join(desk.vault, ".obsidian/app.json"), "utf8")).readableLineLength === false,
+    () =>
+      existsSync(join(desk.vault, ".obsidian/app.json")) &&
+      JSON.parse(readFileSync(join(desk.vault, ".obsidian/app.json"), "utf8")).readableLineLength === false,
     45000,
   );
-  check("device-only files are not synced", !existsSync(join(desk.vault, ".obsidian/plugins/babelsync/data.json")) || JSON.parse(readFileSync(join(desk.vault, ".obsidian/plugins/babelsync/data.json"), "utf8")).deviceName === "desk");
+  check(
+    "device-only files are not synced",
+    !existsSync(join(desk.vault, ".obsidian/plugins/babelsync/data.json")) ||
+      JSON.parse(readFileSync(join(desk.vault, ".obsidian/plugins/babelsync/data.json"), "utf8")).deviceName === "desk",
+  );
 
   await openNote(desk, "Hello.md");
   await desk.page.evaluate(() => app.plugins.disablePlugin("babelsync"));
@@ -637,7 +728,11 @@ async function run() {
   await laptop.page.evaluate(() => app.vault.create("Meanwhile.md", "made on the laptop\n"));
   await new Promise((resolve) => setTimeout(resolve, 1500));
   await desk.page.evaluate(() => app.plugins.enablePlugin("babelsync"));
-  await eventually("after the plugin restarts, offline changes go up", async () => (await read(laptop, "Offline.md")) === "written while the plugin was off\n", 30000);
+  await eventually(
+    "after the plugin restarts, offline changes go up",
+    async () => (await read(laptop, "Offline.md")) === "written while the plugin was off\n",
+    30000,
+  );
   await eventually("and missed changes come down", async () => (await read(desk, "Meanwhile.md")) === "made on the laptop\n", 30000);
   await eventually("a note left open across the restart is live again", () =>
     desk.page.evaluate(() => [...app.plugins.plugins.babelsync.collab.bindings.values()].some((binding) => binding.path === "Hello.md" && binding.doc)),
@@ -652,7 +747,11 @@ async function run() {
   await eventually("the laptop's cursor is resting in the note", () => laptop.page.evaluate(() => app.workspace.activeEditor.editor.hasFocus()));
   await desk.page.evaluate(() => app.plugins.disablePlugin("babelsync"));
   await desk.page.evaluate(() => app.plugins.enablePlugin("babelsync"));
-  await eventually("a device that joins sees a cursor already resting there, without waiting for it to move", () => desk.page.evaluate(() => !!document.querySelector(".cm-ySelectionCaret")), 6000);
+  await eventually(
+    "a device that joins sees a cursor already resting there, without waiting for it to move",
+    () => desk.page.evaluate(() => !!document.querySelector(".cm-ySelectionCaret")),
+    6000,
+  );
 
   await laptop.page.evaluate(() => app.vault.create("Verified.md", "as first synced\n"));
   await eventually("a note to verify reaches the desk", async () => (await read(desk, "Verified.md")) === "as first synced\n");
@@ -678,7 +777,11 @@ async function run() {
     desk.page = phone;
     const mobile = await phone.evaluate(() => document.body.classList.contains("is-mobile"));
     check("Obsidian's mobile emulation is on", mobile);
-    await eventually("the plugin loads and syncs under mobile emulation", () => phone.evaluate(() => app.plugins.plugins.babelsync?.engine?.status === "synced"), 30000);
+    await eventually(
+      "the plugin loads and syncs under mobile emulation",
+      () => phone.evaluate(() => app.plugins.plugins.babelsync?.engine?.status === "synced"),
+      30000,
+    );
     await laptop.page.evaluate(() => app.vault.create("ForPhone.md", "to the phone\n"));
     await eventually("a note reaches the emulated phone", async () => (await read(desk, "ForPhone.md")) === "to the phone\n");
     if (process.env.SHOTS) await pocketPicture(laptop, phone);
@@ -691,7 +794,10 @@ async function run() {
   }
 
   const stalePlugin = join(laptop.vault, ".obsidian/plugins/babelsync/main.js");
-  check("the plugin's own files are not synced through the vault", (await laptop.page.evaluate(() => app.plugins.plugins.babelsync.ignored(".obsidian/plugins/babelsync/main.js"))) === true);
+  check(
+    "the plugin's own files are not synced through the vault",
+    (await laptop.page.evaluate(() => app.plugins.plugins.babelsync.ignored(".obsidian/plugins/babelsync/main.js"))) === true,
+  );
   writeFileSync(stalePlugin, "module.exports = {}");
   const fetched = await laptop.page.evaluate(async () => {
     const plugin = app.plugins.plugins.babelsync;
@@ -700,7 +806,14 @@ async function run() {
     await plugin.fetchUpdate();
     return { updated: plugin.updated, log: plugin.debugLog() };
   });
-  check("a plugin on another build fetches the server's build", readFileSync(stalePlugin, "utf8") === readFileSync(join(repo, "plugin/main.js"), "utf8"), fetched.log.split("\n").filter((line) => /fetch/.test(line)).join(" | "));
+  check(
+    "a plugin on another build fetches the server's build",
+    readFileSync(stalePlugin, "utf8") === readFileSync(join(repo, "plugin/main.js"), "utf8"),
+    fetched.log
+      .split("\n")
+      .filter((line) => /fetch/.test(line))
+      .join(" | "),
+  );
   check("and offers to reload into it", fetched.updated === true);
 
   for (const each of [laptop, desk]) {

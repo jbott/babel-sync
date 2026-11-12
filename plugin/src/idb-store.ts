@@ -63,11 +63,7 @@ export class IdbStore implements StateStore {
     await this.database.then((database) => database.close()).catch(() => {});
   }
 
-  private async request<T>(
-    name: string,
-    mode: IDBTransactionMode,
-    action: (store: IDBObjectStore) => IDBRequest,
-  ): Promise<T> {
+  private async request<T>(name: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.once<T>(name, mode, action);

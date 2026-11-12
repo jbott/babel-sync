@@ -1,21 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BabelSyncClient } from "@babelsync/core";
-import {
-  beginAuthorization,
-  finishAuthorization,
-  needsRefresh,
-  refreshTokens,
-  registerClient,
-  revokeTokens,
-} from "../src/oauth.ts";
+import { beginAuthorization, finishAuthorization, needsRefresh, refreshTokens, registerClient, revokeTokens } from "../src/oauth.ts";
 
 const serverUrl = process.env.BABELSYNC_URL!;
 const vaultId = process.env.BABELSYNC_VAULT_IDS!.split(",")[0];
 
 async function approveInBrowser(url: string): Promise<Record<string, string>> {
   const page = await fetch(url);
-  const cookie = page.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
+  const cookie = page.headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0])
+    .join("; ");
   const html = await page.text();
   const fields = new URLSearchParams({ decision: "approve" });
   for (const [, name, value] of html.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)) {

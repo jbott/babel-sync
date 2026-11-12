@@ -167,7 +167,10 @@ export class SettingsTab extends PluginSettingTab {
       .setName("Server address")
       .setDesc("For example notes.example.com")
       .addText((text) => {
-        text.setPlaceholder("https://").setValue(serverUrl).onChange((value) => (address = value));
+        text
+          .setPlaceholder("https://")
+          .setValue(serverUrl)
+          .onChange((value) => (address = value));
         text.inputEl.addEventListener("keydown", (event) => {
           if (event.key === "Enter") void this.begin(address);
         });
@@ -188,7 +191,6 @@ export class SettingsTab extends PluginSettingTab {
           .onClick(() => this.begin(address)),
       );
     }
-
   }
 
   private card(containerEl: HTMLElement): HTMLElement {
@@ -221,7 +223,6 @@ export class SettingsTab extends PluginSettingTab {
           .onClick(() => this.signIn()),
       );
     }
-
   }
 
   private leaving(containerEl: HTMLElement): void {

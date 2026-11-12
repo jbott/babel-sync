@@ -68,9 +68,7 @@ export class ObsidianFs implements VaultFs {
 
   async readBinary(path: string): Promise<Uint8Array> {
     const file = this.file(path);
-    const buffer = file
-      ? await this.app.vault.readBinary(file)
-      : await this.app.vault.adapter.readBinary(this.toLocal(path));
+    const buffer = file ? await this.app.vault.readBinary(file) : await this.app.vault.adapter.readBinary(this.toLocal(path));
     return new Uint8Array(buffer);
   }
 

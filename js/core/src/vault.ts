@@ -95,10 +95,7 @@ export class VaultSession extends Emitter<VaultEvents> {
     return undefined;
   }
 
-  async create(
-    path: string,
-    content: { text?: string; blobHash?: string; kind?: EntryKind } = {},
-  ): Promise<Entry> {
+  async create(path: string, content: { text?: string; blobHash?: string; kind?: EntryKind } = {}): Promise<Entry> {
     const reply = await this.request<{ entry: Entry }>("create", {
       path,
       kind: content.kind,
@@ -146,9 +143,7 @@ export class VaultSession extends Emitter<VaultEvents> {
       this.channel
         .push(event, payload)
         .receive("ok", (reply: T) => resolve(reply))
-        .receive("error", (reply: { reason?: string; entry?: Entry }) =>
-          reject(new RequestError(reply.reason ?? "error", reply.entry)),
-        )
+        .receive("error", (reply: { reason?: string; entry?: Entry }) => reject(new RequestError(reply.reason ?? "error", reply.entry)))
         .receive("timeout", () => reject(new RequestError("timeout")));
     });
   }

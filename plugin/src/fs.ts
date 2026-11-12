@@ -64,9 +64,7 @@ export class MemoryStore implements StateStore {
   }
 }
 
-export type FsEvent =
-  | { type: "changed" | "deleted" | "folderCreated"; path: string }
-  | { type: "renamed"; from: string; path: string };
+export type FsEvent = { type: "changed" | "deleted" | "folderCreated"; path: string } | { type: "renamed"; from: string; path: string };
 
 export class MemoryFs implements VaultFs {
   files = new Map<string, { data: Uint8Array; mtime: number }>();

@@ -1,0 +1,7 @@
+{
+  "ignorePatterns": ["assets/vendor/**", "plugin/main.js", "priv/**", "deps/**", "_build/**"],
+  "rules": {
+    "unicorn/no-useless-spread": "off",
+    "no-unused-vars": ["warn", { "ignoreRestSiblings": true, "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }]
+  }
+}

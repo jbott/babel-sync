@@ -1,0 +1,4 @@
+{
+  "printWidth": 160,
+  "ignorePatterns": ["assets/vendor/**", "plugin/main.js", "priv/**", "deps/**", "_build/**"]
+}

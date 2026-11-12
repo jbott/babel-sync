@@ -70,9 +70,7 @@ export class Collab {
     doc.awareness.setLocalStateField("user", { name, color, colorLight: color + "40" });
 
     editor.dispatch({
-      effects: this.compartment.reconfigure(
-        yCollab(doc.text, doc.awareness, { undoManager: new Y.UndoManager(doc.text) }),
-      ),
+      effects: this.compartment.reconfigure(yCollab(doc.text, doc.awareness, { undoManager: new Y.UndoManager(doc.text) })),
     });
     editor.dispatch({ selection: editor.state.selection });
   }
@@ -81,7 +79,10 @@ export class Collab {
     for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
       const typed = editor.state.doc.toString();
       await view.save().catch(() => {});
-      const doc = (await this.engine()?.openDoc(binding.path).catch(() => null)) ?? null;
+      const doc =
+        (await this.engine()
+          ?.openDoc(binding.path)
+          .catch(() => null)) ?? null;
 
       if (this.bindings.get(editor) !== binding) {
         doc?.release();

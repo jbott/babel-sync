@@ -7,16 +7,7 @@ import { type Progress, type Status, SyncEngine } from "./engine.ts";
 import { IdbStore } from "./idb-store.ts";
 import { type Invitation, readInvitation } from "./invitation.ts";
 import { nativeFetch } from "./native-fetch.ts";
-import {
-  type Callback,
-  type Pending,
-  beginAuthorization,
-  finishAuthorization,
-  needsRefresh,
-  refreshTokens,
-  registerClient,
-  revokeTokens,
-} from "./oauth.ts";
+import { type Callback, beginAuthorization, finishAuthorization, needsRefresh, refreshTokens, registerClient, revokeTokens } from "./oauth.ts";
 import { ObsidianFs } from "./obsidian-fs.ts";
 import { DEFAULT_SETTINGS, type RemoteVault, type Settings, SettingsTab, maxBlobBytes } from "./settings.ts";
 
@@ -30,10 +21,7 @@ const PASSING = /^(timed out waiting for (synced|joined)|timeout)$/;
 const CURSOR_COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#ca8a04", "#ea580c", "#dc2626", "#db2777"];
 const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\//, /^\.obsidian\/cache$/, /^\.trash\//];
 
-export type VaultsReply =
-  | { kind: "vaults"; vaults: RemoteVault[] }
-  | { kind: "signed-out" }
-  | { kind: "failed"; message: string };
+export type VaultsReply = { kind: "vaults"; vaults: RemoteVault[] } | { kind: "signed-out" } | { kind: "failed"; message: string };
 
 const LABELS: Record<Status, string> = {
   offline: "Babel Sync: offline",
@@ -338,8 +326,7 @@ export default class BabelSyncPlugin extends Plugin {
     if (reply.kind === "failed") return void this.notify(`Babel Sync: ${reply.message}`);
 
     const server = this.settings.serverUrl;
-    const confirm = (vault: RemoteVault) =>
-      new ConnectModal(this.app, this, { server, vaultId: vault.id, vaultName: vault.name, files: vault.files }).open();
+    const confirm = (vault: RemoteVault) => new ConnectModal(this.app, this, { server, vaultId: vault.id, vaultName: vault.name, files: vault.files }).open();
 
     if (reply.vaults.length === 0) {
       this.notify("Babel Sync: there are no vaults on the server yet. Create one in the web app, then choose a vault from the plugin's settings.", 12_000);
@@ -450,11 +437,13 @@ export default class BabelSyncPlugin extends Plugin {
     if (!locks) return;
 
     const held = new Promise<void>((resolve) => (this.release = resolve));
-    locks.request(`babelsync:${this.vaultKey()}`, { steal: true }, () => held).catch(() => {
-      if (this.retired) return;
-      this.record("another copy of the plugin took over this vault; this one has stopped");
-      this.retire();
-    });
+    locks
+      .request(`babelsync:${this.vaultKey()}`, { steal: true }, () => held)
+      .catch(() => {
+        if (this.retired) return;
+        this.record("another copy of the plugin took over this vault; this one has stopped");
+        this.retire();
+      });
   }
 
   private retire(): void {
