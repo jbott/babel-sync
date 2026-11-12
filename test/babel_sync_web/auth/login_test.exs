@@ -51,6 +51,27 @@ defmodule BabelSyncWeb.Auth.LoginTest do
     refute has_element?(view, "#oidc-sign-in")
   end
 
+  test "the sign-in page shows what the product does around the sign-in card", %{conn: conn} do
+    with_mode(:multi)
+    with_auth([:magic_link])
+
+    {:ok, view, _html} = live(conn, ~p"/login")
+    assert has_element?(view, "#landing #sign-in #link-form")
+    assert has_element?(view, "#landing-editing #landing-desktop")
+    assert has_element?(view, "#landing-editing #landing-phone")
+    assert has_element?(view, "#landing-devices #landing-settings")
+    assert has_element?(view, "#landing-more")
+  end
+
+  test "a link that cannot be used shows only the card", %{conn: conn} do
+    with_mode(:multi)
+    with_auth([:magic_link])
+
+    {:ok, view, _html} = live(conn, ~p"/login/link/nonsense")
+    assert has_element?(view, "#sign-in #link-expired")
+    refute has_element?(view, "#landing")
+  end
+
   describe "magic link" do
     setup do
       with_mode(:multi)

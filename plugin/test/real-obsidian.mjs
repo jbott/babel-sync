@@ -275,6 +275,94 @@ const exists = (device, path) => device.page.evaluate((path) => app.vault.adapte
 const editorText = (device) => device.page.evaluate(() => app.workspace.activeEditor?.editor?.getValue() ?? null);
 const openNote = (device, path) => device.page.evaluate((path) => app.workspace.openLinkText(path, "", false), path);
 
+const SHOWN = "Trips/Lisbon in May.md";
+const SHOWN_TEXT = [
+  "Five days, two of us, no car. Staying in Alfama near the Sé.",
+  "",
+  "## Booked",
+  "",
+  "- [x] Flights, arriving Friday 14:10",
+  "- [x] Apartment on Rua de São João da Praça",
+  "- [ ] Train to Sintra on Sunday, leave before 9",
+  "- [ ] Dinner at Prado, ask for the counter",
+  "",
+  "## Ideas",
+  "",
+  "Walk the hill up to Graça for the view at sunset, then down through Mouraria.",
+  "Tram 28 only early in the morning. The Gulbenkian on the rainy day.",
+  "",
+  "See [[Packing list]] and [[Portugal budget]].",
+  "",
+].join("\n");
+
+async function showCursor(writer, reader, from, to) {
+  await writer.page.bringToFront();
+  await writer.page.evaluate(
+    (path, from, to) => {
+      const plugin = app.plugins.plugins.babelsync;
+      plugin.presence = () => ({ name: "Maya", color: "#db2777" });
+      return app.workspace.openLinkText(path, "", false).then(() => {
+        const editor = app.workspace.activeEditor.editor;
+        editor.focus();
+        editor.setSelection(from, to);
+      });
+    },
+    SHOWN,
+    from,
+    to,
+  );
+  await writer.page.keyboard.press("Shift");
+  await eventually("the picture shows the other person's cursor", () => reader.evaluate(() => !!document.querySelector(".cm-ySelectionCaret")));
+  await reader.addStyleTag({ content: ".cm-ySelectionInfo { opacity: 1 !important; transition: none !important; }" });
+}
+
+async function deskPicture(laptop, desk) {
+  await laptop.page.evaluate((path, text) => app.vault.adapter.mkdir("Trips").then(() => app.vault.create(path, text)), SHOWN, SHOWN_TEXT);
+  for (const name of ["Packing list.md", "Portugal budget.md", "Reading/The Book of Disquiet.md", "Recipes/Pastéis de nata.md"]) {
+    await laptop.page.evaluate(async (name) => {
+      const folder = name.includes("/") ? name.slice(0, name.lastIndexOf("/")) : "";
+      if (folder && !(await app.vault.adapter.exists(folder))) await app.vault.createFolder(folder);
+      await app.vault.create(name, "");
+    }, name);
+  }
+  await eventually("the note to picture reaches the desk", async () => (await read(desk, SHOWN)) === SHOWN_TEXT);
+  await desk.page.bringToFront();
+  await openNote(desk, SHOWN);
+  await desk.page.evaluate(() => document.querySelectorAll(".notice").forEach((notice) => notice.remove()));
+  await desk.page.evaluate(() => app.workspace.leftSplit.setSize?.(230));
+  await showCursor(laptop, desk.page, { line: 6, ch: 6 }, { line: 6, ch: 21 });
+  await desk.page.bringToFront();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  await desk.page.screenshot({ path: join(process.env.SHOTS, "editor-desktop.png") });
+
+  await eventually("the desk is in sync for its picture", () => desk.page.evaluate(() => app.plugins.plugins.babelsync.status === "synced"));
+  await desk.page.evaluate(() => {
+    app.setting.open();
+    app.setting.openTabById("babelsync");
+  });
+  await eventually("the settings picture shows a vault in sync", () => desk.page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.includes("Up to date")));
+  await desk.page.screenshot({ path: join(process.env.SHOTS, "sync-settings.png") });
+  await desk.page.evaluate(() => app.setting.close());
+}
+
+async function pocketPicture(laptop, phone) {
+  await phone.setViewport({ width: 390, height: 780, deviceScaleFactor: 3 });
+  await phone.evaluate((path) => app.workspace.openLinkText(path, "", false), SHOWN);
+  await phone.evaluate(() => document.querySelectorAll(".notice").forEach((notice) => notice.remove()));
+  await showCursor(laptop, phone, { line: 7, ch: 6 }, { line: 7, ch: 21 });
+  await phone.bringToFront();
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await phone.screenshot({ path: join(process.env.SHOTS, "editor-phone.png") });
+  await phone.evaluate(() => {
+    app.setting.open();
+    app.setting.openTabById("babelsync");
+  });
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  await phone.screenshot({ path: join(process.env.SHOTS, "sync-settings-phone.png") });
+  await phone.evaluate(() => app.setting.close());
+  await phone.setViewport(null);
+}
+
 async function run() {
   const listed = await (await fetch(`${server}/api/vaults`)).json();
   const vaultId = process.env.BABELSYNC_VAULT_ID ?? listed.vaults?.[0]?.id;
@@ -527,6 +615,8 @@ async function run() {
   });
   await eventually("verify finds a change that the file's size and time hid", async () => (await read(laptop, "Verified.md")) === "hidden new text\n", 15000);
 
+  if (process.env.SHOTS) await deskPicture(laptop, desk);
+
   await desk.page.evaluate(() => app.emulateMobile(true)).catch(() => {});
   const phone = await findApp(desk.browser).catch(() => null);
   if (phone) {
@@ -536,6 +626,7 @@ async function run() {
     await eventually("the plugin loads and syncs under mobile emulation", () => phone.evaluate(() => app.plugins.plugins.babelsync?.engine?.status === "synced"), 30000);
     await laptop.page.evaluate(() => app.vault.create("ForPhone.md", "to the phone\n"));
     await eventually("a note reaches the emulated phone", async () => (await read(desk, "ForPhone.md")) === "to the phone\n");
+    if (process.env.SHOTS) await pocketPicture(laptop, phone);
     await phone.evaluate(() => app.emulateMobile(false)).catch(() => {});
   } else {
     check("Obsidian's mobile emulation is on", false, "app did not come back");
