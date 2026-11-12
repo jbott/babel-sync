@@ -77,16 +77,18 @@ export class SettingsTab extends PluginSettingTab {
     const { settings } = this.plugin;
     containerEl.empty();
 
-    this.summary = new Setting(containerEl).setHeading();
+    const waiting = !settings.vaultId || this.reach === "signed-out" || this.signInUrl !== null;
+    const top = waiting ? this.card(containerEl) : containerEl;
+
+    this.summary = new Setting(top).setHeading();
     this.summarize();
 
     if (settings.vaultId) this.connected(this.summary);
-    else this.connect(containerEl);
-    if (settings.vaultId) this.leaving(containerEl);
+    else this.connect(top);
 
     new Setting(containerEl)
       .setName("This device")
-      .setDesc("Shown beside your name on your cursor, in the server's list of devices, and in the name of a copy kept when two devices change the same attachment.")
+      .setDesc("Shown on your cursor and in the names of conflict copies.")
       .addText((text) => {
         text.setValue(settings.deviceName);
         text.inputEl.addEventListener("change", () => void this.plugin.renameDevice(text.getValue().trim()));
@@ -96,12 +98,12 @@ export class SettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Sync Obsidian settings")
-      .setDesc("Themes, snippets, hotkeys and plugins. Window layout stays on each device.")
+      .setDesc("Themes, snippets, hotkeys and plugins, but not window layout.")
       .addToggle((toggle) => toggle.setValue(settings.syncConfig).onChange((value) => this.save({ syncConfig: value })));
 
     new Setting(containerEl)
       .setName("Largest attachment (MiB)")
-      .setDesc("Bigger files are left on the server and not downloaded here. 0 means no limit.")
+      .setDesc("Bigger files stay on the server. 0 means no limit.")
       .addText((text) => {
         text.inputEl.type = "number";
         text.setValue(String(settings.maxFileMebibytes)).onChange((value) => {
@@ -113,20 +115,16 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName("Troubleshooting").setHeading();
 
     new Setting(containerEl)
-      .setName(this.plugin.updated ? "Update ready" : "Version")
-      .setDesc(
-        this.plugin.updated
-          ? `A newer plugin has arrived from the server. This one is build ${this.plugin.build}; reload to switch.`
-          : `Build ${this.plugin.build || "unknown"}. Updates come from the server; reload after one to use it.`,
-      )
+      .setName(this.plugin.updated ? "Update ready" : "Reload")
+      .setDesc(this.plugin.updated ? "Reload to start using it." : "Restart Babel Sync without restarting Obsidian.")
       .addButton((button) => {
-        button.setButtonText("Reload plugin").onClick(() => this.plugin.reload());
+        button.setButtonText(this.plugin.updated ? "Update" : "Reload").onClick(() => this.plugin.reload());
         if (this.plugin.updated) button.setCta();
       });
 
     new Setting(containerEl)
       .setName("Debug log")
-      .setDesc("Copy what the plugin has done recently, with its version and status, to paste into a bug report. It holds file names but no passwords or tokens.")
+      .setDesc("For bug reports. Includes file names, never passwords.")
       .addButton((button) =>
         button.setButtonText("Copy debug log").onClick(async () => {
           await navigator.clipboard.writeText(this.plugin.debugLog());
@@ -136,13 +134,15 @@ export class SettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Reconnect")
-      .setDesc("Drop the connection to the server and open it again.")
+      .setDesc("Reopen the connection to the server.")
       .addButton((button) => button.setButtonText("Reconnect").onClick(() => this.plugin.restart(true)));
 
     new Setting(containerEl)
       .setName("Verify")
-      .setDesc("Read every file here again and check what this device holds against the server. Nothing is forgotten or deleted.")
+      .setDesc("Recheck every file against the server.")
       .addButton((button) => button.setButtonText("Verify").onClick(() => this.plugin.verify()));
+
+    if (settings.vaultId || settings.tokens) this.leaving(containerEl);
 
     containerEl.createEl("p", {
       cls: "setting-item-description babelsync-colophon",
@@ -163,7 +163,7 @@ export class SettingsTab extends PluginSettingTab {
 
     const row = new Setting(containerEl)
       .setName("Server")
-      .setDesc("Address of your Babel Sync server, for example notes.example.com")
+      .setDesc("For example notes.example.com")
       .addText((text) => {
         text.setPlaceholder("https://").setValue(serverUrl).onChange((value) => (address = value));
         text.inputEl.addEventListener("keydown", (event) => {
@@ -187,7 +187,18 @@ export class SettingsTab extends PluginSettingTab {
       );
     }
 
-    if (tokens) row.addButton((button) => button.setButtonText("Sign out").onClick(() => this.plugin.signOut()));
+  }
+
+  private card(containerEl: HTMLElement): HTMLElement {
+    const card = containerEl.createDiv();
+    Object.assign(card.style, {
+      border: "1px solid var(--interactive-accent)",
+      borderRadius: "var(--radius-m)",
+      background: "var(--background-secondary)",
+      padding: "var(--size-4-2) var(--size-4-4)",
+      marginBottom: "var(--size-4-6)",
+    });
+    return card;
   }
 
   private connected(summary: Setting): void {
@@ -212,12 +223,14 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private leaving(containerEl: HTMLElement): void {
-    const { serverUrl, vaultName, tokens } = this.plugin.settings;
+    const { serverUrl, vaultId, vaultName, tokens } = this.plugin.settings;
+
+    new Setting(containerEl).setName("Account").setHeading();
 
     if (tokens) {
       new Setting(containerEl)
         .setName("Sign out")
-        .setDesc(`Sign this device out of ${hostOf(serverUrl)}. It stays linked to ${vaultName || "its vault"}, and signing in again carries on from where it stopped.`)
+        .setDesc(vaultId ? `Syncing with ${vaultName || "the vault"} resumes when you sign back in.` : `Signed in to ${hostOf(serverUrl)}.`)
         .addButton((button) =>
           button.setButtonText("Sign out").onClick(async () => {
             await this.plugin.signOut();
@@ -226,9 +239,11 @@ export class SettingsTab extends PluginSettingTab {
         );
     }
 
+    if (!vaultId) return;
+
     new Setting(containerEl)
       .setName("Disconnect this vault")
-      .setDesc("Stop syncing this Obsidian vault and sign out. Notes stay here and on the server.")
+      .setDesc("Stop syncing and sign out. Nothing is deleted.")
       .addButton((button) =>
         button
           .setButtonText("Disconnect")
@@ -239,7 +254,7 @@ export class SettingsTab extends PluginSettingTab {
 
   private async begin(value: string): Promise<void> {
     const serverUrl = normalizeServer(value);
-    if (!serverUrl) return void new Notice("Enter the address of your Babel Sync server first.");
+    if (!serverUrl) return void new Notice("Enter your server address first.");
 
     if (serverUrl !== this.plugin.settings.serverUrl) {
       if (this.plugin.settings.tokens) await this.plugin.signOut();
@@ -259,7 +274,7 @@ export class SettingsTab extends PluginSettingTab {
 
   private headline(): { name: string; description: string } {
     const { serverUrl, vaultId, vaultName, tokens } = this.plugin.settings;
-    const ready = "Sign-in is ready. Open the page, approve this device, and you will come straight back.";
+    const ready = "Open the sign-in page and approve this device.";
 
     if (!vaultId) {
       if (this.reach === "checking") return { name: "Checking the server…", description: hostOf(serverUrl) };
@@ -268,19 +283,19 @@ export class SettingsTab extends PluginSettingTab {
       if (serverUrl && (tokens || this.reach === "open")) {
         return {
           name: `Signed in to ${hostOf(serverUrl)}`,
-          description: "One step left: choose the vault on the server that this Obsidian vault syncs with.",
+          description: "Now choose a vault to sync with.",
         };
       }
       return {
         name: "Not connected",
-        description: "Enter your server and sign in; the rest follows. Or open the vault in the web app and choose Connect Obsidian.",
+        description: "Enter your server and sign in.",
       };
     }
 
     if (this.reach === "signed-out") {
       return {
         name: `Signed out of ${vaultName || "your vault"} on ${hostOf(serverUrl)}`,
-        description: this.signInUrl ? ready : "Sign in again to keep syncing. Changes made here meanwhile are kept and sent afterwards.",
+        description: this.signInUrl ? ready : "Sign in to keep syncing. Changes made here are kept.",
       };
     }
 
@@ -299,11 +314,11 @@ export class SettingsTab extends PluginSettingTab {
       return `${verb} ${(progress.done + 1).toLocaleString()} of ${progress.total.toLocaleString()}…`;
     }
     if (status === "syncing") return "Syncing…";
-    if (status === "synced") return `Everything is up to date. ${files}, checked at ${clock(lastSynced ?? Date.now())}.`;
-    if (status === "error") return `Stopped on an error: ${lastError || "unknown"}. Try Reconnect below.`;
+    if (status === "synced") return `Up to date. ${files}, checked ${clock(lastSynced ?? Date.now())}.`;
+    if (status === "error") return `Error: ${lastError || "unknown"}. Try Reconnect.`;
 
-    const since = lastSynced ? ` Last in sync at ${clock(lastSynced)}.` : "";
-    return `Offline. Changes are kept and sent when the server is reachable again.${since}`;
+    const since = lastSynced ? ` Last synced ${clock(lastSynced)}.` : "";
+    return `Offline. Changes are sent when the server is back.${since}`;
   }
 
   private statusChanged(): void {

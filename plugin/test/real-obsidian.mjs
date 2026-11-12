@@ -257,6 +257,8 @@ async function followLink(device, vaultId) {
         heading.innerText.startsWith("Syncing with ") &&
         heading.querySelectorAll("button").length === 0 &&
         leave?.querySelector("button")?.innerText === "Disconnect" &&
+        rows.indexOf("This device") < rows.indexOf("Disconnect this vault") &&
+        !rows.includes("Version") &&
         rows.includes("This device") &&
         rows.includes("Verify") &&
         !rows.includes("Your name") &&

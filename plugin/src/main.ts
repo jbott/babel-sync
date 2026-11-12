@@ -24,6 +24,7 @@ const TOKEN_CHECK_MS = 60_000;
 const UPDATE_CHECK_MS = 60_000;
 const UPDATE_FETCH_MS = 3_600_000;
 const SHIPPED = ["manifest.json", "main.js"];
+const PASSING = /^(timed out waiting for (synced|joined)|timeout)$/;
 const CURSOR_COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#ca8a04", "#ea580c", "#dc2626", "#db2777"];
 const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\//, /^\.obsidian\/cache$/, /^\.trash\//];
 
@@ -537,6 +538,7 @@ export default class BabelSyncPlugin extends Plugin {
     engine.on("log", (line) => this.record(line));
     engine.on("error", (reason) => {
       this.record(`error: ${reason}`);
+      if (PASSING.test(reason)) return;
       this.lastError = reason;
       this.notify(`Babel Sync: ${reason}`);
     });

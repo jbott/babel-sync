@@ -40,21 +40,21 @@ export class ConnectModal extends Modal {
     if (switching) {
       this.contentEl.createEl("p", {
         cls: "mod-warning",
-        text: `This Obsidian vault is already synced with ${current}. It is not possible to point it at a different vault without mixing the two.`,
+        text: `This vault already syncs with ${current}. Pointing it at another one mixes the two.`,
       });
       this.contentEl.createEl("p", {
-        text: `If you continue, the ${count(here)} here are copied into ${remote} on ${hostOf(server)}, and everything in ${remote} is copied here. Both end up holding both sets of notes, and that cannot be undone.`,
+        text: `The ${count(here)} here are copied into ${remote} on ${hostOf(server)}, and everything there is copied here. This cannot be undone.`,
       });
       this.contentEl.createEl("p", {
         cls: "setting-item-description",
-        text: `To have ${remote} on this device, make a new, empty Obsidian vault and connect that one instead.`,
+        text: `To get ${remote} on this device, connect a new, empty vault instead.`,
       });
     } else {
       this.contentEl.createEl("p", { text: `Sync this Obsidian vault (${local}) with ${remote} on ${hostOf(server)}?` });
       this.contentEl.createEl("p", { cls: "setting-item-description", text: this.consequence(here, there, remote) });
       this.contentEl.createEl("p", {
         cls: "setting-item-description",
-        text: "Only continue if you trust this server: it will receive every note in this vault.",
+        text: "The server receives every note in this vault.",
       });
     }
 
@@ -75,11 +75,11 @@ export class ConnectModal extends Modal {
   }
 
   private consequence(here: number, there: number | undefined, remote: string): string {
-    if (here === 0) return `This vault is empty, so it will be filled with what is in ${remote}.`;
-    if (there === 0) return `${remote} is empty, so the ${count(here)} here will be uploaded to it.`;
+    if (here === 0) return `This vault is empty and will be filled from ${remote}.`;
+    if (there === 0) return `${remote} is empty. The ${count(here)} here will be uploaded.`;
 
     const theirs = there === undefined ? `whatever is in ${remote}` : `the ${count(there)} in ${remote}`;
-    return `The ${count(here)} here and ${theirs} will be merged: everything here is uploaded and everything there is downloaded. Nothing is deleted, and where both have a file of the same name with different contents, both are kept.`;
+    return `The ${count(here)} here and ${theirs} will be merged. Nothing is deleted. Files that differ are both kept.`;
   }
 
   private async connect(): Promise<void> {
@@ -100,7 +100,7 @@ export class ConnectModal extends Modal {
     }
 
     this.contentEl.empty();
-    this.contentEl.createEl("p", { text: "One more step: approve this device on the sign-in page. You will come straight back here." });
+    this.contentEl.createEl("p", { text: "Approve this device on the sign-in page." });
     new Setting(this.contentEl).addButton((button) =>
       button
         .setButtonText("Open sign-in page")
@@ -117,7 +117,7 @@ export class ConnectModal extends Modal {
     this.contentEl.createEl("p", { text: message });
     this.contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "The connection is saved. You can finish from Settings › Babel Sync.",
+      text: "You can finish from Settings › Babel Sync.",
     });
     new Setting(this.contentEl).addButton((button) => button.setButtonText("Close").onClick(() => this.close()));
   }
@@ -137,7 +137,7 @@ export class VaultPickerModal extends Modal {
     this.setTitle("Which vault?");
     this.contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "Choose the vault on the server that this Obsidian vault syncs with. You are asked to confirm before anything is sent.",
+      text: "Choose a vault to sync with. Nothing is sent until you confirm.",
     });
 
     for (const vault of this.vaults) {
@@ -172,11 +172,11 @@ export class DisconnectModal extends Modal {
     const { vaultName, serverUrl } = this.plugin.settings;
     this.setTitle("Disconnect this vault?");
     this.contentEl.createEl("p", {
-      text: `This Obsidian vault will no longer sync with ${vaultName ? `“${vaultName}”` : "its vault"} on ${hostOf(serverUrl)}. Your notes stay here and on the server; nothing is deleted.`,
+      text: `Stop syncing with ${vaultName ? `“${vaultName}”` : "the vault"} on ${hostOf(serverUrl)}. Nothing is deleted.`,
     });
     this.contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "This device is signed out and forgets what it has synced. Connecting again later compares every file afresh.",
+      text: "Connecting again later compares every file from scratch.",
     });
 
     new Setting(this.contentEl)
