@@ -1,5 +1,6 @@
 import { BabelSyncClient } from "@babelsync/core";
 import { Notice, Platform, Plugin, TFile, TFolder, apiVersion, debounce, requestUrl } from "obsidian";
+import { HISTORY_STYLE, HISTORY_VIEW, HistoryView } from "./history.ts";
 import { Collab } from "./collab.ts";
 import { ConnectModal, VaultPickerModal } from "./connect.ts";
 import { type Progress, type Status, SyncEngine } from "./engine.ts";
@@ -90,6 +91,7 @@ export default class BabelSyncPlugin extends Plugin {
     this.addSettingTab(new SettingsTab(this.app, this));
     this.registerEditorExtension(this.collab.extension);
 
+    this.addHistory();
     this.addCommand({ id: "verify", name: "Verify this vault against the server", callback: () => this.verify() });
     this.addCommand({ id: "reconnect", name: "Reconnect", callback: () => this.restart(true) });
     this.registerInterval(window.setInterval(() => void this.fetchUpdate(), UPDATE_FETCH_MS));
@@ -222,6 +224,56 @@ export default class BabelSyncPlugin extends Plugin {
     this.updated = true;
     this.onStatus?.(this.status);
     this.notify("Babel Sync was updated. Tap here to reload it and use the new version.", 30_000, () => void this.reload());
+  }
+
+  private addHistory(): void {
+    const style = document.head.createEl("style", { text: HISTORY_STYLE });
+    this.register(() => style.remove());
+
+    this.registerView(
+      HISTORY_VIEW,
+      (leaf) =>
+        new HistoryView(leaf, {
+          client: () => this.client,
+          vaultId: () => this.settings.vaultId,
+          noteId: (path) => this.engine?.noteId(path),
+        }),
+    );
+
+    this.addCommand({
+      id: "history",
+      name: "Show version history",
+      icon: "history",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.engine?.noteId(file.path)) return false;
+        if (!checking) void this.showHistory(file);
+        return true;
+      },
+    });
+
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!(file instanceof TFile) || !this.engine?.noteId(file.path)) return;
+        menu.addItem((item) =>
+          item
+            .setTitle("Version history")
+            .setIcon("history")
+            .onClick(() => void this.showHistory(file)),
+        );
+      }),
+    );
+  }
+
+  async showHistory(file: TFile): Promise<void> {
+    const { workspace } = this.app;
+    let leaf = workspace.getLeavesOfType(HISTORY_VIEW)[0];
+    if (!leaf) {
+      leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf("split");
+      await leaf.setViewState({ type: HISTORY_VIEW, active: true });
+    }
+    await workspace.revealLeaf(leaf);
+    if (leaf.view instanceof HistoryView) await leaf.view.follow(file, true);
   }
 
   async adopt({ server, vaultId, vaultName }: Invitation): Promise<void> {

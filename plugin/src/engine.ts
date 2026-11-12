@@ -335,6 +335,11 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     return this.run(() => this.reconcile([], false, UNCONDITIONAL, THOROUGHLY));
   }
 
+  noteId(path: string): string | undefined {
+    const id = this.byPath.get(path);
+    return id && this.byId.get(id)?.kind === "doc" ? id : undefined;
+  }
+
   get account(): string {
     return this.vault?.user ?? "";
   }

@@ -357,6 +357,34 @@ async function deskPicture(laptop, desk) {
   await desk.page.evaluate(() => app.setting.close());
 }
 
+async function history(page, path, shot) {
+  const pane = (script) => page.evaluate(`(() => { const view = app.workspace.getLeavesOfType("babelsync-history")[0]?.view; const el = view?.contentEl; return (${script}); })()`);
+  await page.bringToFront();
+  await page.evaluate((path) => app.vault.create(path, "Pack the quick fox\nand the sun hat\n"), path);
+  await eventually(`${shot}: the new note is known to the server`, () => page.evaluate((path) => !!app.plugins.plugins.babelsync.engine?.noteId(path), path));
+  await openNote({ page }, path);
+  await page.evaluate(() => app.commands.executeCommandById("babelsync:history"));
+  await eventually(`${shot}: the history pane lists a version`, () => pane(`el?.querySelectorAll(".babelsync-history-version").length >= 1`));
+
+  await page.evaluate((path) => app.vault.modify(app.vault.getAbstractFileByPath(path), "Pack the slow fox\nand the sun hat\nand a towel\n"), path);
+  await eventually(`${shot}: an edit becomes a second version`, () => pane(`view.refresh().then(() => el.querySelectorAll(".babelsync-history-version").length >= 2)`), 30000);
+  await pane(`el.querySelector(".babelsync-history-version").click()`);
+  await eventually(`${shot}: the newest version shows the words it changed`, () =>
+    pane(`el.querySelector(".babelsync-history-content .is-added")?.textContent === "slow" && el.querySelector(".babelsync-history-content .is-removed")?.textContent === "quick"`),
+  );
+  if (process.env.SHOTS) {
+    await page.evaluate(() => document.querySelectorAll(".notice").forEach((notice) => notice.remove()));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await page.screenshot({ path: join(process.env.SHOTS, `${shot}.png`) });
+  }
+
+  await pane(`el.querySelectorAll(".babelsync-history-version")[1].click()`);
+  await eventually(`${shot}: the older version is chosen`, () => pane(`el.querySelectorAll(".babelsync-history-version")[1].classList.contains("is-chosen") && !!el.querySelector(".babelsync-history-line")`));
+  await pane(`el.querySelector(".babelsync-history-restore").click()`);
+  await pane(`el.querySelector(".babelsync-history-restore").click()`);
+  await eventually(`${shot}: restoring brings the old text back`, async () => (await read({ page }, path)) === "Pack the quick fox\nand the sun hat\n", 20000);
+}
+
 async function pocketPicture(laptop, phone) {
   await phone.setViewport({ width: 390, height: 780, deviceScaleFactor: 3 });
   await phone.evaluate((path) => app.workspace.openLinkText(path, "", false), SHOWN);
@@ -641,6 +669,8 @@ async function run() {
   await eventually("verify finds a change that the file's size and time hid", async () => (await read(laptop, "Verified.md")) === "hidden new text\n", 15000);
 
   if (process.env.SHOTS) await deskPicture(laptop, desk);
+  await history(desk.page, "History.md", "history-desktop");
+  await desk.page.evaluate(() => app.workspace.detachLeavesOfType("babelsync-history"));
 
   await desk.page.evaluate(() => app.emulateMobile(true)).catch(() => {});
   const phone = await findApp(desk.browser).catch(() => null);
@@ -652,6 +682,9 @@ async function run() {
     await laptop.page.evaluate(() => app.vault.create("ForPhone.md", "to the phone\n"));
     await eventually("a note reaches the emulated phone", async () => (await read(desk, "ForPhone.md")) === "to the phone\n");
     if (process.env.SHOTS) await pocketPicture(laptop, phone);
+    await phone.setViewport({ width: 390, height: 780, deviceScaleFactor: 3 });
+    await history(phone, "History on the phone.md", "history-phone");
+    await phone.setViewport(null);
     await phone.evaluate(() => app.emulateMobile(false)).catch(() => {});
   } else {
     check("Obsidian's mobile emulation is on", false, "app did not come back");

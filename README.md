@@ -6,7 +6,7 @@ A self-hosted live-sync server for [Obsidian](https://obsidian.md) vaults.
 - **Web app** to browse, read and edit vaults, with live cursors when several people are in the same note.
 - **MCP server** at `/mcp` that gives agents the vault as a file system: list, find, search, read by line range, edit in place, move, trash and restore.
 - **Attachments** of any size, uploaded in resumable 8 MiB parts.
-- **History and trash** for notes and attachments, kept for a configurable number of days.
+- **History and trash** for notes and attachments, kept for a configurable number of days. Each saved version of a note shows what it changed, word by word, or everything since then, in the web app and in a version history pane in Obsidian (the Show version history command, or Version history in a note's menu).
 - **One user or many**: a single-user server on a disk, or a multi-user server on PostgreSQL and S3 with shared vaults and owner, editor and viewer roles.
 
 ## Run it
