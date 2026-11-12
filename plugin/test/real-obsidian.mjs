@@ -250,17 +250,17 @@ async function followLink(device, vaultId) {
       const tab = document.querySelector(".vertical-tab-content");
       const heading = tab.querySelector(".setting-item-heading");
       const rows = [...tab.querySelectorAll(".setting-item")].map((row) => row.querySelector(".setting-item-name")?.innerText ?? "");
-      const leave = [...tab.querySelectorAll(".setting-item")].find((row) => row.querySelector(".setting-item-name")?.innerText === "Disconnect this vault");
+      const leave = [...tab.querySelectorAll(".setting-item")].find((row) => row.querySelector(".setting-item-name")?.innerText === "Disconnect vault");
       return (
         !tab.querySelector("select") &&
         !tab.querySelector("input[type=color]") &&
         heading.innerText.startsWith("Syncing with ") &&
         heading.querySelectorAll("button").length === 0 &&
         leave?.querySelector("button")?.innerText === "Disconnect" &&
-        rows.indexOf("This device") < rows.indexOf("Disconnect this vault") &&
+        rows.indexOf("Device name") < rows.indexOf("Disconnect vault") &&
         !rows.includes("Version") &&
-        rows.includes("This device") &&
-        rows.includes("Verify") &&
+        rows.includes("Device name") &&
+        rows.includes("Verify files") &&
         !rows.includes("Your name") &&
         !rows.includes("Compare everything again")
       );

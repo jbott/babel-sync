@@ -87,7 +87,7 @@ export class SettingsTab extends PluginSettingTab {
     else this.connect(top);
 
     new Setting(containerEl)
-      .setName("This device")
+      .setName("Device name")
       .setDesc("Shown on your cursor and in the names of conflict copies.")
       .addText((text) => {
         text.setValue(settings.deviceName);
@@ -97,12 +97,12 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName("What syncs").setHeading();
 
     new Setting(containerEl)
-      .setName("Sync Obsidian settings")
-      .setDesc("Themes, snippets, hotkeys and plugins, but not window layout.")
+      .setName("Obsidian settings")
+      .setDesc("Sync themes, snippets, hotkeys and plugins, but not window layout.")
       .addToggle((toggle) => toggle.setValue(settings.syncConfig).onChange((value) => this.save({ syncConfig: value })));
 
     new Setting(containerEl)
-      .setName("Largest attachment (MiB)")
+      .setName("Attachment size limit (MiB)")
       .setDesc("Bigger files stay on the server. 0 means no limit.")
       .addText((text) => {
         text.inputEl.type = "number";
@@ -138,7 +138,7 @@ export class SettingsTab extends PluginSettingTab {
       .addButton((button) => button.setButtonText("Reconnect").onClick(() => this.plugin.restart(true)));
 
     new Setting(containerEl)
-      .setName("Verify")
+      .setName("Verify files")
       .setDesc("Recheck every file against the server.")
       .addButton((button) => button.setButtonText("Verify").onClick(() => this.plugin.verify()));
 
@@ -162,7 +162,7 @@ export class SettingsTab extends PluginSettingTab {
     let address = serverUrl;
 
     const row = new Setting(containerEl)
-      .setName("Server")
+      .setName("Server address")
       .setDesc("For example notes.example.com")
       .addText((text) => {
         text.setPlaceholder("https://").setValue(serverUrl).onChange((value) => (address = value));
@@ -242,7 +242,7 @@ export class SettingsTab extends PluginSettingTab {
     if (!vaultId) return;
 
     new Setting(containerEl)
-      .setName("Disconnect this vault")
+      .setName("Disconnect vault")
       .setDesc("Stop syncing and sign out. Nothing is deleted.")
       .addButton((button) =>
         button

@@ -281,7 +281,7 @@ defmodule BabelSyncWeb.VaultLive.Connect do
             </.fact>
             <.fact icon="hero-swatch">
               Themes, snippets, hotkeys and plugins sync too, unless you turn off
-              <.ui>Sync Obsidian settings</.ui>
+              <.ui>Obsidian settings</.ui>
               in the plugin.
             </.fact>
             <.fact icon="hero-link-slash">

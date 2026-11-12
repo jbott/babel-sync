@@ -170,7 +170,7 @@ export class DisconnectModal extends Modal {
 
   onOpen(): void {
     const { vaultName, serverUrl } = this.plugin.settings;
-    this.setTitle("Disconnect this vault?");
+    this.setTitle("Disconnect vault?");
     this.contentEl.createEl("p", {
       text: `Stop syncing with ${vaultName ? `“${vaultName}”` : "the vault"} on ${hostOf(serverUrl)}. Nothing is deleted.`,
     });
