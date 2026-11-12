@@ -106,6 +106,33 @@ defmodule BabelSyncWeb.Auth.LoginTest do
       assert redirected_to(again) == "/login"
     end
 
+    test "an address with three unused links is sent no more", %{conn: conn} do
+      user(%{email: "ada@example.com"})
+
+      for _ <- 1..3 do
+        :ok = Auth.MagicLink.request("ada@example.com", &("http://x/login/link/" <> &1))
+        _token = link_token()
+      end
+
+      {:ok, view, _html} = live(conn, ~p"/login")
+      view |> form("#link-form", link: %{email: "ada@example.com"}) |> render_submit()
+      assert has_element?(view, "#link-sent")
+      refute_email_sent()
+    end
+
+    test "a mail server that refuses the message is reported, not crashed on", %{conn: conn} do
+      user(%{email: "ada@example.com"})
+      previous = Application.get_env(:babel_sync, BabelSync.Mailer)
+      Application.put_env(:babel_sync, BabelSync.Mailer, adapter: BabelSync.RefusingMailAdapter)
+      on_exit(fn -> Application.put_env(:babel_sync, BabelSync.Mailer, previous) end)
+
+      {:ok, view, _html} = live(conn, ~p"/login")
+      html = view |> form("#link-form", link: %{email: "ada@example.com"}) |> render_submit()
+      refute has_element?(view, "#link-sent")
+      assert html =~ "could not be sent"
+      assert BabelSync.Repo.aggregate(BabelSync.Auth.LoginLink, :count) == 0
+    end
+
     test "an unknown address gets the same answer but no mail", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/login")
       view |> form("#link-form", link: %{email: "stranger@example.com"}) |> render_submit()

@@ -40,8 +40,18 @@ defmodule BabelSyncWeb.AuthLive.Login do
   @impl true
   def handle_event("request_link", %{"link" => %{"email" => email}}, socket) do
     if Auth.enabled?(:magic_link) do
-      :ok = MagicLink.request(email, &url(~p"/login/link/#{&1}"))
-      {:noreply, assign(socket, :sent_to, String.trim(email))}
+      case MagicLink.request(email, &url(~p"/login/link/#{&1}")) do
+        :ok ->
+          {:noreply, assign(socket, :sent_to, String.trim(email))}
+
+        {:error, :busy} ->
+          {:noreply,
+           put_flash(socket, :error, "Too many sign-in links were sent. Try again in an hour.")}
+
+        {:error, :unsent} ->
+          {:noreply,
+           put_flash(socket, :error, "The sign-in email could not be sent. Try again later.")}
+      end
     else
       {:noreply, socket}
     end

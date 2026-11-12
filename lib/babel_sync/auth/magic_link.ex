@@ -5,9 +5,16 @@ defmodule BabelSync.Auth.MagicLink do
   Addresses that already have an account may always ask for a link.
   `BABELSYNC_ALLOWED_EMAILS` lets new people in: a list of addresses,
   `*@domain` patterns, or `*` for anyone.
+
+  Sending is bounded so the server cannot be used to flood a mailbox or
+  a mail server: an address with three links still unused gets no more
+  until one is used or expires, and the whole server sends at most
+  sixty links an hour.
   """
 
   import Ecto.Query
+
+  require Logger
 
   alias BabelSync.Accounts
   alias BabelSync.Accounts.User
@@ -15,24 +22,53 @@ defmodule BabelSync.Auth.MagicLink do
   alias BabelSync.{Mailer, Repo}
 
   @lifetime 900
+  @per_address 3
+  @per_hour 60
 
-  @spec request(String.t(), (String.t() -> String.t())) :: :ok
+  @spec request(String.t(), (String.t() -> String.t())) :: :ok | {:error, :busy | :unsent}
   def request(email, url) when is_binary(email) and is_function(url, 1) do
     email = User.normalize_email(email)
+    now = DateTime.utc_now()
 
-    if permitted?(email) do
-      token = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+    cond do
+      not permitted?(email) -> :ok
+      outstanding(email, now) >= @per_address -> :ok
+      sent_this_hour(now) >= @per_hour -> {:error, :busy}
+      true -> send_link(email, url, now)
+    end
+  end
 
+  defp send_link(email, url, now) do
+    token = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+
+    link =
       Repo.insert!(%LoginLink{
         email: email,
         token_hash: digest(token),
-        expires_at: DateTime.add(DateTime.utc_now(), @lifetime, :second)
+        expires_at: DateTime.add(now, @lifetime, :second)
       })
 
-      {:ok, _receipt} = Mailer.deliver(message(email, url.(token)))
-    end
+    case Mailer.deliver(message(email, url.(token))) do
+      {:ok, _receipt} ->
+        :ok
 
-    :ok
+      {:error, reason} ->
+        Repo.delete!(link)
+        Logger.warning("could not send a sign-in link: #{inspect(reason)}")
+        {:error, :unsent}
+    end
+  end
+
+  defp outstanding(email, now) do
+    Repo.aggregate(
+      from(l in LoginLink, where: l.email == ^email and l.expires_at > ^now),
+      :count
+    )
+  end
+
+  defp sent_this_hour(now) do
+    since = DateTime.add(now, @lifetime - 3600, :second)
+    Repo.aggregate(from(l in LoginLink, where: l.expires_at > ^since), :count)
   end
 
   @spec peek(String.t()) :: {:ok, String.t()} | :error
