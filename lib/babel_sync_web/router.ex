@@ -44,6 +44,10 @@ defmodule BabelSyncWeb.Router do
     plug :accepts, ["json"]
   end
 
+  scope "/", BabelSyncWeb do
+    get "/health", HealthController, :show
+  end
+
   scope "/mcp" do
     pipe_through :mcp
 

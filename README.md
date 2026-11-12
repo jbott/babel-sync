@@ -46,6 +46,13 @@ Run one copy of the server per database. Each open note is kept by one process o
 
 Each Mix dependency is its own Nix derivation, listed in `nix/deps.nix`, so a build only compiles what changed. When `mix.lock` changes, regenerate that file with `mix deps.nix --output nix/deps.nix`. The npm dependencies and the crates of the two Rust extensions are still pinned by hash in `nix/package.nix`: clear the stale one to `""`, build, and paste the hash Nix prints.
 
+## Running it
+
+- **HTTPS.** Passkeys, Claude and ChatGPT connectors, and phones on other networks all need the server at an `https://` address. Put it behind a reverse proxy that terminates TLS (Caddy, nginx, Traefik) on the same machine, and set `BABELSYNC_URL` to the public address. The server redirects plain HTTP to HTTPS only when `BABELSYNC_URL` is an `https://` address, and believes the proxy's `X-Forwarded-Proto` only when the proxy connects from the same machine. A server at a plain `http://` address on a home network works for the plugin and the web app, but not for passkeys.
+- **Backups.** In local mode, `babel_sync eval 'BabelSync.Backup.run("/backups/babelsync")'` writes a consistent snapshot of the database next to a copy of the attachments, while the server runs; run it from cron. Copying `babel_sync.db` itself can catch it half written. In remote mode, use `pg_dump` for the database and the bucket's own versioning or replication for attachments. Any vault can also be downloaded as a ZIP of plain files from its settings page.
+- **Upgrades.** Database migrations run when the server starts. Take a backup first.
+- **Health.** `GET /health` answers 200 while the database does and 503 when it does not.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -90,7 +97,7 @@ Sign-in:
 
 The server hands out its own copy of the plugin, so a device is set up from the server it will sync with. Open a vault in the web app and choose **Connect Obsidian**:
 
-1. **Get the plugin onto the device, once.** Download the vault folder (the plugin is inside, switched on and already pointed at the vault) and open it in Obsidian, or download the plugin alone and unzip it into an existing vault's `.obsidian/plugins/` folder, then enable it under Community plugins. Obsidian can install a plugin from a link only when it is in the community directory, and Babel Sync is not there yet. A device that already syncs keeps its plugin up to date through the sync itself.
+1. **Get the plugin onto the device, once.** Download the vault folder (the plugin is inside, switched on and already pointed at the vault) and open it in Obsidian, or download the plugin alone and unzip it into an existing vault's `.obsidian/plugins/` folder, then enable it under Community plugins. Obsidian can install a plugin from a link only when it is in the community directory, and Babel Sync is not there yet. A device that already syncs fetches new builds of the plugin from the server and offers to reload into them.
 2. **Tap Open in Obsidian.** The link (`obsidian://babelsync-connect?server=…&id=…`) opens Obsidian, which asks whether to sync the open vault with that server vault, then sends you to the server's consent page to approve the device. Nothing is typed and nothing is picked from a list.
 
 The same can be done by hand in Settings › Babel Sync, which shows the next step at the top: enter the server address, sign in, choose a vault.
