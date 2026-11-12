@@ -203,7 +203,7 @@ defmodule BabelSyncWeb.AuthLive.Login do
               Its edits merge with what you are typing and show up in each note's history.
             </p>
           </div>
-          <div class="mt-8 flex flex-col items-center gap-8 sm:flex-row sm:justify-center sm:gap-12 lg:gap-20">
+          <div class="mt-8 flex items-start justify-center pb-[2%]">
             <.chat
               id="landing-claude"
               app="Claude"
@@ -215,7 +215,7 @@ defmodule BabelSyncWeb.AuthLive.Login do
               ]}
               answer="Done. The times are under Booked, next to the train to Sintra."
               prompt="Reply to Claude"
-              class="w-[15rem] lg:w-[17rem]"
+              class="w-[54%] sm:w-[15rem] lg:w-[17rem]"
             />
             <.chat
               id="landing-chatgpt"
@@ -224,7 +224,7 @@ defmodule BabelSyncWeb.AuthLive.Login do
               calls={[{"Read file", "Trips/Lisbon in May.md"}]}
               answer="Two things are still open: the train to Sintra on Sunday, and dinner at Prado."
               prompt="Ask anything"
-              class="w-[15rem] lg:w-[17rem]"
+              class="relative -ml-[10%] mt-[16%] w-[54%] sm:-ml-14 sm:mt-24 sm:w-[15rem] lg:w-[17rem]"
             />
           </div>
         </section>
