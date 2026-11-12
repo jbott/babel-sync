@@ -223,6 +223,17 @@ defmodule BabelSyncWeb.VaultLive.Settings do
           </.form>
         </.panel>
 
+        <.panel id="export" title="Copy">
+          <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface p-4">
+            <p class="min-w-0 flex-1 basis-64 text-sm text-muted">
+              Download every note, attachment and folder as a ZIP. Unzipped, it opens in Obsidian as a vault.
+            </p>
+            <.button id="export-vault" href={~p"/v/#{@vault.id}/export"} download>
+              <.icon name="hero-arrow-down-tray" class="size-4" /> Download
+            </.button>
+          </div>
+        </.panel>
+
         <.panel title="Delete vault" tone="danger">
           <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-danger/30 bg-danger/5 p-4">
             <p class="min-w-0 flex-1 basis-64 text-sm text-muted">

@@ -86,6 +86,7 @@ defmodule BabelSyncWeb.Router do
     pipe_through [:browser, :welcome]
 
     get "/v/:vault_id/raw/*path", FileController, :raw
+    get "/v/:vault_id/export", ExportController, :show
     get "/obsidian/plugin.zip", ObsidianController, :plugin
     get "/v/:vault_id/obsidian/vault.zip", ObsidianController, :starter
 
