@@ -8,6 +8,7 @@ defmodule BabelSync.Agent.Text do
   @snippet_lines 30
   @line_width 300
   @matches_per_file 20
+  @slice_bytes 256 * 1024
 
   @type heading :: %{line: pos_integer(), level: 1..6, title: String.t()}
 
@@ -18,32 +19,57 @@ defmodule BabelSync.Agent.Text do
   @spec line_count(String.t()) :: non_neg_integer()
   def line_count(text), do: text |> lines() |> length()
 
-  @spec slice(String.t(), pos_integer(), pos_integer()) :: %{
+  @spec slice(String.t(), pos_integer(), pos_integer(), pos_integer()) :: %{
           text: String.t(),
           first: non_neg_integer(),
           last: non_neg_integer(),
-          total: non_neg_integer()
+          total: non_neg_integer(),
+          cut: boolean()
         }
-  def slice(text, offset, limit) do
+  def slice(text, offset, limit, max_bytes \\ @slice_bytes) do
     all = lines(text)
     total = length(all)
     wanted = all |> Enum.drop(offset - 1) |> Enum.take(limit)
+    {part, cut} = fit(wanted, max_bytes)
 
-    case wanted do
+    case part do
       [] ->
-        %{text: "", first: 0, last: 0, total: total}
+        %{text: "", first: 0, last: 0, total: total, cut: false}
 
-      ^all ->
-        %{text: text, first: 1, last: total, total: total}
+      ^all when byte_size(text) <= max_bytes ->
+        %{text: text, first: 1, last: total, total: total, cut: false}
 
       part ->
         %{
           text: Enum.join(part, "\n"),
           first: offset,
           last: offset + length(part) - 1,
-          total: total
+          total: total,
+          cut: cut
         }
     end
+  end
+
+  defp fit([first | _rest] = lines, max_bytes) do
+    fitting =
+      lines
+      |> Enum.scan({nil, -1}, fn line, {_previous, bytes} ->
+        {line, bytes + byte_size(line) + 1}
+      end)
+      |> Enum.take_while(fn {_line, bytes} -> bytes <= max_bytes end)
+      |> Enum.map(&elem(&1, 0))
+
+    case fitting do
+      [] -> {[valid_prefix(first, max_bytes)], true}
+      fitting -> {fitting, false}
+    end
+  end
+
+  defp fit([], _max_bytes), do: {[], false}
+
+  defp valid_prefix(line, max_bytes) do
+    prefix = binary_part(line, 0, min(byte_size(line), max_bytes))
+    if String.valid?(prefix), do: prefix, else: valid_prefix(line, max_bytes - 1)
   end
 
   @spec number(String.t(), pos_integer()) :: String.t()

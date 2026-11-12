@@ -17,6 +17,8 @@ defmodule BabelSync.Agent do
   earlier read is refused when the note has changed since.
   """
 
+  require Logger
+
   alias BabelSync.Accounts.Scope
   alias BabelSync.Agent.{Glob, Text}
   alias BabelSync.Bases
@@ -108,25 +110,30 @@ defmodule BabelSync.Agent do
          {:ok, glob} <- Glob.compile(opts[:glob] || "**") do
       context = opts[:context] || 0
 
-      found =
-        for(
-          %Entry{} = entry <- entries(vault),
-          searchable?(entry),
-          Regex.match?(glob, entry.path),
-          do: entry
-        )
-        |> Stream.chunk_every(@search_batch)
-        |> Stream.flat_map(fn batch ->
-          notes = Sync.texts(for %Entry{kind: :doc, id: id} <- batch, do: id)
+      search =
+        Task.async(fn ->
+          for(
+            %Entry{} = entry <- entries(vault),
+            searchable?(entry),
+            Regex.match?(glob, entry.path),
+            do: entry
+          )
+          |> Stream.chunk_every(@search_batch)
+          |> Stream.flat_map(fn batch ->
+            notes = Sync.texts(for %Entry{kind: :doc, id: id} <- batch, do: id)
 
-          for entry <- batch, {:ok, text} <- [searched(entry, notes)] do
-            %{path: entry.path, matches: Text.search(text, pattern, context)}
-          end
+            for entry <- batch, {:ok, text} <- [searched(entry, notes)] do
+              %{path: entry.path, matches: Text.search(text, pattern, context)}
+            end
+          end)
+          |> Stream.reject(&(&1.matches == []))
+          |> Enum.take(@searched_files)
         end)
-        |> Stream.reject(&(&1.matches == []))
-        |> Enum.take(@searched_files)
 
-      {:ok, found}
+      case Task.yield(search, search_time()) || Task.shutdown(search, :brutal_kill) do
+        {:ok, found} -> {:ok, found}
+        _slow -> {:error, :search_timeout}
+      end
     end
   end
 
@@ -684,7 +691,7 @@ defmodule BabelSync.Agent do
   end
 
   defp attach(vault, path, content) do
-    with {:ok, blob} <- Blobs.put(vault.id, content) do
+    with {:ok, blob} <- put_blob(vault.id, content) do
       attrs = %{path: path, kind: :blob, blob_hash: blob.hash, size: blob.size}
 
       case Vaults.create_entry(vault.id, attrs) do
@@ -706,11 +713,27 @@ defmodule BabelSync.Agent do
   end
 
   defp store(%Entry{} = entry, content) do
-    with {:ok, blob} <- Blobs.put(entry.vault_id, content),
+    with {:ok, blob} <- put_blob(entry.vault_id, content),
          {:ok, _entry} <- Vaults.update_entry(entry, %{blob_hash: blob.hash, size: blob.size}) do
       :ok
     end
   end
+
+  defp put_blob(vault_id, content) do
+    case Blobs.put(vault_id, content) do
+      {:ok, blob} ->
+        {:ok, blob}
+
+      {:error, :too_large} ->
+        {:error, :too_large}
+
+      {:error, reason} ->
+        Logger.error("could not store an agent's file: #{inspect(reason)}")
+        {:error, :storage_unavailable}
+    end
+  end
+
+  defp search_time, do: Application.get_env(:babel_sync, __MODULE__, [])[:search_ms] || 10_000
 
   defp guarded(if_rev, change) do
     fn current ->

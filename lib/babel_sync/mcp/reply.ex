@@ -67,6 +67,14 @@ defmodule BabelSync.MCP.Reply do
       @unchanged <> " The vault's owner can open it in the vault settings."
   end
 
+  defp message(:storage_unavailable),
+    do: "The server could not store the file just now." <> @unchanged <> " Try again later."
+
+  defp message(:search_timeout) do
+    "The search took longer than ten seconds and was stopped." <>
+      " Use a simpler pattern, or narrow it with glob."
+  end
+
   defp message(:invalid_pattern),
     do: "That pattern is empty or malformed. Check the brackets and braces."
 

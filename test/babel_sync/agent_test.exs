@@ -149,6 +149,28 @@ defmodule BabelSync.AgentTest do
     end
   end
 
+  test "a reply stops at 256 KiB, even inside one long line", %{scope: scope} do
+    long = String.duplicate("é", 200_000)
+    write(scope, "long.md", "short\n" <> long <> "\nend")
+
+    assert {:ok, %{first: 1, last: 1, cut: false}} = Agent.read_file(scope, nil, "long.md")
+
+    assert {:ok, %{first: 2, last: 2, cut: true, text: text}} =
+             Agent.read_file(scope, nil, "long.md", offset: 2)
+
+    assert byte_size(text) <= 256 * 1024
+    assert String.valid?(text)
+  end
+
+  test "a search that runs too long is stopped", %{scope: scope} do
+    Application.put_env(:babel_sync, Agent, search_ms: 0)
+    on_exit(fn -> Application.delete_env(:babel_sync, Agent) end)
+    write(scope, "slow.md", String.duplicate("a", 5000) <> "!")
+
+    assert {:error, :search_timeout} =
+             Agent.search_files(scope, nil, "(a+)+b", regex: true)
+  end
+
   describe "searching" do
     setup %{scope: scope} do
       write(scope, "Recipes/soup.md", "# Soup\nSimmer the Lentils for 20 minutes.\nServe.")

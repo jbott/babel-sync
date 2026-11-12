@@ -18,7 +18,10 @@ defmodule BabelSync.MCP.Tools.ReadFile do
       description: "Path inside the vault, for example Projects/plan.md"
 
     field :offset, :integer, description: "First line to return, counting from 1."
-    field :limit, :integer, description: "Number of lines to return. Defaults to 2000."
+
+    field :limit, :integer,
+      description:
+        "Number of lines to return. Defaults to 2000. A reply stops at 256 KiB; the first line says which lines it holds."
 
     field :line_numbers, :boolean,
       description: "Prefix every line with its number. The numbers are not part of the note."

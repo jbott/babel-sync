@@ -13,16 +13,28 @@ defmodule BabelSync.Blobs.Store.Disk do
 
   @impl true
   def put_part(_key, ref, number, data) do
-    File.mkdir_p!(staging(ref))
     target = part_path(ref, number)
     temporary = target <> ".tmp"
-    File.write!(temporary, data, [:binary])
-    File.rename!(temporary, target)
-    {:ok, Integer.to_string(number)}
+
+    with :ok <- File.mkdir_p(staging(ref)),
+         :ok <- File.write(temporary, data, [:binary]),
+         :ok <- File.rename(temporary, target) do
+      {:ok, Integer.to_string(number)}
+    else
+      {:error, reason} ->
+        File.rm(temporary)
+        {:error, reason}
+    end
   end
 
   @impl true
   def finish_upload(key, ref, parts) do
+    assemble(key, ref, parts)
+  rescue
+    error in [File.Error, MatchError] -> {:error, error}
+  end
+
+  defp assemble(key, ref, parts) do
     target = path(key)
     temporary = target <> "." <> ref <> ".tmp"
     File.mkdir_p!(Path.dirname(target))

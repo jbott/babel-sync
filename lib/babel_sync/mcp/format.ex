@@ -30,9 +30,17 @@ defmodule BabelSync.MCP.Format do
   def read(%{kind: :note} = read, numbered?) do
     range =
       case read do
-        %{total: 0} -> "empty"
-        %{first: 0} -> "no lines in that range, the note has #{read.total}"
-        _lines -> "lines #{read.first}-#{read.last} of #{read.total}"
+        %{total: 0} ->
+          "empty"
+
+        %{first: 0} ->
+          "no lines in that range, the note has #{read.total}"
+
+        %{cut: true} ->
+          "line #{read.first} of #{read.total}, cut at #{div(byte_size(read.text), 1024)} KiB"
+
+        _lines ->
+          "lines #{read.first}-#{read.last} of #{read.total}"
       end
 
     text =
