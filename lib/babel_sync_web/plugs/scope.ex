@@ -36,7 +36,7 @@ defmodule BabelSyncWeb.Plugs.Scope do
     end
   end
 
-  defp prolong(conn, %{user: %{} = user}) do
+  defp prolong(conn, %{user: user}) do
     now = System.system_time(:second)
 
     if bearer(conn) == nil and session_token(conn) != nil and not Auth.open?() and due?(conn, now) do
@@ -47,8 +47,6 @@ defmodule BabelSyncWeb.Plugs.Scope do
       conn
     end
   end
-
-  defp prolong(conn, _scope), do: conn
 
   defp due?(conn, now) do
     case get_session(conn, @prolonged_key) do
