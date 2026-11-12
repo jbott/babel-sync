@@ -354,10 +354,12 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
         writable: live.session.writable,
         release: () => {
           this.run(async () => {
-            if (live.session.writable && this.online) await live.session.flush().catch(() => {});
+            const sent = this.online && (await live.session.flush().then(() => true, () => false));
+            if (live.session.writable && !sent) entry.dirty = true;
+            if (this.byId.has(entry.id)) entry.doc = Y.encodeStateAsUpdate(this.doc(entry.id));
             this.open.delete(entry.id);
             this.release(entry.id);
-            if (this.byId.has(entry.id)) await this.writeBack(entry, live.session.text.toString());
+            await this.settle(entry.id);
           });
         },
       };
@@ -729,8 +731,9 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       if (hash === entry.hash) return this.touch(entry);
 
       if (this.open.has(entry.id)) {
-        if (this.doc(entry.id).getText("content").toString() === text) await this.record(entry, hash);
-        return;
+        if (this.doc(entry.id).getText("content").toString() !== text) return;
+        if (!this.online) entry.dirty = true;
+        return this.record(entry, hash);
       }
 
       await this.syncDoc(entry.id);

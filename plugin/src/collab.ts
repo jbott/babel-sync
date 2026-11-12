@@ -5,6 +5,9 @@ import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { OpenDoc, SyncEngine } from "./engine.ts";
 
+const SETTLE_ATTEMPTS = 3;
+const RETRY_MS = 2000;
+
 type Binding = { path: string; doc: OpenDoc | null; generation: number; unavailable: boolean };
 
 export class Collab {
@@ -36,7 +39,7 @@ export class Collab {
 
       visible.add(editor);
       const bound = this.bindings.get(editor);
-      if (!bound || bound.path !== view.file.path || bound.unavailable) void this.bind(editor, view.file.path);
+      if (!bound || bound.path !== view.file.path || bound.unavailable) void this.bind(editor, view);
     }
 
     for (const editor of [...this.bindings.keys()]) {
@@ -48,20 +51,14 @@ export class Collab {
     for (const editor of [...this.bindings.keys()]) this.unbind(editor);
   }
 
-  private async bind(editor: EditorView, path: string): Promise<void> {
+  private async bind(editor: EditorView, view: MarkdownView): Promise<void> {
+    const path = view.file!.path;
     this.unbind(editor);
     const binding: Binding = { path, doc: null, generation: ++this.generation, unavailable: false };
     this.bindings.set(editor, binding);
 
-    const doc = (await this.engine()?.openDoc(path).catch(() => null)) ?? null;
-    if (this.bindings.get(editor) !== binding) {
-      doc?.release();
-      return;
-    }
-    if (!doc) {
-      binding.unavailable = true;
-      return;
-    }
+    const doc = await this.openSettled(editor, view, binding);
+    if (!doc) return;
     binding.doc = doc;
 
     const shared = doc.text.toString();
@@ -77,6 +74,29 @@ export class Collab {
         yCollab(doc.text, doc.awareness, { undoManager: new Y.UndoManager(doc.text) }),
       ),
     });
+    editor.dispatch({ selection: editor.state.selection });
+  }
+
+  private async openSettled(editor: EditorView, view: MarkdownView, binding: Binding): Promise<OpenDoc | null> {
+    for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
+      const typed = editor.state.doc.toString();
+      await view.save().catch(() => {});
+      const doc = (await this.engine()?.openDoc(binding.path).catch(() => null)) ?? null;
+
+      if (this.bindings.get(editor) !== binding) {
+        doc?.release();
+        return null;
+      }
+      if (!doc) {
+        binding.unavailable = true;
+        return null;
+      }
+      if (editor.state.doc.toString() === typed) return doc;
+      doc.release();
+    }
+    binding.unavailable = true;
+    window.setTimeout(() => this.refresh(), RETRY_MS);
+    return null;
   }
 
   private unbind(editor: EditorView): void {

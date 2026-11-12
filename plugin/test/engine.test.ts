@@ -460,6 +460,44 @@ test("a note edited offline survives another device deleting it", async () => {
   assert.equal(await text(phone, "plan.md"), "first draft\nwritten on a plane\n");
 });
 
+test("typing in an open note while offline is sent once the connection returns", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "trip.md", "packed\n");
+  await eventually(async () => (await text(phone, "trip.md")) === "packed\n", "the note on the phone");
+
+  const open = (await phone.engine.openDoc("trip.md"))!;
+  await phone.client.disconnect();
+  await eventually(() => phone.engine.status === "offline", "the phone to notice it is offline");
+
+  open.text.insert(open.text.length, "typed in a tunnel\n");
+  await phone.fs.writeText("trip.md", "packed\ntyped in a tunnel\n");
+  await phone.engine.idle();
+  open.release();
+  await phone.engine.idle();
+
+  phone.client.connect();
+  await eventually(async () => (await text(laptop, "trip.md")) === "packed\ntyped in a tunnel\n", "the tunnel typing on the laptop");
+});
+
+test("text saved while a note is being released is merged, not overwritten", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "trip.md", "packed\n");
+  await eventually(async () => (await text(phone, "trip.md")) === "packed\n", "the note on the phone");
+
+  const open = (await phone.engine.openDoc("trip.md"))!;
+  open.text.insert(open.text.length, "typed while bound\n");
+  open.release();
+  const saved = "packed\ntyped while bound\ntyped after\n";
+  await phone.fs.writeText("trip.md", saved);
+
+  await eventually(async () => (await text(laptop, "trip.md")) === saved, "the later typing on the laptop");
+  assert.equal(await text(phone, "trip.md"), saved);
+});
+
 test("changing only the case of a name is a rename on devices that cannot tell cases apart", async () => {
   const vault = freshVault();
   const laptop = await boot("laptop", vault, { fs: new MemoryFs({ caseBlind: true }), store: new MemoryStore() });

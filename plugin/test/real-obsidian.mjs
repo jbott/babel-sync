@@ -408,13 +408,25 @@ async function run() {
   await eventually("the other editor shows the remote cursor", () => desk.page.evaluate(() => !!document.querySelector(".cm-ySelectionCaret")));
 
   await desk.page.bringToFront();
+  await openNote(desk, "Hello.md");
+  await desk.page.evaluate(() => {
+    const collab = app.plugins.plugins.babelsync.collab;
+    const editor = app.workspace.activeEditor.editor;
+    collab.releaseAll();
+    editor.replaceRange("\ntyped before the note was bound", { line: editor.lastLine(), ch: editor.getLine(editor.lastLine()).length });
+    collab.refresh();
+  });
+  await eventually("typing that was not saved yet survives the note being bound", async () => (await editorText(laptop))?.includes("typed before the note was bound"));
+  check("and stays in the editor it was typed in", (await editorText(desk))?.includes("typed before the note was bound"));
+
+  await desk.page.bringToFront();
   await desk.page.evaluate(() => {
     const editor = app.workspace.activeEditor.editor;
     editor.focus();
     editor.setCursor({ line: 0, ch: 0 });
   });
   await desk.page.keyboard.type("desk says hello\n");
-  let merged = "desk says hello\nhi from the laptop 😀\ntyped on the laptop";
+  let merged = "desk says hello\nhi from the laptop 😀\ntyped on the laptop\ntyped before the note was bound";
   await eventually("simultaneous typing converges to the same text in both editors", async () => (await editorText(laptop)) === merged && (await editorText(desk)) === merged);
   await eventually("the merged text is written to both vaults on disk", () => readFileSync(join(laptop.vault, "Hello.md"), "utf8") === merged && readFileSync(join(desk.vault, "Hello.md"), "utf8") === merged, 30000);
 
