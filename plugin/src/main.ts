@@ -22,7 +22,9 @@ import { DEFAULT_SETTINGS, type RemoteVault, type Settings, SettingsTab, maxBlob
 const CONFIG_SCAN_MS = 30_000;
 const TOKEN_CHECK_MS = 60_000;
 const UPDATE_CHECK_MS = 60_000;
-const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\/data\.json$/, /^\.obsidian\/cache$/, /^\.trash\//];
+const UPDATE_FETCH_MS = 3_600_000;
+const SHIPPED = ["manifest.json", "main.js"];
+const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\//, /^\.obsidian\/cache$/, /^\.trash\//];
 
 export type VaultsReply =
   | { kind: "vaults"; vaults: RemoteVault[] }
@@ -48,6 +50,7 @@ export default class BabelSyncPlugin extends Plugin {
   build = "";
   revision = BABELSYNC_REVISION;
   updated = false;
+  private fetching = false;
   lastError = "";
   lastSynced: number | null = null;
 
@@ -85,6 +88,7 @@ export default class BabelSyncPlugin extends Plugin {
     this.addCommand({ id: "resync", name: "Compare everything with the server again", callback: () => this.resync() });
     this.addCommand({ id: "reconnect", name: "Reconnect", callback: () => this.restart(true) });
     this.registerInterval(window.setInterval(() => void this.noticeUpdate(), UPDATE_CHECK_MS));
+    this.registerInterval(window.setInterval(() => void this.fetchUpdate(), UPDATE_FETCH_MS));
     void this.fingerprintOnDisk().then((build) => (this.build = build));
 
     this.registerEvent(this.app.vault.on("create", (file) => this.changed(file)));
@@ -138,13 +142,52 @@ export default class BabelSyncPlugin extends Plugin {
     await plugins.enablePlugin(this.manifest.id);
   }
 
+  private async buildOf(bytes: ArrayBuffer): Promise<string> {
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    return [...digest.slice(0, 4)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
   private async fingerprintOnDisk(): Promise<string> {
     try {
-      const bytes = await this.app.vault.adapter.readBinary(`${this.manifest.dir}/main.js`);
-      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-      return [...digest.slice(0, 4)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      return await this.buildOf(await this.app.vault.adapter.readBinary(`${this.manifest.dir}/main.js`));
     } catch {
       return "";
+    }
+  }
+
+  private async fromServer(path: string) {
+    const token = await this.accessToken();
+    const response = await requestUrl({
+      url: `${this.settings.serverUrl}/api/plugin${path}`,
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      throw: false,
+    });
+    if (response.status !== 200) throw new Error(`the server answered ${response.status} for the plugin${path}`);
+    return response;
+  }
+
+  private async fetchUpdate(): Promise<void> {
+    if (this.fetching || this.updated || !this.build || !this.settings.serverUrl) return;
+    this.fetching = true;
+
+    try {
+      const { build } = (await this.fromServer("")).json as { build: string | null };
+      if (!build || build === this.build) return;
+
+      if ((await this.fingerprintOnDisk()) !== build) {
+        const files = new Map<string, ArrayBuffer>();
+        for (const name of SHIPPED) files.set(name, (await this.fromServer(`/${name}`)).arrayBuffer);
+        const received = await this.buildOf(files.get("main.js")!);
+        if (received !== build) throw new Error(`the server promised build ${build} and sent ${received}`);
+
+        for (const [name, bytes] of files) await this.app.vault.adapter.writeBinary(`${this.manifest.dir}/${name}`, bytes);
+        this.record(`fetched build ${build} from the server to replace ${this.build}`);
+      }
+      await this.noticeUpdate();
+    } catch (error) {
+      this.record(`could not fetch the plugin: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.fetching = false;
     }
   }
 
@@ -444,7 +487,10 @@ export default class BabelSyncPlugin extends Plugin {
       this.rebind();
     });
     client.socket.onError(() => void this.accessToken().catch(() => {}));
-    client.socket.onOpen(() => this.record("connection opened"));
+    client.socket.onOpen(() => {
+      this.record("connection opened");
+      void this.fetchUpdate();
+    });
     client.socket.onClose((event: unknown) => {
       const { code, reason } = (event ?? {}) as { code?: number; reason?: string };
       this.record(`connection closed${code ? ` (${code}${reason ? ` ${reason}` : ""})` : ""}`);

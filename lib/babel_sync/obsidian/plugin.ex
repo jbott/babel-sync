@@ -4,6 +4,10 @@ defmodule BabelSync.Obsidian.Plugin do
   be set up from the server it will sync with and nothing has to be
   copied by hand.
 
+  A plugin that is already installed asks which build the server holds
+  and fetches the files when its own differ, so every device runs the
+  build its server was released with.
+
   Two archives are offered. One is the plugin alone, to drop into a vault
   that already exists. The other is a whole new vault folder with the
   plugin installed, switched on and already pointed at this server and
@@ -39,6 +43,16 @@ defmodule BabelSync.Obsidian.Plugin do
         nil
     end
   end
+
+  @spec file(String.t()) :: {:ok, binary()} | {:error, :unavailable}
+  def file(name) when name in @files do
+    case File.read(path(name)) do
+      {:ok, data} -> {:ok, data}
+      {:error, _missing} -> {:error, :unavailable}
+    end
+  end
+
+  def file(_other), do: {:error, :unavailable}
 
   @spec archive() :: {:ok, binary()} | {:error, :unavailable}
   def archive, do: zip(fn name -> Path.join(@id, name) end, [])

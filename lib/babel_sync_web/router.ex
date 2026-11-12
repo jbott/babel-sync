@@ -50,6 +50,8 @@ defmodule BabelSyncWeb.Router do
     pipe_through :api
 
     get "/vaults", VaultController, :index
+    get "/plugin", ObsidianController, :build
+    get "/plugin/:name", ObsidianController, :file
   end
 
   scope "/api/vaults/:vault_id", BabelSyncWeb do

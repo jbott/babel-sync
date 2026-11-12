@@ -521,6 +521,19 @@ async function run() {
     check("Obsidian's mobile emulation is on", false, "app did not come back");
   }
 
+  const stalePlugin = join(laptop.vault, ".obsidian/plugins/babelsync/main.js");
+  check("the plugin's own files are not synced through the vault", (await laptop.page.evaluate(() => app.plugins.plugins.babelsync.ignored(".obsidian/plugins/babelsync/main.js"))) === true);
+  writeFileSync(stalePlugin, "module.exports = {}");
+  const fetched = await laptop.page.evaluate(async () => {
+    const plugin = app.plugins.plugins.babelsync;
+    plugin.build = "00000000";
+    plugin.updated = false;
+    await plugin.fetchUpdate();
+    return { updated: plugin.updated, log: plugin.debugLog() };
+  });
+  check("a plugin on another build fetches the server's build", readFileSync(stalePlugin, "utf8") === readFileSync(join(repo, "plugin/main.js"), "utf8"), fetched.log.split("\n").filter((line) => /fetch/.test(line)).join(" | "));
+  check("and offers to reload into it", fetched.updated === true);
+
   for (const each of [laptop, desk]) {
     const errors = await each.page.evaluate(() => [...document.querySelectorAll(".notice")].map((notice) => notice.innerText)).catch(() => []);
     check(`${each.name}: no error notices on screen`, !errors.some((text) => /error|refused|failed/i.test(text)), errors.join(" | "));

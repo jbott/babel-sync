@@ -35,6 +35,30 @@ defmodule BabelSyncWeb.ObsidianControllerTest do
     assert Plugin.build() =~ ~r/^[0-9a-f]{8}$/
   end
 
+  test "an installed plugin can ask for the server's build and fetch its files", %{conn: conn} do
+    assert %{"version" => "9.9.9", "build" => build} =
+             conn |> get(~p"/api/plugin") |> json_response(200)
+
+    assert build == Plugin.build()
+
+    assert conn |> get(~p"/api/plugin/main.js") |> response(200) == "module.exports = {}"
+
+    assert conn |> get(~p"/api/plugin/manifest.json") |> json_response(200) == %{
+             "id" => "babelsync",
+             "version" => "9.9.9"
+           }
+
+    assert conn |> get(~p"/api/plugin/data.json") |> json_response(404)
+    assert conn |> get("/api/plugin/..%2Fsecret") |> json_response(404)
+  end
+
+  test "the plugin's files are not handed to someone who is not signed in", %{conn: conn} do
+    with_auth([:passkey])
+
+    assert conn |> get(~p"/api/plugin") |> json_response(401)
+    assert conn |> get(~p"/api/plugin/main.js") |> json_response(401)
+  end
+
   test "a starter vault has the plugin on and pointed at the vault", %{conn: conn} do
     vault = vault(user(), %{name: "Field: Notes"})
     conn = get(conn, ~p"/v/#{vault.id}/obsidian/vault.zip")
