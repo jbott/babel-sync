@@ -1,15 +1,16 @@
 defmodule BabelSync.BackupTest do
-  use BabelSync.DataCase, async: false
+  use ExUnit.Case, async: false
 
-  import BabelSync.Fixtures
   import ExUnit.CaptureIO
 
-  alias BabelSync.{Backup, Blobs}
+  alias BabelSync.Backup
 
   @tag :tmp_dir
   test "a snapshot of the database and the attachment files are written", %{tmp_dir: dir} do
-    vault = vault(user(), %{name: "Kept"})
-    {:ok, blob} = Blobs.put(vault.id, "attachment bytes")
+    stored = Path.join([BabelSync.data_dir(), "blobs", "vaults", "backup-test", "hash"])
+    File.mkdir_p!(Path.dirname(stored))
+    File.write!(stored, "attachment bytes")
+    on_exit(fn -> File.rm_rf!(Path.dirname(stored)) end)
 
     assert backup(dir) =~ ~r/[1-9]\d* new attachment files/
 
@@ -18,13 +19,11 @@ defmodule BabelSync.BackupTest do
     {:ok, statement} = Exqlite.Sqlite3.prepare(copy, "SELECT count(*) FROM vaults")
     assert {:row, [_count]} = Exqlite.Sqlite3.step(copy, statement)
 
-    assert File.read!(Path.join([dir, "blobs", "vaults", vault.id, blob.hash])) ==
+    assert File.read!(Path.join([dir, "blobs", "vaults", "backup-test", "hash"])) ==
              "attachment bytes"
 
     assert backup(dir) =~ "0 new attachment files"
   end
 
-  defp backup(dir) do
-    capture_io(fn -> Backup.run(dir) end)
-  end
+  defp backup(dir), do: capture_io(fn -> Backup.run(dir) end)
 end
