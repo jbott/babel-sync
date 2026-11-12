@@ -19,7 +19,7 @@ const barColor = () => (document.documentElement.dataset.theme === "dark" ? "#74
 topbar.config({barThickness: 2, shadowBlur: 0})
 window.addEventListener("phx:page-loading-start", _info => {
   topbar.config({barColors: {0: barColor()}})
-  topbar.show(300)
+  topbar.show(750)
 })
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
