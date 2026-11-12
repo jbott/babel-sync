@@ -101,9 +101,9 @@ defmodule BabelSyncWeb.VaultChannel do
     end
   end
 
-  defp handle("delete", %{"id" => id}, socket) do
+  defp handle("delete", %{"id" => id} = params, socket) do
     with {:ok, entry} <- fetch(id, socket),
-         {:ok, deleted} <- Vaults.delete_entry(entry) do
+         {:ok, deleted} <- Vaults.delete_entry(entry, if_empty: params["if_empty"] == true) do
       {:ok, %{entries: Enum.map(deleted, &EntryJSON.entry/1)}}
     end
   end

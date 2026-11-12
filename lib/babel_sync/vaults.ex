@@ -182,7 +182,7 @@ defmodule BabelSync.Vaults do
       Repo.transact(fn ->
         seq = next_seq(vault_id)
 
-        case get_entry_by_path(vault_id, attrs.path) do
+        case occupant(vault_id, attrs.path) do
           %Entry{} = existing ->
             {:error, {:exists, existing}}
 
@@ -345,11 +345,11 @@ defmodule BabelSync.Vaults do
 
     entry
     |> change(fn current, seq ->
-      case get_entry_by_path(current.vault_id, new_path) do
-        %Entry{id: id} = existing when id != current.id ->
+      case occupant(current.vault_id, new_path, current.id) do
+        %Entry{} = existing ->
           {:error, {:exists, existing}}
 
-        _none_or_self ->
+        nil ->
           [{current, seq} | with_seqs(descendants(current))]
           |> Enum.reduce_while({:ok, []}, fn {moving, seq}, {:ok, moved} ->
             target = new_path <> String.replace_prefix(moving.path, current.path, "")
@@ -368,22 +368,43 @@ defmodule BabelSync.Vaults do
     |> announce_all()
   end
 
-  @spec delete_entry(Entry.t()) :: {:ok, [Entry.t()]} | {:error, :not_found}
-  def delete_entry(%Entry{} = entry) do
+  @spec delete_entry(Entry.t(), if_empty: boolean()) ::
+          {:ok, [Entry.t()]} | {:error, :not_found | :not_empty}
+  def delete_entry(%Entry{} = entry, opts \\ []) do
     now = DateTime.utc_now()
 
     entry
     |> change(fn current, seq ->
-      deleted =
-        for {doomed, seq} <- [{current, seq} | with_seqs(descendants(current))] do
-          doomed
-          |> Ecto.Changeset.change(deleted_at: now, seq: seq)
-          |> Repo.update!()
-        end
+      inside = descendants(current)
 
-      {:ok, deleted}
+      if opts[:if_empty] && inside != [] do
+        {:error, :not_empty}
+      else
+        deleted =
+          for {doomed, seq} <- [{current, seq} | with_seqs(inside)] do
+            doomed
+            |> Ecto.Changeset.change(deleted_at: now, seq: seq)
+            |> Repo.update!()
+          end
+
+        {:ok, deleted}
+      end
     end)
     |> announce_all()
+  end
+
+  defp occupant(vault_id, path, except \\ nil) do
+    path = BabelSync.Vaults.Path.normalize(path)
+    folded = String.downcase(path)
+
+    from(e in Entry,
+      where: e.vault_id == ^vault_id and is_nil(e.deleted_at),
+      where: e.path == ^path or fragment("lower(?)", e.path) == ^folded
+    )
+    |> Repo.all()
+    |> Enum.reject(&(&1.id == except))
+    |> Enum.sort_by(&(&1.path != path))
+    |> List.first()
   end
 
   defp change(%Entry{id: id, vault_id: vault_id}, fun) do

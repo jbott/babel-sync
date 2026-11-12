@@ -119,6 +119,40 @@ defmodule BabelSyncWeb.VaultChannelTest do
     assert_push "entry", %{deleted: true}
   end
 
+  test "a folder can be deleted only if empty, sparing notes the client never saw", ctx do
+    folder = entry(ctx.vault, "Projects", %{kind: :folder})
+    unseen = entry(ctx.vault, "Projects/idea.md")
+    {:ok, _, socket} = join_vault(ctx.owner, ctx.vault)
+
+    cautious = push(socket, "delete", %{"id" => folder.id, "if_empty" => true})
+    assert_reply cautious, :error, %{reason: "not_empty"}
+    assert Vaults.get_entry(unseen.id).deleted_at == nil
+
+    {:ok, _} = Vaults.delete_entry(unseen)
+    assert_reply push(socket, "delete", %{"id" => folder.id, "if_empty" => true}), :ok, %{}
+    assert Vaults.get_entry(folder.id).deleted_at != nil
+  end
+
+  test "names that differ only by case cannot coexist", %{owner: owner, vault: vault} do
+    note = entry(vault, "Todo.md")
+    other = entry(vault, "other.md")
+    {:ok, _, socket} = join_vault(owner, vault)
+    id = note.id
+
+    assert_reply push(socket, "create", %{"path" => "todo.md", "text" => "x"}), :error, %{
+      reason: "exists",
+      entry: %{id: ^id, path: "Todo.md"}
+    }
+
+    assert_reply push(socket, "rename", %{"id" => other.id, "path" => "TODO.md"}), :error, %{
+      reason: "exists"
+    }
+
+    assert_reply push(socket, "rename", %{"id" => id, "path" => "TODO.md"}), :ok, %{
+      entries: [%{path: "TODO.md"}]
+    }
+  end
+
   test "entries of another vault cannot be touched", %{owner: owner, vault: vault} do
     foreign = entry(vault(owner), "theirs.md")
     {:ok, _, socket} = join_vault(owner, vault)
