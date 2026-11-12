@@ -64,6 +64,24 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
   end
 
+  describe "folders" do
+    test "start closed, except the ones holding the open note", %{conn: conn, vault: vault} do
+      entry(vault, "Trips/Lisbon/plan.md")
+      entry(vault, "Recipes/soup.md")
+
+      {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}")
+      assert has_element?(view, "#tree[phx-hook=Folders]")
+      assert has_element?(view, "#open-all-folders")
+      assert has_element?(view, "#close-all-folders")
+      refute has_element?(view, "#tree details[open]")
+
+      {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/f/Trips/Lisbon/plan.md")
+      assert has_element?(view, ~s(#tree details[open][data-path="Trips"]))
+      assert has_element?(view, ~s(#tree details[open][data-path="Trips/Lisbon"]))
+      refute has_element?(view, ~s(#tree details[open][data-path="Recipes"]))
+    end
+  end
+
   describe "vault list" do
     test "shows only the user's vaults and creates new ones", %{conn: conn} do
       vault(user(), %{name: "Someone else's"})

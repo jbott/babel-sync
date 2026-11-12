@@ -443,10 +443,30 @@ defmodule BabelSyncWeb.VaultLive.Show do
             ></progress>
           </div>
 
+          <div :if={@tree != []} class="mt-2 flex items-center gap-0.5 pl-4 pr-2">
+            <span class="flex-1 text-2xs font-semibold uppercase tracking-[0.1em] text-faint">
+              Files
+            </span>
+            <.icon_button
+              id="open-all-folders"
+              phx-click={JS.dispatch("babelsync:folders", to: "#tree", detail: %{open: true})}
+              icon="hero-arrows-pointing-out-mini"
+              label="Open all folders"
+            />
+            <.icon_button
+              id="close-all-folders"
+              phx-click={JS.dispatch("babelsync:folders", to: "#tree", detail: %{open: false})}
+              icon="hero-arrows-pointing-in-mini"
+              label="Close all folders"
+            />
+          </div>
+
           <nav
             id="tree"
             aria-label="Files"
-            class="mt-2 flex-1 overflow-y-auto px-2 pb-6 text-base md:text-sm"
+            phx-hook="Folders"
+            data-vault-id={@vault.id}
+            class="mt-1 flex-1 overflow-y-auto px-2 pb-6 text-base md:text-sm"
           >
             <div :if={@tree == []} class="px-3 py-10 text-center">
               <.icon name="hero-document-plus" class="size-7 text-faint" />
@@ -815,8 +835,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   defp unfolded?(node, selected) do
-    not String.starts_with?(node.name, ".") or
-      (is_binary(selected) and String.starts_with?(selected, node.path <> "/"))
+    is_binary(selected) and String.starts_with?(selected, node.path <> "/")
   end
 
   attr :nodes, :list, required: true
@@ -827,7 +846,12 @@ defmodule BabelSyncWeb.VaultLive.Show do
     ~H"""
     <ul class="space-y-px">
       <li :for={node <- @nodes}>
-        <details :if={Tree.folder?(node)} open={unfolded?(node, @selected)}>
+        <details
+          :if={Tree.folder?(node)}
+          data-path={node.path}
+          open={unfolded?(node, @selected)}
+          phx-mounted={JS.ignore_attributes(["open", "data-seen"])}
+        >
           <summary class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-2 font-medium text-ink transition-colors duration-100 hover:bg-ink/6 md:py-1">
             <.icon name="hero-chevron-right-mini" class="tree-chevron size-4 shrink-0 text-faint" />
             <span class="truncate">{node.name}</span>
