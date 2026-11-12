@@ -13,6 +13,9 @@ defmodule BabelSyncWeb.Origin do
 
   @loopback ["localhost", "127.0.0.1", "::1"]
 
+  @spec own_host?(String.t()) :: boolean()
+  def own_host?(host), do: host in @loopback or host == BabelSyncWeb.Endpoint.config(:url)[:host]
+
   @spec allowed?(URI.t()) :: boolean()
   def allowed?(%URI{scheme: scheme, host: host}) do
     {scheme, host} in @obsidian or host in @loopback or

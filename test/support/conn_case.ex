@@ -33,7 +33,7 @@ defmodule BabelSyncWeb.ConnCase do
 
   setup tags do
     BabelSync.DataCase.setup_sandbox(tags)
-    {:ok, conn: Phoenix.ConnTest.build_conn()}
+    {:ok, conn: %{Phoenix.ConnTest.build_conn() | host: "localhost"}}
   end
 
   def sign_in(conn, user) do

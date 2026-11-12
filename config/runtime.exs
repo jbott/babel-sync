@@ -235,6 +235,15 @@ if config_env() == :prod do
       other -> raise "BABELSYNC_BIND must be local or all, got: #{inspect(other)}"
     end
 
+  if auth == [] and bind != {127, 0, 0, 1} and
+       System.get_env("BABELSYNC_TRUST_NETWORK") != "true" do
+    raise """
+    BABELSYNC_BIND=all with sign-in turned off lets anyone who can reach this
+    machine read and change every note. Turn sign-in on with BABELSYNC_AUTH,
+    or set BABELSYNC_TRUST_NETWORK=true if only people you trust can reach it.
+    """
+  end
+
   config :babel_sync, BabelSyncWeb.Endpoint,
     url: [host: public.host, port: public.port, scheme: public.scheme],
     http: [ip: bind],

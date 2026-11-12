@@ -40,7 +40,7 @@ docker load -i babelsync.tar
 docker run -p 127.0.0.1:4000:4000 -v babelsync:/data babelsync:0.1.0
 ```
 
-On macOS the image is built by a Linux builder (`nix.linux-builder` or any remote builder). The image runs as an unprivileged user, keeps everything under `/data`, and listens on all of the container's interfaces, so who can reach it is decided by how the port is published. `SECRET_KEY_BASE` is generated on first start and kept in `/data` unless you set it. All the settings below are passed with `-e`.
+On macOS the image is built by a Linux builder (`nix.linux-builder` or any remote builder). The image runs as an unprivileged user, keeps everything under `/data`, and listens on all of the container's interfaces, so who can reach it is decided by how the port is published. Sign-in is by passkey: the first start prints a one-time setup address to the log (`docker logs`). `SECRET_KEY_BASE` is generated on first start and kept in `/data` unless you set it. All the settings below are passed with `-e`.
 
 Each Mix dependency is its own Nix derivation, listed in `nix/deps.nix`, so a build only compiles what changed. When `mix.lock` changes, regenerate that file with `mix deps.nix --output nix/deps.nix`. The npm dependencies and the crates of the two Rust extensions are still pinned by hash in `nix/package.nix`: clear the stale one to `""`, build, and paste the hash Nix prints.
 
@@ -53,6 +53,7 @@ Each Mix dependency is its own Nix derivation, listed in `nix/deps.nix`, so a bu
 | `BABELSYNC_AUTH` | `none` in single mode, `oidc` in multi | Comma-separated: `oidc`, `passkey`, `magic_link`; or `none` (single mode only) |
 | `BABELSYNC_URL` | `http://localhost:$PORT` | The address people use. Sign-in links, passkeys and OAuth depend on it |
 | `BABELSYNC_BIND` | `local` when sign-in is off, else `all` | Listen on localhost only, or on every interface |
+| `BABELSYNC_TRUST_NETWORK` | unset | Set to `true` to allow `BABELSYNC_BIND=all` with sign-in off. Anyone who can reach the port can then read and change every note |
 | `BABELSYNC_DATA_DIR` | required in production | Where local mode keeps its database and attachments |
 | `BABELSYNC_RETENTION_DAYS` | `30` | How long history and trash are kept; `0` keeps them forever |
 | `BABELSYNC_MAX_BLOB_BYTES` | 5 GiB | Largest attachment accepted |
@@ -79,7 +80,7 @@ Sign-in:
 
 ### Signing in on a single-user server
 
-- `none`: no sign-in. The server listens on localhost only unless `BABELSYNC_BIND=all`.
+- `none`: no sign-in. The server listens on localhost only, and answers only requests addressed to its own host name, so a web page cannot reach it by pointing its own domain at your machine. Listening on every interface without sign-in needs `BABELSYNC_TRUST_NETWORK=true` as well.
 - `passkey`: on first start the log prints a one-time setup address. Open it to register your passkey; more can be added on the account page.
 - `oidc`: sign in with one identity at your provider, named by `BABELSYNC_OIDC_REQUIRE`.
 

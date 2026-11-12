@@ -12,6 +12,8 @@ defmodule BabelSyncWeb.Endpoint do
     max_age: 30 * 86_400
   ]
 
+  plug BabelSyncWeb.Plugs.Secure
+
   socket "/socket", BabelSyncWeb.UserSocket,
     websocket: [
       max_frame_size: 16 * 1024 * 1024,

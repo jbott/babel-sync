@@ -6,6 +6,9 @@ defmodule BabelSyncWeb.Plugs.Scope do
   A bearer token has to be attached on purpose, so it is honoured from
   any origin. The session cookie and the open single-user mode are
   ambient, so requests relying on them must not come from another site.
+  The open mode is also refused to a request naming a host other than
+  the server's own, which is what a page that has pointed its own
+  domain at this machine sends.
 
   A browser session lasts 30 days from its last use, not from sign-in:
   once a day, a request made with a valid session is answered with a
@@ -31,7 +34,7 @@ defmodule BabelSyncWeb.Plugs.Scope do
   def fetch_scope(conn, _opts) do
     result =
       case bearer(conn) do
-        nil -> if foreign?(conn), do: :error, else: Auth.scope_from_session(session_token(conn))
+        nil -> if foreign?(conn), do: :error, else: from_session(conn)
         token -> Auth.scope_from_token(token)
       end
 
@@ -110,6 +113,13 @@ defmodule BabelSyncWeb.Plugs.Scope do
     case get_req_header(conn, "authorization") do
       ["Bearer " <> token] -> token
       _none -> nil
+    end
+  end
+
+  defp from_session(conn) do
+    case session_token(conn) do
+      nil -> if Origin.own_host?(conn.host), do: Auth.scope_from_session(nil), else: :error
+      token -> Auth.scope_from_session(token)
     end
   end
 

@@ -76,6 +76,7 @@ nix2container.buildImage {
       "PORT=4000"
       "BABELSYNC_DATA_DIR=/data"
       "BABELSYNC_BIND=all"
+      "BABELSYNC_AUTH=passkey"
       "RELEASE_DISTRIBUTION=none"
       "RELEASE_TMP=/tmp"
       "HOME=/data"
