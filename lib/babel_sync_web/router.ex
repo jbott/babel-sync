@@ -86,6 +86,9 @@ defmodule BabelSyncWeb.Router do
     post "/uploads/:id/complete", BlobController, :complete
     get "/blobs/:hash", BlobController, :show
     post "/docs", DocController, :index
+    get "/notes/:entry_id/versions", HistoryController, :index
+    get "/notes/:entry_id/versions/:id", HistoryController, :show
+    post "/notes/:entry_id/versions/:id/restore", HistoryController, :restore
   end
 
   scope "/", BabelSyncWeb do

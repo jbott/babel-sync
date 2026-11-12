@@ -3,6 +3,7 @@ import type * as Y from "yjs";
 import { type BlobApi, type Fetch, downloadBlob, uploadBlob } from "./blobs.ts";
 import { DocSession } from "./doc.ts";
 import { fetchDocs } from "./docs.ts";
+import { type Against, type VersionDetail, type VersionSummary, compareVersion, listVersions, restoreVersion } from "./history.ts";
 import { VaultSession } from "./vault.ts";
 
 export type ClientOptions = {
@@ -68,6 +69,18 @@ export class BabelSyncClient {
 
   docs(vaultId: string, ids: string[]): Promise<Map<string, Uint8Array[]>> {
     return fetchDocs(this.api, vaultId, ids);
+  }
+
+  versions(vaultId: string, entryId: string): Promise<VersionSummary[]> {
+    return listVersions(this.api, vaultId, entryId);
+  }
+
+  version(vaultId: string, entryId: string, id: number, against: Against): Promise<VersionDetail> {
+    return compareVersion(this.api, vaultId, entryId, id, against);
+  }
+
+  restore(vaultId: string, entryId: string, id: number): Promise<void> {
+    return restoreVersion(this.api, vaultId, entryId, id);
   }
 
   download(vaultId: string, hash: string): Promise<Uint8Array> {
