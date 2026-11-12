@@ -18,7 +18,9 @@ defmodule BabelSyncWeb.VaultLiveTest do
       Application.put_env(:babel_sync, :auth, [:passkey])
       on_exit(fn -> Application.put_env(:babel_sync, :auth, []) end)
 
-      assert {:error, {:redirect, %{to: "/login"}}} = live(conn, ~p"/")
+      {:ok, stranger, _html} = live(conn, ~p"/")
+      assert has_element?(stranger, "#sign-in")
+      assert {:error, {:redirect, %{to: "/login"}}} = live(conn, ~p"/account")
     end
 
     test "is skipped for the owner in single-user mode without sign-in", %{anonymous: conn} do

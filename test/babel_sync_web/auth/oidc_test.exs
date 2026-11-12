@@ -99,7 +99,8 @@ defmodule BabelSyncWeb.Auth.OIDCTest do
 
     refused = round_trip(conn)
     assert redirected_to(refused) == "/login"
-    assert {:error, {:redirect, %{to: "/login"}}} = refused |> recycle() |> live(~p"/")
+    {:ok, stranger, _html} = refused |> recycle() |> live(~p"/")
+    assert has_element?(stranger, "#sign-in")
   end
 
   test "a callback with the wrong state is refused", %{conn: conn} do

@@ -5,6 +5,8 @@ defmodule BabelSyncWeb.AuthLive.Login do
   alias BabelSync.Auth
   alias BabelSync.Auth.{MagicLink, OIDC, Passkeys, Setup}
 
+  on_mount {BabelSyncWeb.LiveScope, :signed_out}
+
   @impl true
   def mount(params, _session, socket) do
     {:ok,
@@ -24,6 +26,8 @@ defmodule BabelSyncWeb.AuthLive.Login do
       _expired -> assign(socket, :stage, :expired)
     end
   end
+
+  defp assign_stage(socket, :not_mounted_at_router), do: assign_stage(socket, %{})
 
   defp assign_stage(socket, params) do
     cond do
@@ -110,26 +114,28 @@ defmodule BabelSyncWeb.AuthLive.Login do
       </div>
 
       <div :if={@stage == :sign_in} id="landing" class="mx-auto max-w-6xl">
-        <header class="flex items-center gap-2 pt-5 text-muted md:pt-8">
-          <.logo class="size-5 text-accent" />
-          <span class="font-serif text-base font-semibold tracking-tight">Babel Sync</span>
+        <header class="flex items-center justify-between gap-4 pt-4 md:pt-7">
+          <span class="flex items-center gap-2 text-muted">
+            <.logo class="size-5 text-accent" />
+            <span class="font-serif text-base font-semibold tracking-tight">Babel Sync</span>
+          </span>
+          <a
+            id="header-log-in"
+            href="#sign-in"
+            class="inline-flex h-9 items-center rounded-lg border border-line-strong bg-surface px-3.5 text-sm font-semibold text-ink shadow-raise transition duration-150 hover:border-accent hover:text-accent active:translate-y-px"
+          >
+            Log in
+          </a>
         </header>
 
         <section class="grid items-start gap-9 pb-14 pt-9 lg:grid-cols-12 lg:gap-14 lg:pb-20 lg:pt-16">
           <div class="animate-rise lg:col-span-7 lg:pt-6">
-            <p class="font-mono text-2xs font-medium uppercase tracking-[0.18em] text-accent">
-              Obsidian · self-hosted
-            </p>
-            <h1 class="mt-4 font-serif text-[2.25rem] font-bold leading-[1.08] tracking-tight text-ink sm:text-[3rem] lg:text-[3.75rem]">
+            <h1 class="font-serif text-[2.25rem] font-bold leading-[1.08] tracking-tight text-ink sm:text-[3rem] lg:text-[3.75rem]">
               Your vault, working together.
             </h1>
             <p class="mt-5 max-w-xl text-lg text-muted lg:mt-7 lg:text-xl lg:leading-8">
               Sync Obsidian across your devices. Edit with other people, or let an AI agent
               work alongside you.
-            </p>
-            <p class="mt-4 flex items-center gap-2 text-sm text-faint lg:mt-6">
-              <.icon name="hero-server-mini" class="size-4" />
-              Notes and attachments stay on this server.
             </p>
           </div>
           <div class="lg:col-span-5">
@@ -148,32 +154,24 @@ defmodule BabelSyncWeb.AuthLive.Login do
             </p>
           </div>
           <div class="relative mt-8 sm:pb-[6%]">
-            <img
+            <.mac
               id="landing-desktop"
               src={~p"/images/landing/editor-desktop.png"}
-              width="2048"
-              height="1230"
-              loading="lazy"
-              alt="A trip note open in Obsidian on a desktop, with Maya's cursor on a checklist line"
-              class="hidden w-[86%] rounded-2xl border border-line-strong shadow-float sm:block"
+              alt="A trip note open in Obsidian on a Mac, with Maya's cursor on a checklist line"
+              class="hidden w-[86%] sm:block"
             />
-            <img
+            <.iphone
               id="landing-phone"
               src={~p"/images/landing/editor-phone.png"}
-              width="1170"
               height="1930"
-              loading="lazy"
-              alt="The same note in Obsidian on a phone, with Maya's cursor on another line"
-              class="mx-auto w-[17.5rem] rounded-[1.75rem] border border-line-strong shadow-float sm:absolute sm:bottom-0 sm:right-0 sm:w-[23%] sm:rounded-2xl lg:rounded-[1.75rem]"
+              alt="The same note in Obsidian on an iPhone, with Maya's cursor on another line"
+              class="mx-auto w-[17.5rem] sm:absolute sm:bottom-0 sm:right-0 sm:w-[23%]"
             />
           </div>
         </section>
 
-        <section
-          id="landing-devices"
-          class="grid items-center gap-8 pb-14 lg:grid-cols-12 lg:gap-14 lg:pb-20"
-        >
-          <div class="lg:col-span-5">
+        <section id="landing-devices" class="pb-14 lg:pb-20">
+          <div class="max-w-xl sm:ml-auto">
             <h2 class="font-serif text-2xl font-bold tracking-tight text-ink lg:text-3xl">
               Pick up on another device.
             </h2>
@@ -182,24 +180,21 @@ defmodule BabelSyncWeb.AuthLive.Login do
               bring your themes, hotkeys and plugins along.
             </p>
           </div>
-          <img
-            id="landing-settings"
-            src={~p"/images/landing/sync-settings.png"}
-            width="1275"
-            height="650"
-            loading="lazy"
-            alt="The Babel Sync settings in Obsidian, showing the vault is up to date"
-            class="hidden w-full rounded-2xl border border-line-strong shadow-float sm:block lg:col-span-7"
-          />
-          <img
-            id="landing-settings-phone"
-            src={~p"/images/landing/sync-settings-phone.png"}
-            width="1170"
-            height="1790"
-            loading="lazy"
-            alt="The Babel Sync settings in Obsidian on a phone, showing the vault is up to date"
-            class="mx-auto w-[17.5rem] rounded-[1.75rem] border border-line-strong shadow-float sm:hidden"
-          />
+          <div class="relative mt-8 sm:pb-[6%]">
+            <.mac
+              id="landing-settings"
+              src={~p"/images/landing/sync-settings.png"}
+              alt="The Babel Sync settings in Obsidian on a Mac, showing the vault is up to date"
+              class="hidden w-[86%] sm:ml-auto sm:block"
+            />
+            <.iphone
+              id="landing-settings-phone"
+              src={~p"/images/landing/sync-settings-phone.png"}
+              height="1790"
+              alt="The Babel Sync settings in Obsidian on an iPhone, showing the vault is up to date"
+              class="mx-auto w-[17.5rem] sm:absolute sm:bottom-0 sm:left-0 sm:w-[23%]"
+            />
+          </div>
         </section>
 
         <section id="landing-more" class="border-t border-line pb-16 lg:pb-24">
@@ -239,6 +234,63 @@ defmodule BabelSyncWeb.AuthLive.Login do
         </footer>
       </div>
     </Layouts.app>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :src, :string, required: true
+  attr :alt, :string, required: true
+  attr :class, :any, default: nil
+
+  defp mac(assigns) do
+    ~H"""
+    <figure id={@id} class={["@container", @class]}>
+      <div class="relative overflow-hidden rounded-[1.1cqw] border border-line-strong shadow-float">
+        <span class="absolute left-[1.9cqw] top-[1.3cqw] flex gap-[0.8cqw]" aria-hidden="true">
+          <i class="size-[1.2cqw] rounded-full bg-[#ff5f57]"></i>
+          <i class="size-[1.2cqw] rounded-full bg-[#febc2e]"></i>
+          <i class="size-[1.2cqw] rounded-full bg-[#28c840]"></i>
+        </span>
+        <img src={@src} width="2048" height="1230" loading="lazy" alt={@alt} class="block w-full" />
+      </div>
+    </figure>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :src, :string, required: true
+  attr :alt, :string, required: true
+  attr :height, :string, required: true
+  attr :class, :any, default: nil
+
+  defp iphone(assigns) do
+    ~H"""
+    <figure id={@id} class={["@container", @class]}>
+      <div class="rounded-[15cqw] border border-[#48484a] bg-[#1c1c1e] p-[2.6cqw] shadow-float">
+        <div class="overflow-hidden rounded-[12.4cqw] bg-[#000]">
+          <div class="relative h-[13cqw]" aria-hidden="true">
+            <span class="absolute left-[9cqw] top-[5cqw] text-[4.4cqw] font-semibold leading-none text-[#fff]">
+              9:41
+            </span>
+            <span class="absolute left-1/2 top-[3.2cqw] h-[8cqw] w-[27cqw] -translate-x-1/2 rounded-full bg-[#1c1c1e]"></span>
+            <span class="absolute right-[8cqw] top-[5.2cqw] h-[3.6cqw] w-[7.4cqw] rounded-[1.1cqw] border border-[#fff]/45 p-px">
+              <i class="block h-full w-4/5 rounded-[0.7cqw] bg-[#fff]"></i>
+            </span>
+          </div>
+          <img
+            src={@src}
+            width="1170"
+            height={@height}
+            loading="lazy"
+            alt={@alt}
+            class="block w-full"
+          />
+          <div class="grid h-[7cqw] place-items-center" aria-hidden="true">
+            <span class="h-[1.3cqw] w-[36cqw] rounded-full bg-[#fff]/85"></span>
+          </div>
+        </div>
+      </div>
+    </figure>
     """
   end
 

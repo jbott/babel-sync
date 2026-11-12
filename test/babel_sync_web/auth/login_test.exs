@@ -55,11 +55,15 @@ defmodule BabelSyncWeb.Auth.LoginTest do
     with_mode(:multi)
     with_auth([:magic_link])
 
+    {:ok, front, _html} = live(conn, ~p"/")
+    assert has_element?(front, "#landing #sign-in #link-form")
+
     {:ok, view, _html} = live(conn, ~p"/login")
     assert has_element?(view, "#landing #sign-in #link-form")
-    assert has_element?(view, "#landing-editing #landing-desktop")
+    assert has_element?(view, "#header-log-in")
+    assert has_element?(view, "#landing-editing #landing-desktop img")
     assert has_element?(view, "#landing-editing #landing-phone")
-    assert has_element?(view, "#landing-devices #landing-settings")
+    assert has_element?(view, "#landing-devices #landing-settings-phone img")
     assert has_element?(view, "#landing-more")
   end
 
@@ -171,14 +175,18 @@ defmodule BabelSyncWeb.Auth.LoginTest do
     end
 
     test "pages need a session and signing out ends it", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/login"}}} = live(conn, ~p"/")
+      {:ok, stranger, _html} = live(conn, ~p"/")
+      assert has_element?(stranger, "#sign-in")
+      assert {:error, {:redirect, %{to: "/login"}}} = live(conn, ~p"/account")
 
       conn = sign_in(conn, Accounts.single_user!())
       assert {:ok, _view, _html} = live(conn, ~p"/account")
 
       signed_out = delete(conn, ~p"/logout")
       assert redirected_to(signed_out) == "/login"
-      assert {:error, {:redirect, %{to: "/login"}}} = signed_out |> recycle() |> live(~p"/")
+
+      assert {:error, {:redirect, %{to: "/login"}}} =
+               signed_out |> recycle() |> live(~p"/account")
     end
 
     test "a handoff token cannot be forged", %{conn: conn} do
@@ -288,7 +296,7 @@ defmodule BabelSyncWeb.Auth.LoginTest do
       forged =
         Plug.Test.init_test_session(conn, %{BabelSyncWeb.Plugs.Scope.session_key() => "forged"})
 
-      assert {:error, {:redirect, %{to: "/login"}}} = live(forged, ~p"/")
+      assert {:error, {:redirect, %{to: "/login"}}} = live(forged, ~p"/account")
 
       ghost = %Accounts.User{id: Ecto.UUID.generate()}
       assert :error = Auth.scope_from_token(Auth.socket_token(Accounts.Scope.for_user(ghost)))
@@ -311,12 +319,12 @@ defmodule BabelSyncWeb.Auth.LoginTest do
 
       account |> element("#session-#{other.id} button") |> render_click()
       refute has_element?(account, "#session-#{other.id}")
-      assert {:error, {:redirect, %{to: "/login"}}} = live(elsewhere, ~p"/")
+      assert {:error, {:redirect, %{to: "/login"}}} = live(elsewhere, ~p"/account")
       assert {:ok, _view, _html} = live(third, ~p"/account")
 
       account |> element("#end-other-sessions") |> render_click()
       assert [_only] = Accounts.Sessions.list(owner)
-      assert {:error, {:redirect, %{to: "/login"}}} = live(third, ~p"/")
+      assert {:error, {:redirect, %{to: "/login"}}} = live(third, ~p"/account")
       assert {:ok, _view, _html} = live(here, ~p"/account")
     end
 
@@ -329,7 +337,7 @@ defmodule BabelSyncWeb.Auth.LoginTest do
 
       assert here |> delete(~p"/logout") |> redirected_to() == ~p"/login"
       assert Accounts.Sessions.list(owner) == []
-      assert {:error, {:redirect, %{to: "/login"}}} = live(here, ~p"/")
+      assert {:error, {:redirect, %{to: "/login"}}} = live(here, ~p"/account")
 
       old = Phoenix.Token.sign(BabelSyncWeb.Endpoint, "session", owner.id)
 

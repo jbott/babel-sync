@@ -3,6 +3,18 @@ defmodule BabelSyncWeb.Router do
 
   import BabelSyncWeb.Plugs.Scope
 
+  defp welcome_strangers(
+         %{path_info: [], method: "GET", assigns: %{current_scope: nil}} = conn,
+         _
+       ) do
+    conn
+    |> put_private(:phoenix_live_view, nil)
+    |> Phoenix.LiveView.Controller.live_render(BabelSyncWeb.AuthLive.Login)
+    |> halt()
+  end
+
+  defp welcome_strangers(conn, _opts), do: conn
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -11,6 +23,10 @@ defmodule BabelSyncWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug :fetch_scope
+  end
+
+  pipeline :welcome do
+    plug :welcome_strangers
   end
 
   pipeline :api do
@@ -66,7 +82,7 @@ defmodule BabelSyncWeb.Router do
   end
 
   scope "/", BabelSyncWeb do
-    pipe_through :browser
+    pipe_through [:browser, :welcome]
 
     get "/v/:vault_id/raw/*path", FileController, :raw
     get "/obsidian/plugin.zip", ObsidianController, :plugin

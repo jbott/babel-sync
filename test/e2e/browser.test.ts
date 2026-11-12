@@ -243,5 +243,6 @@ test("a passkey is registered, used to sign in, and refused when unknown", { ski
   await page.click("#passkey-sign-in");
   await devtools.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
   await page.goto(baseUrl + "/", { waitUntil: "networkidle0" });
-  assert.equal(new URL(page.url()).pathname, "/login");
+  assert.equal(new URL(page.url()).pathname, "/");
+  await page.waitForSelector(".phx-connected #passkey-sign-in");
 }));
