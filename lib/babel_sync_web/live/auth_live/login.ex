@@ -163,15 +163,18 @@ defmodule BabelSyncWeb.AuthLive.Login do
             <.iphone
               id="landing-phone"
               src={~p"/images/landing/editor-phone.png"}
-              height="1930"
-              alt="The same note in Obsidian on an iPhone, with Maya's cursor on another line"
-              class="relative -mt-[13%] ml-auto w-[46%] sm:absolute sm:bottom-0 sm:right-0 sm:mt-0 sm:w-[22%]"
+              height="2340"
+              alt="The same note in Obsidian on an iPhone, with Sam's cursor on another line"
+              class="relative -mt-[13%] ml-auto w-[46%] sm:absolute sm:bottom-0 sm:right-0 sm:mt-0 sm:w-[19%]"
             />
           </div>
         </section>
 
-        <section id="landing-devices" class="pb-14 lg:pb-20">
-          <div class="max-w-xl sm:ml-auto">
+        <section
+          id="landing-devices"
+          class="grid items-center gap-8 pb-14 sm:grid-cols-2 lg:gap-14 lg:pb-20"
+        >
+          <div class="max-w-xl">
             <h2 class="font-serif text-2xl font-bold tracking-tight text-ink lg:text-3xl">
               Pick up on another device.
             </h2>
@@ -180,32 +183,63 @@ defmodule BabelSyncWeb.AuthLive.Login do
               bring your themes, hotkeys and plugins along.
             </p>
           </div>
-          <div class="relative mt-8 sm:pb-[6%]">
-            <.mac
-              id="landing-settings"
-              src={~p"/images/landing/sync-settings.png"}
-              alt="The Babel Sync settings in Obsidian on a Mac, showing the vault is up to date"
-              class="w-full sm:ml-auto sm:w-[88%]"
-            />
-            <.iphone
-              id="landing-settings-phone"
-              src={~p"/images/landing/sync-settings-phone.png"}
-              height="1790"
-              alt="The Babel Sync settings in Obsidian on an iPhone, showing the vault is up to date"
-              class="relative -mt-[13%] mr-auto w-[46%] sm:absolute sm:bottom-0 sm:left-0 sm:mt-0 sm:w-[22%]"
-            />
+          <.iphone
+            id="landing-settings-phone"
+            src={~p"/images/landing/sync-settings-phone.png"}
+            height="2280"
+            alt="The Babel Sync settings in Obsidian on an iPhone, showing the vault is up to date"
+            class="mx-auto w-[15rem] lg:w-[17rem]"
+          />
+        </section>
+
+        <section
+          id="landing-agents"
+          class="grid items-center gap-8 pb-14 sm:grid-cols-2 lg:gap-14 lg:pb-20"
+        >
+          <div class="max-w-xl">
+            <h2 class="font-serif text-2xl font-bold tracking-tight text-ink lg:text-3xl">
+              Bring Claude or ChatGPT into your vault.
+            </h2>
+            <p class="mt-3 text-base text-muted lg:text-lg">
+              Babel Sync works with the Claude and ChatGPT apps. Add this server as a connector
+              and the assistant can search, read and edit your notes. Its edits merge with what
+              you are typing and show up in each note's history.
+            </p>
+          </div>
+          <div
+            class="space-y-4 rounded-2xl sm:order-first border border-line bg-surface p-5 shadow-float sm:p-6"
+            aria-hidden="true"
+          >
+            <p class="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-sunken px-4 py-2.5 text-ink">
+              Add the Sintra train times to the Lisbon note.
+            </p>
+            <ul class="space-y-1.5 font-mono text-xs text-muted">
+              <li
+                :for={
+                  {tool, target} <- [
+                    {"search_files", "Lisbon"},
+                    {"read_file", "Trips/Lisbon in May.md"},
+                    {"edit_file", "Trips/Lisbon in May.md"}
+                  ]
+                }
+                class="flex items-center gap-2"
+              >
+                <.icon name="hero-check-circle-mini" class="size-4 shrink-0 text-accent" />
+                <span class="font-medium text-ink">{tool}</span>
+                <span class="truncate">{target}</span>
+              </li>
+            </ul>
+            <p class="text-ink">Done. The times are under Booked, next to the train to Sintra.</p>
           </div>
         </section>
 
         <section id="landing-more" class="border-t border-line pb-16 lg:pb-24">
-          <dl class="grid sm:grid-cols-2 sm:gap-x-14">
+          <dl class="grid lg:grid-cols-3 lg:gap-x-12">
             <div
               :for={
                 {icon, title, text} <- [
                   {"hero-globe-alt", "Open your vault in a browser.",
                    "Read and edit notes without opening Obsidian."},
-                  {"hero-sparkles", "Work with an agent in your vault.",
-                   "Connect Claude or ChatGPT through MCP to read and edit your notes."},
                   {"hero-clock", "Recover an earlier version.",
                    "Deleted notes wait in the trash, and every note keeps its history."},
                   {"hero-server-stack", "Run it yourself.",
@@ -275,8 +309,8 @@ defmodule BabelSyncWeb.AuthLive.Login do
     ~H"""
     <figure id={@id} class={["@container", @class]}>
       <div class="rounded-[15cqw] border border-[#48484a] bg-[#1c1c1e] p-[2.6cqw] shadow-float">
-        <div class="overflow-hidden rounded-[12.4cqw] bg-[#000]">
-          <div class="relative h-[13cqw]" aria-hidden="true">
+        <div class="relative flex aspect-[390/844] flex-col overflow-hidden rounded-[12.4cqw] bg-[#000]">
+          <div class="relative h-[13cqw] shrink-0" aria-hidden="true">
             <span class="absolute left-[9cqw] top-[5cqw] text-[4.4cqw] font-semibold leading-none text-[#fff]">
               9:41
             </span>
@@ -291,11 +325,12 @@ defmodule BabelSyncWeb.AuthLive.Login do
             height={@height}
             loading="lazy"
             alt={@alt}
-            class="block w-full"
+            class="block min-h-0 w-full flex-1 object-cover object-top"
           />
-          <div class="grid h-[7cqw] place-items-center" aria-hidden="true">
-            <span class="h-[1.3cqw] w-[36cqw] rounded-full bg-[#fff]/85"></span>
-          </div>
+          <span
+            class="absolute bottom-[2.2cqw] left-1/2 h-[1.3cqw] w-[36cqw] -translate-x-1/2 rounded-full bg-[#fff]/85"
+            aria-hidden="true"
+          ></span>
         </div>
       </div>
     </figure>

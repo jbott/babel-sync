@@ -64,6 +64,7 @@ defmodule BabelSyncWeb.Auth.LoginTest do
     assert has_element?(view, "#landing-editing #landing-desktop img")
     assert has_element?(view, "#landing-editing #landing-phone")
     assert has_element?(view, "#landing-devices #landing-settings-phone img")
+    assert has_element?(view, "#landing-agents")
     assert has_element?(view, "#landing-more")
   end
 

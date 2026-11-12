@@ -295,12 +295,22 @@ const SHOWN_TEXT = [
   "",
 ].join("\n");
 
-async function showCursor(writer, reader, from, to) {
+const dressSettings = (page, deviceName) =>
+  page.evaluate((deviceName) => {
+    const heading = [...document.querySelectorAll(".setting-item-name")].find((name) => name.textContent.startsWith("Syncing with"));
+    heading.textContent = heading.textContent.replace(/ on .*$/, " on babelsync.com");
+    heading.closest(".setting-item").parentElement.parentElement.querySelector("input[type=text]").value = deviceName;
+  }, deviceName);
+
+async function showCursor(writer, reader, person, from, to) {
   await writer.page.bringToFront();
   await writer.page.evaluate(
-    (path, from, to) => {
+    (path, person, from, to) => {
       const plugin = app.plugins.plugins.babelsync;
-      plugin.presence = () => ({ name: "Maya", color: "#db2777" });
+      plugin.presence = () => person;
+      for (const binding of plugin.collab.bindings.values()) {
+        binding.doc?.awareness.setLocalStateField("user", { ...person, colorLight: person.color + "40" });
+      }
       return app.workspace.openLinkText(path, "", false).then(() => {
         const editor = app.workspace.activeEditor.editor;
         editor.focus();
@@ -308,6 +318,7 @@ async function showCursor(writer, reader, from, to) {
       });
     },
     SHOWN,
+    person,
     from,
     to,
   );
@@ -330,7 +341,7 @@ async function deskPicture(laptop, desk) {
   await openNote(desk, SHOWN);
   await desk.page.evaluate(() => document.querySelectorAll(".notice").forEach((notice) => notice.remove()));
   await desk.page.evaluate(() => app.workspace.leftSplit.setSize?.(230));
-  await showCursor(laptop, desk.page, { line: 6, ch: 6 }, { line: 6, ch: 21 });
+  await showCursor(laptop, desk.page, { name: "Maya", color: "#db2777" }, { line: 6, ch: 6 }, { line: 6, ch: 21 });
   await desk.page.bringToFront();
   await new Promise((resolve) => setTimeout(resolve, 400));
   await desk.page.screenshot({ path: join(process.env.SHOTS, "editor-desktop.png") });
@@ -341,6 +352,7 @@ async function deskPicture(laptop, desk) {
     app.setting.openTabById("babelsync");
   });
   await eventually("the settings picture shows a vault in sync", () => desk.page.evaluate(() => document.querySelector(".vertical-tab-content .setting-item-heading")?.innerText.includes("Up to date")));
+  await dressSettings(desk.page, "MacBook Pro");
   await desk.page.screenshot({ path: join(process.env.SHOTS, "sync-settings.png") });
   await desk.page.evaluate(() => app.setting.close());
 }
@@ -349,7 +361,7 @@ async function pocketPicture(laptop, phone) {
   await phone.setViewport({ width: 390, height: 780, deviceScaleFactor: 3 });
   await phone.evaluate((path) => app.workspace.openLinkText(path, "", false), SHOWN);
   await phone.evaluate(() => document.querySelectorAll(".notice").forEach((notice) => notice.remove()));
-  await showCursor(laptop, phone, { line: 7, ch: 6 }, { line: 7, ch: 21 });
+  await showCursor(laptop, phone, { name: "Sam", color: "#2563eb" }, { line: 7, ch: 6 }, { line: 7, ch: 21 });
   await phone.bringToFront();
   await new Promise((resolve) => setTimeout(resolve, 600));
   await phone.screenshot({ path: join(process.env.SHOTS, "editor-phone.png") });
@@ -358,6 +370,7 @@ async function pocketPicture(laptop, phone) {
     app.setting.openTabById("babelsync");
   });
   await new Promise((resolve) => setTimeout(resolve, 800));
+  await dressSettings(phone, "iPhone");
   await phone.screenshot({ path: join(process.env.SHOTS, "sync-settings-phone.png") });
   await phone.evaluate(() => app.setting.close());
   await phone.setViewport(null);
