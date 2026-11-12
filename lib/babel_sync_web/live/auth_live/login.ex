@@ -192,44 +192,40 @@ defmodule BabelSyncWeb.AuthLive.Login do
           />
         </section>
 
-        <section
-          id="landing-agents"
-          class="grid items-center gap-8 pb-14 sm:grid-cols-2 lg:gap-14 lg:pb-20"
-        >
+        <section id="landing-agents" class="pb-14 lg:pb-20">
           <div class="max-w-xl">
             <h2 class="font-serif text-2xl font-bold tracking-tight text-ink lg:text-3xl">
-              Bring Claude or ChatGPT into your vault.
+              Ask Claude or ChatGPT about your notes.
             </h2>
             <p class="mt-3 text-base text-muted lg:text-lg">
               Babel Sync works with the Claude and ChatGPT apps. Add this server as a connector
-              and the assistant can search, read and edit your notes. Its edits merge with what
-              you are typing and show up in each note's history.
+              and the assistant can search, read and edit your vault from your phone or desktop.
+              Its edits merge with what you are typing and show up in each note's history.
             </p>
           </div>
-          <div
-            class="space-y-4 rounded-2xl sm:order-first border border-line bg-surface p-5 shadow-float sm:p-6"
-            aria-hidden="true"
-          >
-            <p class="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-sunken px-4 py-2.5 text-ink">
-              Add the Sintra train times to the Lisbon note.
-            </p>
-            <ul class="space-y-1.5 font-mono text-xs text-muted">
-              <li
-                :for={
-                  {tool, target} <- [
-                    {"search_files", "Lisbon"},
-                    {"read_file", "Trips/Lisbon in May.md"},
-                    {"edit_file", "Trips/Lisbon in May.md"}
-                  ]
-                }
-                class="flex items-center gap-2"
-              >
-                <.icon name="hero-check-circle-mini" class="size-4 shrink-0 text-accent" />
-                <span class="font-medium text-ink">{tool}</span>
-                <span class="truncate">{target}</span>
-              </li>
-            </ul>
-            <p class="text-ink">Done. The times are under Booked, next to the train to Sintra.</p>
+          <div class="mt-8 flex flex-col items-center gap-8 sm:flex-row sm:justify-center sm:gap-12 lg:gap-20">
+            <.chat
+              id="landing-claude"
+              app="Claude"
+              light
+              ask="Add the Sintra train times to the Lisbon note."
+              calls={[
+                {"Search files", "Lisbon"},
+                {"Edit file", "Trips/Lisbon in May.md"}
+              ]}
+              answer="Done. The times are under Booked, next to the train to Sintra."
+              prompt="Reply to Claude"
+              class="w-[15rem] lg:w-[17rem]"
+            />
+            <.chat
+              id="landing-chatgpt"
+              app="ChatGPT"
+              ask="What is left to book for Lisbon?"
+              calls={[{"Read file", "Trips/Lisbon in May.md"}]}
+              answer="Two things are still open: the train to Sintra on Sunday, and dinner at Prado."
+              prompt="Ask anything"
+              class="w-[15rem] lg:w-[17rem]"
+            />
           </div>
         </section>
 
@@ -300,26 +296,34 @@ defmodule BabelSyncWeb.AuthLive.Login do
   end
 
   attr :id, :string, required: true
-  attr :src, :string, required: true
-  attr :alt, :string, required: true
-  attr :height, :string, required: true
+  attr :src, :string, default: nil
+  attr :alt, :string, default: nil
+  attr :height, :string, default: nil
+  attr :light, :boolean, default: false
+  attr :screen, :string, default: "bg-[#000]"
   attr :class, :any, default: nil
+  slot :inner_block
 
   defp iphone(assigns) do
     ~H"""
     <figure id={@id} class={["@container", @class]}>
       <div class="rounded-[15cqw] border border-[#48484a] bg-[#1c1c1e] p-[2.6cqw] shadow-float">
-        <div class="relative flex aspect-[390/844] flex-col overflow-hidden rounded-[12.4cqw] bg-[#000]">
+        <div class={[
+          "relative flex aspect-[390/844] flex-col overflow-hidden rounded-[12.4cqw]",
+          @screen,
+          if(@light, do: "text-[#141413]", else: "text-[#fff]")
+        ]}>
           <div class="relative h-[13cqw] shrink-0" aria-hidden="true">
-            <span class="absolute left-[9cqw] top-[5cqw] text-[4.4cqw] font-semibold leading-none text-[#fff]">
+            <span class="absolute left-[9cqw] top-[5cqw] text-[4.4cqw] font-semibold leading-none">
               9:41
             </span>
             <span class="absolute left-1/2 top-[3.2cqw] h-[8cqw] w-[27cqw] -translate-x-1/2 rounded-full bg-[#1c1c1e]"></span>
-            <span class="absolute right-[8cqw] top-[5.2cqw] h-[3.6cqw] w-[7.4cqw] rounded-[1.1cqw] border border-[#fff]/45 p-px">
-              <i class="block h-full w-4/5 rounded-[0.7cqw] bg-[#fff]"></i>
+            <span class="absolute right-[8cqw] top-[5.2cqw] h-[3.6cqw] w-[7.4cqw] rounded-[1.1cqw] border border-current/45 p-px">
+              <i class="block h-full w-4/5 rounded-[0.7cqw] bg-current"></i>
             </span>
           </div>
           <img
+            :if={@src}
             src={@src}
             width="1170"
             height={@height}
@@ -327,13 +331,94 @@ defmodule BabelSyncWeb.AuthLive.Login do
             alt={@alt}
             class="block min-h-0 w-full flex-1 object-cover object-top"
           />
+          {render_slot(@inner_block)}
           <span
-            class="absolute bottom-[2.2cqw] left-1/2 h-[1.3cqw] w-[36cqw] -translate-x-1/2 rounded-full bg-[#fff]/85"
+            class="absolute bottom-[2.2cqw] left-1/2 h-[1.3cqw] w-[36cqw] -translate-x-1/2 rounded-full bg-current/85"
             aria-hidden="true"
           ></span>
         </div>
       </div>
     </figure>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :app, :string, required: true
+  attr :light, :boolean, default: false
+  attr :ask, :string, required: true
+  attr :calls, :list, required: true
+  attr :answer, :string, required: true
+  attr :prompt, :string, required: true
+  attr :class, :any, default: nil
+
+  defp chat(assigns) do
+    ~H"""
+    <.iphone
+      id={@id}
+      light={@light}
+      screen={if(@light, do: "bg-[#faf9f5]", else: "bg-[#212121]")}
+      class={@class}
+    >
+      <div
+        class="flex min-h-0 flex-1 flex-col px-[5cqw] pb-[7cqw] text-[4.8cqw] leading-[1.45]"
+        role="img"
+        aria-label={"A conversation in the #{@app} app: asked “#{@ask}”, the assistant uses Babel Sync and answers “#{@answer}”"}
+      >
+        <div class="flex items-center justify-between pb-[3cqw] pt-[1cqw]">
+          <.icon name="hero-bars-2" class="size-[6cqw] opacity-70" />
+          <span class="text-[4.8cqw] font-semibold">{@app}</span>
+          <.icon name="hero-pencil-square" class="size-[5.6cqw] opacity-70" />
+        </div>
+
+        <div class="flex min-h-0 flex-1 flex-col gap-[4cqw] pt-[3cqw]">
+          <p class={[
+            "ml-auto max-w-[82%] px-[4cqw] py-[2.6cqw]",
+            if(@light,
+              do: "rounded-[4cqw] bg-[#f0eee6]",
+              else: "rounded-[6cqw] bg-[#303030]"
+            )
+          ]}>
+            {@ask}
+          </p>
+
+          <ul class="space-y-[1.6cqw]">
+            <li
+              :for={{tool, target} <- @calls}
+              class={[
+                "flex items-center gap-[2cqw] rounded-[3cqw] border px-[3cqw] py-[2.6cqw] text-[3.9cqw] leading-tight",
+                if(@light, do: "border-[#141413]/12", else: "border-[#fff]/14")
+              ]}
+            >
+              <.logo class="size-[4.4cqw] shrink-0 text-[#2f8f83]" />
+              <span class="min-w-0 flex-1">
+                <span class="block font-semibold">Babel Sync · {tool}</span>
+                <span class="block truncate opacity-60">{target}</span>
+              </span>
+              <.icon name="hero-check-mini" class="size-[4cqw] shrink-0 opacity-60" />
+            </li>
+          </ul>
+
+          <p class={[@light && "font-serif"]}>{@answer}</p>
+        </div>
+
+        <div class={[
+          "flex items-center gap-[2.5cqw] px-[4cqw] py-[3.4cqw] text-[4.4cqw]",
+          if(@light,
+            do: "rounded-[5cqw] border border-[#141413]/12 bg-[#fff]",
+            else: "rounded-full bg-[#303030]"
+          )
+        ]}>
+          <.icon name="hero-plus" class="size-[5cqw] opacity-60" />
+          <span class="flex-1 opacity-50">{@prompt}</span>
+          <span class={[
+            "grid size-[7cqw] place-items-center rounded-full",
+            if(@light, do: "bg-[#d97757] text-[#fff]", else: "bg-[#fff] text-[#000]")
+          ]}>
+            <.icon name="hero-arrow-up-mini" class="size-[4.4cqw]" />
+          </span>
+        </div>
+      </div>
+    </.iphone>
     """
   end
 
