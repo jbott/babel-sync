@@ -9,24 +9,25 @@ defmodule BabelSync.Sync.Store do
   alias BabelSync.Repo
   alias BabelSync.Sync.{State, Update, Version}
 
-  @spec load(Ecto.UUID.t()) :: {binary() | nil, [binary()]}
+  @spec load(Ecto.UUID.t()) :: {binary() | nil, [{integer(), binary()}]}
   def load(entry_id) do
     state = Repo.one(from s in State, where: s.entry_id == ^entry_id, select: s.data)
 
     updates =
-      Repo.all(from u in Update, where: u.entry_id == ^entry_id, order_by: u.id, select: u.data)
+      Repo.all(
+        from u in Update, where: u.entry_id == ^entry_id, order_by: u.id, select: {u.id, u.data}
+      )
 
     {state, updates}
   end
 
-  @spec append(Ecto.UUID.t(), binary()) :: :ok
+  @spec append(Ecto.UUID.t(), binary()) :: integer()
   def append(entry_id, update) do
-    Repo.insert!(%Update{entry_id: entry_id, data: update, inserted_at: DateTime.utc_now()})
-    :ok
+    Repo.insert!(%Update{entry_id: entry_id, data: update, inserted_at: DateTime.utc_now()}).id
   end
 
-  @spec compact(Ecto.UUID.t(), binary()) :: :ok
-  def compact(entry_id, full_state) do
+  @spec compact(Ecto.UUID.t(), binary(), [integer()]) :: :ok
+  def compact(entry_id, full_state, applied) do
     {:ok, :ok} =
       Repo.transact(fn ->
         Repo.insert!(
@@ -35,7 +36,10 @@ defmodule BabelSync.Sync.Store do
           conflict_target: :entry_id
         )
 
-        Repo.delete_all(from u in Update, where: u.entry_id == ^entry_id)
+        applied
+        |> Enum.chunk_every(500)
+        |> Enum.each(&Repo.delete_all(from u in Update, where: u.id in ^&1))
+
         {:ok, :ok}
       end)
 

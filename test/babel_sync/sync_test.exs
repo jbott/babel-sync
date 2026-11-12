@@ -119,6 +119,24 @@ defmodule BabelSync.SyncTest do
     assert Sync.text(entry.id) == "durable"
   end
 
+  test "compaction leaves alone updates the note's process never applied", %{entry: entry} do
+    {client, client_text} = client_doc(1)
+    Yex.Text.insert(client_text, 0, "first ")
+    push(entry.id, client)
+
+    {elsewhere, elsewhere_text} = client_doc(3)
+    Yex.Text.insert(elsewhere_text, 0, "written by another node")
+    foreign = BabelSync.Sync.Store.append(entry.id, Yex.encode_state_as_update!(elsewhere))
+
+    for n <- 1..Application.fetch_env!(:babel_sync, BabelSync.Sync)[:compact_after] do
+      Yex.Text.insert(client_text, Yex.Text.length(client_text), "#{n} ")
+      push(entry.id, client)
+    end
+
+    {_state, updates} = BabelSync.Sync.Store.load(entry.id)
+    assert foreign in Enum.map(updates, &elem(&1, 0))
+  end
+
   test "compaction keeps content and lets old clients still sync", %{entry: entry} do
     {client, client_text} = client_doc(1)
 

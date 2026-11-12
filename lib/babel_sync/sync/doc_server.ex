@@ -20,7 +20,7 @@ defmodule BabelSync.Sync.DocServer do
     :doc,
     :text,
     :settle_timer,
-    pending: 0,
+    applied: [],
     last_author: nil,
     versioned_hash: nil
   ]
@@ -35,14 +35,19 @@ defmodule BabelSync.Sync.DocServer do
   def init(entry_id) do
     doc = Yex.Doc.new()
     {state, updates} = Store.load(entry_id)
-    Enum.each(List.wrap(state) ++ updates, &(:ok = Yex.apply_update(doc, &1)))
+
+    Enum.each(
+      List.wrap(state) ++ Enum.map(updates, &elem(&1, 1)),
+      &(:ok = Yex.apply_update(doc, &1))
+    )
+
     text = Yex.Doc.get_text(doc, @text_name)
 
     server = %__MODULE__{
       entry_id: entry_id,
       doc: doc,
       text: text,
-      pending: length(updates),
+      applied: Enum.map(updates, &elem(&1, 0)),
       versioned_hash: Store.hash(Yex.Text.to_string(text))
     }
 
@@ -115,7 +120,7 @@ defmodule BabelSync.Sync.DocServer do
   end
 
   defp record(server, update, origin, author_id) do
-    :ok = Store.append(server.entry_id, update)
+    id = Store.append(server.entry_id, update)
 
     Phoenix.PubSub.broadcast(
       BabelSync.PubSub,
@@ -123,14 +128,14 @@ defmodule BabelSync.Sync.DocServer do
       {:doc_update, server.entry_id, update, origin}
     )
 
-    server = %{server | pending: server.pending + 1, last_author: author_id}
-    server = if server.pending >= compact_after(), do: compact(server), else: server
+    server = %{server | applied: [id | server.applied], last_author: author_id}
+    server = if length(server.applied) >= compact_after(), do: compact(server), else: server
     schedule_settle(server)
   end
 
   defp compact(server) do
-    :ok = Store.compact(server.entry_id, Yex.encode_state_as_update!(server.doc))
-    %{server | pending: 0}
+    :ok = Store.compact(server.entry_id, Yex.encode_state_as_update!(server.doc), server.applied)
+    %{server | applied: []}
   end
 
   defp schedule_settle(%{settle_timer: nil} = server) do
