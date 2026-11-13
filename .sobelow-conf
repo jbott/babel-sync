@@ -1,0 +1,13 @@
+[
+  verbose: false,
+  private: false,
+  skip: true,
+  router: "lib/babel_sync_web/router.ex",
+  exit: "low",
+  format: "txt",
+  out: "",
+  threshold: "low",
+  ignore: ["Config.HTTPS", "Config.CSP"],
+  ignore_files: [""],
+  version: false
+]

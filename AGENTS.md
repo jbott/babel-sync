@@ -6,6 +6,9 @@ Babel Sync is a self-hosted live-sync server for Obsidian vaults: a Phoenix/Live
 - Run every tool through the Nix dev shell: `nix develop --command <cmd>`, or `direnv allow` once and use the shell directly. Nothing is installed globally
 - Run `mix precommit` before every commit. The git hook in `.githooks/pre-commit` runs it too, but `jj` does not run git hooks, so run it by hand when committing with `jj`
 - Run `mix dialyzer` after major changes. It is not part of `mix precommit`
+- `mix precommit` also runs `mix check`: credo, spec_lint, `mix deps.audit` and `mix hex.audit`
+- Run `mix sobelow --config` after changes to anything that touches requests, files or HTML. It is not part of `mix precommit`, because it recognises findings already reviewed by file and line, so edits elsewhere in a file bring them back. Review each one, then record them with `mix sobelow --config --mark-skip-all`
+- Property tests use stream_data and live in `test/property`
 - JavaScript and TypeScript are formatted with `oxfmt` and linted with `oxlint`, both from the Nix dev shell and configured in `.oxfmtrc.json` and `.oxlintrc.json`. `mix js.check` runs them and the plugin's type check, and `mix precommit` runs it. Never use biome
 - After changing `mix.lock`, run `mix deps.nix --output nix/deps.nix`; after changing `package-lock.json`, refresh the npm hash in `nix/package.nix`. When `y_ex` or `mdex_native` changes version, refresh its crates hash there too. Then check that `nix build` still works
 - If a library is poor, write the piece in-tree instead of working around it, and say so in the commit message

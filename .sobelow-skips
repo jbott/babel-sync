@@ -1,0 +1,33 @@
+Config.CSWH: Cross-Site Websocket Hijacking,lib/babel_sync_web/endpoint.ex:17,6731413
+DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:774,5DB85FF
+DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent/glob.ex:15,186480B
+Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/auth/passkeys.ex:91,E3BA49
+Traversal.FileModule: Directory Traversal in `File.cp!`,lib/babel_sync/backup.ex:57,61E583B
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/babel_sync/backup.ex:22,2498705
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/babel_sync/backup.ex:56,5273CF5
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/babel_sync/blobs/store/disk.ex:10,72A8470
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/babel_sync/blobs/store/disk.ex:40,6B5C66
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/babel_sync/repo/sqlite.ex:15,63927D2
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/babel_sync_web/controllers/transfer_controller.ex:61,5C4269F
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/babel_sync/blobs/store/disk.ex:19,634E0A5
+Traversal.FileModule: Directory Traversal in `File.open!`,lib/babel_sync/blobs/store/disk.ex:42,361C94E
+Traversal.FileModule: Directory Traversal in `File.open`,lib/babel_sync_web/controllers/transfer_controller.ex:93,10FFA71
+Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.ex:315,391E84B
+Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/obsidian/plugin.ex:95,608A612
+Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:28,37FC872
+Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:38,596F766
+Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:49,2B395AD
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync/blobs/store/disk.ex:25,3992B25
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync/blobs/store/disk.ex:91,69E7DBF
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync_web/controllers/transfer_controller.ex:88,74A1C73
+Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs.ex:163,DC72DB
+Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs/store/disk.ex:46,25ED74F
+Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs/store/disk.ex:66,5C24D08
+Traversal.FileModule: Directory Traversal in `File.write`,lib/babel_sync/blobs/store/disk.ex:20,14FE10E
+Traversal.SendFile: Directory Traversal in `send_file`,lib/babel_sync_web/blob_sender.ex:54,2C5CCB3
+Traversal.SendFile: Directory Traversal in `send_file`,lib/babel_sync_web/blob_sender.ex:57,61F7C8
+XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/obsidian_controller.ex:26,1C81858
+XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/transfer_controller.ex:146,44B9F6E
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:676,E545E1
+XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/obsidian_controller.ex:28,3242BD8
+XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/transfer_controller.ex:147,1F70068
