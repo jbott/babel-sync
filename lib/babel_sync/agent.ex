@@ -612,31 +612,14 @@ defmodule BabelSync.Agent do
   end
 
   defp notes(vault, folder) do
-    files =
-      for %Entry{kind: kind} = entry <- entries(vault),
-          kind != :folder,
-          Bases.Note.in_folder?(%Bases.Note{path: entry.path}, folder || ""),
-          do: entry
-
-    files
-    |> Stream.chunk_every(@search_batch)
-    |> Enum.flat_map(fn batch ->
-      texts =
-        Sync.texts(for %Entry{kind: :doc, path: path, id: id} <- batch, markdown?(path), do: id)
-
-      for entry <- batch do
-        Bases.Note.new(
-          path: entry.path,
-          size: entry.size,
-          created: entry.inserted_at,
-          modified: entry.updated_at,
-          text: Map.get(texts, entry.id, "")
-        )
-      end
-    end)
+    for(
+      %Entry{kind: kind} = entry <- entries(vault),
+      kind != :folder,
+      Bases.Note.in_folder?(%Bases.Note{path: entry.path}, folder || ""),
+      do: entry
+    )
+    |> Bases.Index.notes()
   end
-
-  defp markdown?(path), do: path |> Path.extname() |> String.downcase() == ".md"
 
   defp definition(_vault, base) when base in [nil, ""], do: {:ok, nil}
 

@@ -4,42 +4,49 @@ defmodule BabelSync.Bases.Note do
   properties written as YAML between `---` lines at its top.
   """
 
-  alias BabelSync.Bases.PropertyCache
-
   @enforce_keys [:path]
-  defstruct [:path, :created, :modified, size: 0, text: "", properties: %{}]
+  defstruct [:path, :created, :modified, size: 0, properties: %{}, tags: [], links: []]
+
+  @type facts :: %{
+          properties: %{optional(String.t()) => term()},
+          tags: [String.t()],
+          links: [String.t()]
+        }
 
   @type t :: %__MODULE__{
           path: String.t(),
           created: DateTime.t() | nil,
           modified: DateTime.t() | nil,
           size: non_neg_integer(),
-          text: String.t(),
-          properties: %{optional(String.t()) => term()}
+          properties: %{optional(String.t()) => term()},
+          tags: [String.t()],
+          links: [String.t()]
         }
 
   @spec new(keyword()) :: t()
   def new(fields) do
-    note = struct!(__MODULE__, fields)
-    %{note | properties: properties(note.text)}
+    {text, fields} = Keyword.pop(fields, :text)
+    {facts, fields} = Keyword.pop(fields, :facts, read(text || ""))
+    struct!(__MODULE__, fields ++ Map.to_list(facts))
+  end
+
+  @spec read(String.t()) :: facts()
+  def read(text) do
+    properties = properties(text)
+    %{properties: properties, tags: tags_in(properties, text), links: wikilinks(text)}
   end
 
   @spec properties(String.t()) :: %{optional(String.t()) => term()}
   def properties("---\n" <> rest) do
-    case String.split(rest, ~r/^---[ \t]*$/m, parts: 2) do
-      [block, _body] -> PropertyCache.fetch(block, &parse/1)
-      _unclosed -> %{}
+    with [block, _body] <- String.split(rest, ~r/^---[ \t]*$/m, parts: 2),
+         {:ok, %{} = parsed} <- YamlElixir.read_from_string(block) do
+      Map.new(parsed, fn {key, value} -> {to_string(key), value} end)
+    else
+      _unreadable -> %{}
     end
   end
 
   def properties(_text), do: %{}
-
-  defp parse(block) do
-    case YamlElixir.read_from_string(block) do
-      {:ok, %{} = parsed} -> Map.new(parsed, fn {key, value} -> {to_string(key), value} end)
-      _unreadable -> %{}
-    end
-  end
 
   @spec name(t()) :: String.t()
   def name(%__MODULE__{path: path}), do: Path.basename(path)
@@ -68,7 +75,12 @@ defmodule BabelSync.Bases.Note do
   end
 
   @spec tags(t()) :: [String.t()]
-  def tags(%__MODULE__{text: text, properties: properties}) do
+  def tags(%__MODULE__{tags: tags}), do: tags
+
+  @spec links(t()) :: [String.t()]
+  def links(%__MODULE__{links: links}), do: links
+
+  defp tags_in(properties, text) do
     declared =
       case properties["tags"] do
         tags when is_list(tags) -> Enum.map(tags, &to_string/1)
@@ -84,8 +96,7 @@ defmodule BabelSync.Bases.Note do
     (declared ++ inline) |> Enum.map(&String.trim_leading(&1, "#")) |> Enum.uniq()
   end
 
-  @spec links(t()) :: [String.t()]
-  def links(%__MODULE__{text: text}) do
+  defp wikilinks(text) do
     for([_all, target] <- Regex.scan(~r/\[\[([^\]|#]+)/u, text), do: String.trim(target))
     |> Enum.uniq()
   end

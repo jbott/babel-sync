@@ -216,18 +216,6 @@ defmodule BabelSync.BasesTest do
     assert %{kinds: ["list", "text"]} = Enum.find(rest, &(&1.name == "coordinates"))
   end
 
-  test "front matter is read once and read again only when it changes" do
-    calls = :counters.new(1, [])
-    block = "rating: 4\nseen: #{System.unique_integer()}\n"
-    parse = fn text -> :counters.add(calls, 1, 1) && %{"text" => text} end
-
-    assert BabelSync.Bases.PropertyCache.fetch(block, parse) == %{"text" => block}
-    assert BabelSync.Bases.PropertyCache.fetch(block, parse) == %{"text" => block}
-    assert :counters.get(calls, 1) == 1
-
-    assert %{"rating" => 5} = Note.properties("---\nrating: 5\n---\nbody")
-  end
-
   test "a base's display names label its columns" do
     {:ok, definition} =
       Definition.parse("""
