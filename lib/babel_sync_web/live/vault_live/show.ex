@@ -2,10 +2,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
   use BabelSyncWeb, :live_view
 
   alias BabelSync.Accounts.Scope
-  alias BabelSync.{Auth, Blobs, Canvas, History, Markdown, Sync, Vaults}
+  alias BabelSync.{Agent, Auth, Blobs, Canvas, History, Markdown, Sync, Vaults}
   alias BabelSync.Vaults.Entry
   alias BabelSyncWeb.Paths
-  alias BabelSyncWeb.VaultLive.{BaseView, HistoryPanel, Reader, Sidebar, Tree}
+  alias BabelSyncWeb.VaultLive.{BaseView, Finder, HistoryPanel, Reader, Sidebar, Tree}
 
   @preview_delay 250
   @tree_delay 150
@@ -44,6 +44,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
        |> assign(:tree_timer, nil)
        |> assign(:tree_stale, false)
        |> assign(:open_folders, MapSet.new())
+       |> assign(:finder, nil)
        |> assign(:new_form, to_form(%{"path" => ""}, as: :note))
        |> assign(:notes_created, 0)
        |> assign(:rename_form, nil)
@@ -68,7 +69,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         do: put_flash(socket, :error, "#{path} does not exist."),
         else: socket
 
-    {:noreply, select(socket, entry)}
+    {:noreply, socket |> close_finder() |> select(entry)}
   end
 
   defp ensure_known(socket, path) do
@@ -130,6 +131,29 @@ defmodule BabelSyncWeb.VaultLive.Show do
   def handle_event("all_folders", %{"open" => open?}, socket) do
     paths = if open? == true, do: Tree.folders(socket.assigns.tree), else: []
     {:reply, %{open: paths}, assign(socket, :open_folders, MapSet.new(paths))}
+  end
+
+  def handle_event("open_finder", _params, socket) do
+    {:noreply, assign(socket, :finder, Finder.open(socket.assigns.entries))}
+  end
+
+  def handle_event("close_finder", _params, socket), do: {:noreply, close_finder(socket)}
+
+  def handle_event("find", %{"q" => query}, %{assigns: %{finder: %{} = finder}} = socket)
+      when is_binary(query) do
+    %{current_scope: scope, vault: vault, entries: entries} = socket.assigns
+
+    socket =
+      socket |> cancel_async(:search) |> assign(:finder, Finder.typed(finder, entries, query))
+
+    if Finder.searchable?(query) do
+      {:noreply,
+       start_async(socket, :search, fn ->
+         {query, Agent.search_files(scope, vault.id, String.trim(query))}
+       end)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("attach", %{"name" => name, "hash" => hash}, socket) do
@@ -277,6 +301,22 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   def handle_async(:base, {:exit, _reason}, socket), do: {:noreply, socket}
 
+  def handle_async(:search, {:ok, {query, result}}, socket) do
+    case {socket.assigns.finder, result} do
+      {%{query: ^query} = finder, {:ok, found}} ->
+        hits = Finder.hits(found, socket.assigns.entries)
+        {:noreply, assign(socket, :finder, %{finder | hits: hits})}
+
+      {%{query: ^query} = finder, {:error, _slow_or_invalid}} ->
+        {:noreply, assign(socket, :finder, %{finder | hits: []})}
+
+      _typed_more_or_closed ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_async(:search, {:exit, _reason}, socket), do: {:noreply, socket}
+
   @impl true
   def handle_info({:entry_changed, %Entry{} = changed}, socket) do
     if Map.get(socket.assigns.latest, changed.id, -1) >= changed.seq,
@@ -340,6 +380,9 @@ defmodule BabelSyncWeb.VaultLive.Show do
       assign(socket, :preview_timer, Process.send_after(self(), :render_preview, @preview_delay))
 
   defp rerun_base(socket), do: socket
+
+  defp close_finder(%{assigns: %{finder: nil}} = socket), do: socket
+  defp close_finder(socket), do: socket |> cancel_async(:search) |> assign(:finder, nil)
 
   defp open_created(socket, entry) do
     socket |> update(:notes_created, &(&1 + 1)) |> push_patch(to: Paths.entry(entry))
@@ -558,6 +601,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
           against={@against}
           writable={@writable}
         />
+        <Finder.finder finder={@finder} />
         <HistoryPanel.attachment_history
           blob_versions={@blob_versions}
           entry={@entry}

@@ -64,6 +64,59 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
   end
 
+  describe "finding" do
+    test "files are found by name, best match first, and notes by their text", %{
+      conn: conn,
+      vault: vault
+    } do
+      plan = entry(vault, "Trips/Lisbon plan.md")
+      entry(vault, "Trips/packing.md")
+      soup = entry(vault, "Recipes/soup.md")
+      :ok = BabelSync.Sync.replace_text(soup.id, "# Soup\n\nSimmer the lisbon lemons slowly.\n")
+      :ok = BabelSync.Sync.flush(soup.id)
+
+      {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}")
+      refute has_element?(view, "#finder-dialog")
+
+      view |> element("#find-button") |> render_click()
+      assert has_element?(view, "#finder-dialog[role=dialog] #finder-input")
+      assert has_element?(view, "#finder-results a", "soup.md")
+
+      view |> form("#finder-form", %{q: "lisb"}) |> render_change()
+      assert has_element?(view, "#finder-file-#{plan.id}", "Lisbon plan.md")
+      refute has_element?(view, "#finder-results a", "packing.md")
+      assert has_element?(view, "#finder-searching")
+
+      render_async(view)
+      assert has_element?(view, "#finder-hit-#{soup.id}", "Simmer the lisbon lemons slowly.")
+      assert has_element?(view, "#finder-hit-#{soup.id}", "line 3")
+
+      view |> form("#finder-form", %{q: "zzzz"}) |> render_change()
+      render_async(view)
+      assert has_element?(view, "#finder-nothing")
+
+      view |> form("#finder-form", %{q: "plan"}) |> render_change()
+      view |> element("#finder-file-#{plan.id}") |> render_click()
+      assert_patch view, Paths.entry(plan)
+      refute has_element?(view, "#finder-dialog")
+    end
+
+    test "the panel closes when asked, and a late search does not reopen it", %{
+      conn: conn,
+      vault: vault
+    } do
+      entry(vault, "note.md")
+      {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}")
+
+      render_hook(element(view, "#finder"), "open_finder", %{})
+      view |> form("#finder-form", %{q: "note"}) |> render_change()
+      render_hook(element(view, "#finder"), "close_finder", %{})
+      render_async(view)
+
+      refute has_element?(view, "#finder-dialog")
+    end
+  end
+
   describe "folders" do
     test "start closed, except the ones holding the open note", %{conn: conn, vault: vault} do
       entry(vault, "Trips/Lisbon/plan.md")

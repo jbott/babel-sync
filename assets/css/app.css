@@ -820,3 +820,8 @@ progress.upload-meter::-moz-progress-bar {
   border-color: color-mix(in oklab, var(--color-danger) 45%, var(--color-line));
   color: var(--color-danger);
 }
+
+.finder-item[aria-selected="true"],
+.finder-item:hover {
+  background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+}

@@ -96,6 +96,12 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
           Files
         </span>
         <.icon_button
+          id="find-button"
+          phx-click="open_finder"
+          icon="hero-magnifying-glass-mini"
+          label="Find a file or search in notes"
+        />
+        <.icon_button
           id="open-all-folders"
           phx-click={JS.dispatch("babelsync:folders", to: "#tree", detail: %{open: true})}
           icon="hero-arrows-pointing-out-mini"

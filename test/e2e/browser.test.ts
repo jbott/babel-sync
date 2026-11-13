@@ -250,6 +250,29 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     await one.waitForSelector("#trash-empty");
     await two.waitForSelector('#tree a[href$="/f/Notes/renamed.md"]');
 
+    await two.keyboard.down("Control");
+    await two.keyboard.press("k");
+    await two.keyboard.up("Control");
+    await two.waitForSelector("#finder-input:focus");
+    await two.keyboard.type("renam");
+    await two.waitForSelector('#finder-results a[aria-selected="true"][href$="/f/Notes/renamed.md"]');
+    await two.keyboard.press("ArrowDown");
+    await two.keyboard.press("ArrowUp");
+    await two.keyboard.press("Enter");
+    await waitForText(two, "#entry-path", "Notes/renamed.md");
+    await two.waitForFunction(() => document.querySelector("#finder-dialog") === null);
+    await two
+      .locator("#back-to-files, #find-button")
+      .filter((el) => el.id === "find-button")
+      .click();
+    await two.waitForSelector("#finder-input:focus");
+    await two.keyboard.type("after the mov");
+    await waitForText(two, "#finder-results", "after the move");
+    await two.keyboard.press("Escape");
+    await two.waitForFunction(() => document.querySelector("#finder-dialog") === null);
+    await two.goto(`${baseUrl}/v/${vaultId}`);
+    await two.waitForSelector("#empty");
+
     await two.locator('#tree details[data-path="Notes"] > summary').click();
     await two.waitForSelector('#tree a[href$="/f/Notes/renamed.md"]', { hidden: true });
     await two.waitForFunction(() => document.querySelector('#tree a[href$="/f/Notes/renamed.md"]') === null);
