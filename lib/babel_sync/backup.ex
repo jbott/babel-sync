@@ -1,6 +1,7 @@
 defmodule BabelSync.Backup do
   @moduledoc """
-  A consistent copy of a local-mode server while it runs.
+  A consistent copy of a local-mode server while it runs, and the way
+  back from one.
 
   Copying `babel_sync.db` directly can catch it half written, because
   SQLite keeps recent writes in a separate log. `VACUUM INTO` writes a
@@ -9,10 +10,23 @@ defmodule BabelSync.Backup do
   skipping any already there.
 
       babel_sync eval 'BabelSync.Backup.run("/backups/babelsync")'
+      babel_sync eval 'BabelSync.Backup.run("/backups/babelsync", keep: 14)'
+
+  Every run adds a snapshot; `keep` removes all but the newest that
+  many. Attachments are never removed from a backup, since any kept
+  snapshot may still refer to them.
+
+  Restoring puts the newest snapshot, or the one named, and the
+  attachments into the data directory of a server that is stopped and
+  has no database there yet. It never writes over a database.
+
+      babel_sync eval 'BabelSync.Backup.restore("/backups/babelsync")'
   """
 
-  @spec run(Path.t()) :: :ok
-  def run(destination) do
+  @database "babel_sync.db"
+
+  @spec run(Path.t(), keep: pos_integer()) :: :ok
+  def run(destination, opts \\ []) do
     {:ok, _started} = Application.ensure_all_started(:babel_sync)
 
     if BabelSync.Repo.adapter() != :sqlite do
@@ -22,10 +36,56 @@ defmodule BabelSync.Backup do
     File.mkdir_p!(destination)
     stamp = Calendar.strftime(DateTime.utc_now(), "%Y%m%d-%H%M%S")
     snapshot = Path.join(destination, "babel_sync-#{stamp}.db")
+    File.rm(snapshot)
     snapshot!(snapshot)
 
     copied = copy_new(Path.join(BabelSync.data_dir(), "blobs"), Path.join(destination, "blobs"))
-    IO.puts("wrote #{snapshot} and #{copied} new attachment files")
+    removed = if opts[:keep], do: forget_old(destination, opts[:keep]), else: 0
+
+    IO.puts(
+      "wrote #{snapshot} and #{copied} new attachment files, removed #{removed} old snapshots"
+    )
+  end
+
+  @spec restore(Path.t(), Path.t()) :: :ok
+  def restore(source, data_dir \\ data_dir()) do
+    snapshot = if File.dir?(source), do: newest!(source), else: source
+    database = Path.join(data_dir, @database)
+
+    if File.exists?(database) do
+      raise "#{database} already exists; stop the server and move it away before restoring"
+    end
+
+    File.mkdir_p!(data_dir)
+    File.cp!(snapshot, database <> ".partial")
+    File.rename!(database <> ".partial", database)
+
+    copied =
+      copy_new(Path.join(Path.dirname(snapshot), "blobs"), Path.join(data_dir, "blobs"))
+
+    IO.puts("restored #{snapshot} to #{database} with #{copied} attachment files")
+  end
+
+  defp data_dir do
+    _loaded = Application.load(:babel_sync)
+    BabelSync.data_dir()
+  end
+
+  defp snapshots(folder) do
+    folder |> Path.join("babel_sync-*.db") |> Path.wildcard() |> Enum.sort(:desc)
+  end
+
+  defp newest!(folder) do
+    case snapshots(folder) do
+      [newest | _older] -> newest
+      [] -> raise "no babel_sync-*.db snapshot in #{folder}"
+    end
+  end
+
+  defp forget_old(folder, keep) when is_integer(keep) and keep > 0 do
+    old = folder |> snapshots() |> Enum.drop(keep)
+    Enum.each(old, &File.rm!/1)
+    length(old)
   end
 
   defp snapshot!(target) do
