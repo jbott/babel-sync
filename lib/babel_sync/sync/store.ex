@@ -82,6 +82,14 @@ defmodule BabelSync.Sync.Store do
     Repo.all(from v in Version, where: v.entry_id == ^entry_id, order_by: [desc: v.id])
   end
 
+  @spec newest_versions(Ecto.UUID.t(), pos_integer()) :: {[Version.t()], non_neg_integer()}
+  def newest_versions(entry_id, limit) do
+    saved = from v in Version, where: v.entry_id == ^entry_id
+
+    {Repo.all(from v in saved, order_by: [desc: v.id], limit: ^limit),
+     Repo.aggregate(saved, :count)}
+  end
+
   @spec get_version(Ecto.UUID.t(), integer()) :: Version.t() | nil
   def get_version(entry_id, id), do: Repo.get_by(Version, entry_id: entry_id, id: id)
 

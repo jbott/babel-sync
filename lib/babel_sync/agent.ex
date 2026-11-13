@@ -55,6 +55,7 @@ defmodule BabelSync.Agent do
           | :storage_unavailable
           | :search_timeout
           | :too_large_to_read
+          | :too_large_to_store
 
   @type error :: {:error, reason()}
   @type vault_reference :: String.t() | nil
@@ -69,6 +70,7 @@ defmodule BabelSync.Agent do
   @searched_bytes 512 * 1024
   @never_text ~w(image/ audio/ video/ font/ application/pdf application/zip)
   @recent_changes 50
+  @versions_listed 200
 
   @spec list_vaults(Scope.t()) :: [%{id: String.t(), name: String.t(), role: atom()}]
   def list_vaults(%Scope{user: user} = scope) do
@@ -274,8 +276,7 @@ defmodule BabelSync.Agent do
          :ok <- reachable(vault, path),
          true <- Vaults.Path.valid?(path) || {:error, :invalid_path},
          true <- (is_integer(size) and size >= 0) || {:error, :invalid_size},
-         true <-
-           size <= if(note?, do: @written_bytes, else: Blobs.max_size()) || {:error, :too_large},
+         :ok <- storable(size, note?),
          :ok <- replaceable(Vaults.get_entry_by_path(vault.id, path), note?, overwrite?) do
       target =
         BabelSync.Transfers.upload_target(%{
@@ -365,7 +366,7 @@ defmodule BabelSync.Agent do
         {:ok, blob}
 
       {:error, :too_large} ->
-        {:error, :too_large}
+        {:error, :too_large_to_store}
 
       {:error, reason} ->
         Logger.error("could not store an uploaded file: #{inspect(reason)}")
@@ -527,25 +528,30 @@ defmodule BabelSync.Agent do
     end
   end
 
-  @spec history(Scope.t(), vault_reference(), String.t()) :: {:ok, [map()]} | error()
+  @spec history(Scope.t(), vault_reference(), String.t()) ::
+          {:ok, %{versions: [map()], older: non_neg_integer()}} | error()
   def history(scope, vault, path) do
     with {:ok, vault} <- vault(scope, vault, :read),
          {:ok, entry} <- note(vault, path) do
       :ok = Sync.flush(entry.id)
 
-      versions = Sync.list_versions(entry.id)
+      {versions, saved} = Sync.Store.newest_versions(entry.id, @versions_listed)
       names = BabelSync.History.authors(versions)
 
       {:ok,
-       for version <- versions do
-         %{
-           version: version.id,
-           saved_at: version.inserted_at,
-           bytes: byte_size(version.content),
-           by: names[version.author_id],
-           with: version.author_app
-         }
-       end}
+       %{
+         older: saved - length(versions),
+         versions:
+           for version <- versions do
+             %{
+               version: version.id,
+               saved_at: version.inserted_at,
+               bytes: byte_size(version.content),
+               by: names[version.author_id],
+               with: version.author_app
+             }
+           end
+       }}
     end
   end
 
@@ -837,6 +843,12 @@ defmodule BabelSync.Agent do
     end
   end
 
+  defp storable(size, true) when size > @written_bytes, do: {:error, :too_large}
+
+  defp storable(size, _note?) do
+    if size > Blobs.max_size(), do: {:error, :too_large_to_store}, else: :ok
+  end
+
   defp attachment_path(path) do
     if Vaults.Path.kind_for(path) == :blob, do: :ok, else: {:error, :not_an_attachment}
   end
@@ -894,7 +906,7 @@ defmodule BabelSync.Agent do
         {:ok, blob}
 
       {:error, :too_large} ->
-        {:error, :too_large}
+        {:error, :too_large_to_store}
 
       {:error, reason} ->
         Logger.error("could not store an agent's file: #{inspect(reason)}")

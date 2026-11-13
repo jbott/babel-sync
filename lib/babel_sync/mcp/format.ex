@@ -12,6 +12,22 @@ defmodule BabelSync.MCP.Format do
     end)
   end
 
+  @spec capped([item], pos_integer(), ([item] -> String.t()), String.t()) :: String.t()
+        when item: term()
+  def capped(items, limit, format, how_to_see_the_rest) do
+    case Enum.split(items, limit) do
+      {shown, []} -> format.(shown)
+      {shown, rest} -> "#{format.(shown)}\n#{length(rest)} more not shown. #{how_to_see_the_rest}"
+    end
+  end
+
+  def history(%{versions: versions, older: 0}), do: Jason.encode!(versions, pretty: true)
+
+  def history(%{versions: versions, older: older}) do
+    "#{Jason.encode!(versions, pretty: true)}\n#{older} older versions not shown. " <>
+      "Each can still be read with read_file and its version number."
+  end
+
   def paths([]), do: "No file matches."
   def paths(paths), do: Enum.join(paths, "\n")
 

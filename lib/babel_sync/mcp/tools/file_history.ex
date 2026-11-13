@@ -20,7 +20,9 @@ defmodule BabelSync.MCP.Tools.FileHistory do
   @impl true
   def execute(params, frame) do
     Reply.run(frame, fn scope ->
-      Agent.history(scope, params[:vault], params.path)
+      with {:ok, history} <- Agent.history(scope, params[:vault], params.path) do
+        {:ok, BabelSync.MCP.Format.history(history)}
+      end
     end)
   end
 end

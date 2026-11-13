@@ -543,7 +543,7 @@ defmodule BabelSyncWeb.MCPTest do
     assert message =~ "list_vaults"
   end
 
-  test "an agent moves, deletes, restores and follows changes", %{session: session} do
+  test "an agent moves, deletes, restores and follows changes", %{session: session, vault: vault} do
     {:ok, _} = call(session, "write_file", %{path: "Log/a.md", content: "first"})
     {:ok, start} = call(session, "list_changes", %{})
     ["cursor " <> cursor | _recent] = String.split(start, "\n")
@@ -565,6 +565,13 @@ defmodule BabelSyncWeb.MCPTest do
     assert restored =~ "updated Log/a.md"
     assert read(session, "Log/a.md") == "first"
     assert newest > oldest
+
+    logged = Vaults.get_entry_by_path(vault.id, "Log/a.md")
+    for text <- 1..203, do: BabelSync.Sync.Store.put_version(logged.id, "v#{text}", {nil, nil})
+    assert {:ok, long} = call(session, "file_history", %{path: "Log/a.md"})
+    [listed, note] = String.split(long, "\n]\n")
+    assert length(Jason.decode!(listed <> "\n]")) == 200
+    assert note =~ "older versions not shown"
 
     assert {:ok, "moved to Done/Log"} = call(session, "move_file", %{from: "Log", to: "Done/Log"})
     assert {:error, _} = call(session, "move_file", %{from: "Log/a.md", to: "x.md"})

@@ -9,6 +9,8 @@ defmodule BabelSync.MCP.Tools.ListDirectory do
   alias BabelSync.MCP.Format
   alias BabelSync.MCP.Reply
 
+  @listed 500
+
   schema do
     field :vault, :string,
       description: "Vault name or id. May be omitted when only one vault is available."
@@ -24,7 +26,13 @@ defmodule BabelSync.MCP.Tools.ListDirectory do
     Reply.run(frame, fn scope ->
       with {:ok, listed} <-
              Agent.list_directory(scope, params[:vault], params[:path], params[:depth] || 1) do
-        {:ok, Format.listing(listed)}
+        {:ok,
+         Format.capped(
+           listed,
+           @listed,
+           &Format.listing/1,
+           "List a sub-folder, lower the depth, or use find_files."
+         )}
       end
     end)
   end

@@ -535,7 +535,9 @@ defmodule BabelSync.AgentTest do
       write(scope, "a.md", "v1")
       {:ok, _written} = Agent.write_file(scope, nil, "a.md", "v2", overwrite: true)
 
-      assert {:ok, [%{version: _latest}, %{version: first}]} = Agent.history(scope, nil, "a.md")
+      assert {:ok, %{versions: [%{version: _latest}, %{version: first}], older: 0}} =
+               Agent.history(scope, nil, "a.md")
+
       assert read(scope, "a.md", version: first) == "v1"
       assert {:error, :not_found} = Agent.read_file(scope, nil, "a.md", version: -1)
 

@@ -429,7 +429,7 @@ defmodule BabelSync.OAuthTest do
       assert by_agent.author == by_hand.author
       assert by_hand.app == nil
 
-      assert {:ok, [%{with: nil}, %{with: "Research agent", by: name}]} =
+      assert {:ok, %{versions: [%{with: nil}, %{with: "Research agent", by: name}], older: 0}} =
                BabelSync.Agent.history(scope, vault.id, "plan.md")
 
       assert name == by_agent.author

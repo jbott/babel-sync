@@ -60,8 +60,15 @@ defmodule BabelSync.MCP.Reply do
 
   defp message(:invalid_encoding), do: "The content is not valid base64." <> @unchanged
 
-  defp message(:too_large),
-    do: "The decoded content is larger than the 8 MiB an agent may write at once." <> @unchanged
+  defp message(:too_large) do
+    "A note, and anything written in the call itself, may be at most 8 MiB." <>
+      @unchanged <> " A larger attachment can be sent with upload_file."
+  end
+
+  defp message(:too_large_to_store) do
+    "That is larger than the #{div(BabelSync.Blobs.max_size(), 1024 * 1024)} MiB this server keeps in one file." <>
+      @unchanged
+  end
 
   defp message(:not_a_folder), do: "That path is a file, not a folder."
   defp message(:exists), do: "A file already exists at the destination path." <> @unchanged
