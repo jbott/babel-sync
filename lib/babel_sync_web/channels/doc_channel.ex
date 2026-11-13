@@ -46,10 +46,12 @@ defmodule BabelSyncWeb.DocChannel do
     %{scope: scope, entry_id: entry_id, vault_id: vault_id} = socket.assigns
 
     with :ok <- Scope.authorize(scope, vault_id, :write),
+         :ok <- still_a_note(entry_id),
          :ok <- Sync.apply_update(entry_id, update, origin: self(), author_id: scope.user.id) do
       {:reply, :ok, socket}
     else
       {:error, :forbidden} -> {:reply, {:error, %{reason: "forbidden"}}, socket}
+      {:error, :not_found} -> {:reply, {:error, %{reason: "not_found"}}, socket}
       {:error, _invalid} -> {:reply, {:error, %{reason: "invalid"}}, socket}
     end
   end
@@ -57,13 +59,12 @@ defmodule BabelSyncWeb.DocChannel do
   def handle_in("flush", _payload, socket) do
     %{scope: scope, entry_id: entry_id, vault_id: vault_id} = socket.assigns
 
-    case Scope.authorize(scope, vault_id, :write) do
-      :ok ->
-        :ok = Sync.flush(entry_id)
-        {:reply, :ok, socket}
-
-      {:error, :forbidden} ->
-        {:reply, {:error, %{reason: "forbidden"}}, socket}
+    with :ok <- Scope.authorize(scope, vault_id, :write),
+         :ok <- still_a_note(entry_id) do
+      :ok = Sync.flush(entry_id)
+      {:reply, :ok, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{reason: Atom.to_string(reason)}}, socket}
     end
   end
 
@@ -95,6 +96,13 @@ defmodule BabelSyncWeb.DocChannel do
   def handle_info({:awareness, state}, socket) do
     push(socket, "awareness", {:binary, state})
     {:noreply, socket}
+  end
+
+  defp still_a_note(entry_id) do
+    case Vaults.get_entry(entry_id) do
+      %Entry{deleted_at: nil} -> :ok
+      _deleted -> {:error, :not_found}
+    end
   end
 
   defp decode_vector(nil), do: {:ok, nil}

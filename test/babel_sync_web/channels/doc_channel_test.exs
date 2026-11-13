@@ -85,6 +85,21 @@ defmodule BabelSyncWeb.DocChannelTest do
     refute_push "awareness", _
   end
 
+  test "edits to a note that has been deleted are refused, not kept in the trash", ctx do
+    {doc, text} = client_doc(1)
+    {:ok, reply, socket} = join_doc(ctx.owner, ctx.note, doc)
+    :ok = Yex.apply_update(doc, Base.decode64!(reply.update))
+    {:ok, _deleted} = Vaults.delete_entry(ctx.note)
+    Yex.Text.insert(text, 0, "typed after the delete ")
+
+    assert_reply push(socket, "update", {:binary, local_update(doc, reply)}), :error, %{
+      reason: "not_found"
+    }
+
+    assert_reply push(socket, "flush", %{}), :error, %{reason: "not_found"}
+    assert Sync.text(ctx.note.id) == "server text"
+  end
+
   test "a client can ask for its edits to be announced to the vault now", ctx do
     {doc, text} = client_doc(1)
     {:ok, reply, socket} = join_doc(ctx.owner, ctx.note, doc)
