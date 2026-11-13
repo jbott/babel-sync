@@ -125,12 +125,16 @@ defmodule BabelSyncWeb.VaultLive.Reader do
       for={@rename_form}
       id="rename-form"
       phx-submit="rename"
+      phx-keydown={JS.push("cancel_rename") |> JS.focus(to: "#rename-button")}
+      phx-key="escape"
       class="flex animate-rise flex-wrap items-center justify-end gap-2 border-b border-line bg-sunken px-3 py-2.5 md:px-5"
     >
       <input
         type="text"
         name={@rename_form[:path].name}
         value={@rename_form[:path].value}
+        id="rename-path"
+        phx-mounted={JS.focus()}
         aria-label="New path"
         autocapitalize="off"
         autocomplete="off"
@@ -245,14 +249,14 @@ defmodule BabelSyncWeb.VaultLive.Reader do
       <div
         :if={length(@base.views) > 1}
         id="base-views"
-        role="tablist"
+        role="group"
+        aria-label="View"
         class="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-3 py-2 md:px-5"
       >
         <button
           :for={view <- @base.views}
           type="button"
-          role="tab"
-          aria-selected={to_string(view == @base.view)}
+          aria-pressed={to_string(view == @base.view)}
           phx-click="base_view"
           phx-value-view={view}
           class={[mode_class(view == @base.view), "whitespace-nowrap"]}

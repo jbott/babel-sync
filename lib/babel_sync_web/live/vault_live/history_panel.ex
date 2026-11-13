@@ -19,6 +19,9 @@ defmodule BabelSyncWeb.VaultLive.HistoryPanel do
     <aside
       :if={@versions}
       id="history"
+      aria-label="History"
+      phx-keydown={close()}
+      phx-key="escape"
       class={[
         "fixed inset-0 z-20 flex flex-col border-line bg-canvas pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:static md:z-auto md:shrink-0 md:border-l",
         if(@version, do: "md:w-[30rem] lg:w-[36rem]", else: "md:w-96")
@@ -92,7 +95,8 @@ defmodule BabelSyncWeb.VaultLive.HistoryPanel do
         <div class="flex items-center gap-2 border-b border-line px-3 py-2">
           <div
             id="compare-modes"
-            role="tablist"
+            role="group"
+            aria-label="What to show"
             class="inline-flex rounded-lg bg-sunken p-0.5"
           >
             <button
@@ -104,8 +108,8 @@ defmodule BabelSyncWeb.VaultLive.HistoryPanel do
                 ]
               }
               id={"compare-#{against}"}
-              role="tab"
-              aria-selected={to_string(@against == against)}
+              type="button"
+              aria-pressed={to_string(@against == against)}
               phx-click="compare"
               phx-value-against={against}
               class={mode_class(@against == against)}
@@ -201,6 +205,9 @@ defmodule BabelSyncWeb.VaultLive.HistoryPanel do
     <aside
       :if={@blob_versions}
       id="blob-history"
+      aria-label="History"
+      phx-keydown={close()}
+      phx-key="escape"
       class="fixed inset-0 z-20 flex flex-col border-line bg-canvas pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:static md:z-auto md:w-96 md:shrink-0 md:border-l"
     >
       <.history_heading />
@@ -250,11 +257,19 @@ defmodule BabelSyncWeb.VaultLive.HistoryPanel do
       else: "What this version changed from the one before it."
   end
 
+  defp close, do: JS.push("close_history") |> JS.focus(to: "#history-button")
+
   defp history_heading(assigns) do
     ~H"""
     <div class="flex h-12 shrink-0 items-center justify-between border-b border-line pl-4 pr-1.5">
       <span class="text-xs font-semibold uppercase tracking-[0.1em] text-muted">History</span>
-      <.icon_button phx-click="close_history" icon="hero-x-mark" label="Close history" />
+      <.icon_button
+        id="close-history"
+        phx-click={close()}
+        phx-mounted={JS.focus()}
+        icon="hero-x-mark"
+        label="Close history"
+      />
     </div>
     """
   end

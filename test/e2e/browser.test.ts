@@ -238,7 +238,7 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     await one.waitForSelector("#version-changes");
     await one.locator("#compare-text").click();
     await one.waitForSelector("#version-content");
-    await one.locator("#history [phx-click=close_history]").click();
+    await one.locator("#close-history").click();
 
     await one.locator("#delete-button").click();
     await one.waitForSelector("#empty");

@@ -591,7 +591,7 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
       view |> element("#base-views button", "Open") |> render_click()
       render_async(view)
-      assert has_element?(view, "#base-views [aria-selected=true]", "Open")
+      assert has_element?(view, "#base-views [aria-pressed=true]", "Open")
       assert has_element?(view, "#base-table a", "Alpha")
       refute has_element?(view, "#base-table a", "Beta")
 

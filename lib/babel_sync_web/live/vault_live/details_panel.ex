@@ -40,6 +40,9 @@ defmodule BabelSyncWeb.VaultLive.DetailsPanel do
     <aside
       :if={@details && @entry}
       id="details"
+      aria-label="Outline and links"
+      phx-keydown={close()}
+      phx-key="escape"
       data-close={JS.push("close_details")}
       class="fixed inset-0 z-20 flex flex-col border-line bg-canvas pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:static md:z-auto md:w-72 md:shrink-0 md:border-l"
     >
@@ -47,7 +50,8 @@ defmodule BabelSyncWeb.VaultLive.DetailsPanel do
         <span class="text-xs font-semibold uppercase tracking-[0.1em] text-muted">Outline</span>
         <.icon_button
           id="close-details"
-          phx-click="close_details"
+          phx-click={close()}
+          phx-mounted={JS.focus()}
           icon="hero-x-mark"
           label="Close outline"
         />
@@ -108,6 +112,8 @@ defmodule BabelSyncWeb.VaultLive.DetailsPanel do
     </aside>
     """
   end
+
+  defp close, do: JS.push("close_details") |> JS.focus(to: "#details-button")
 
   defp shallowest(%{headings: [_ | _] = headings}),
     do: headings |> Enum.map(& &1.level) |> Enum.min()
