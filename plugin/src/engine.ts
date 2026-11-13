@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
-import { type BabelSyncClient, type DocSession, type Entry, type VaultSession, Emitter, RequestError, blobHash } from "@babelsync/core";
+import { type BabelSyncClient, type DocSession, type Entry, type VaultSession, Emitter, HttpError, RequestError, blobHash } from "@babelsync/core";
 import { type LocalEntry, type StateStore, type VaultFs, parentOf } from "./fs.ts";
 import { applyTextChange, conflictPath, kindFor, normalize, textHash } from "./text.ts";
 
@@ -60,6 +60,15 @@ function folded(path: string): string {
   return path.normalize("NFC").toLowerCase();
 }
 
+const MEBIBYTE = 1024 * 1024;
+
+function explained(error: unknown, reason: string): string {
+  if (!(error instanceof HttpError)) return reason;
+  if (error.reason === "over_quota") return "the vault has no room left for it";
+  if (error.reason === "too_large") return "it is larger than the server accepts";
+  return reason;
+}
+
 class Unplaceable extends Error {}
 
 async function placing<T>(work: Promise<T>): Promise<T> {
@@ -72,7 +81,7 @@ async function placing<T>(work: Promise<T>): Promise<T> {
 
 export type Progress = { direction: "receiving" | "sending"; done: number; total: number };
 
-export class SyncEngine extends Emitter<{ status: Status; error: string; progress: Progress | null; log: string }> {
+export class SyncEngine extends Emitter<{ status: Status; error: string; notice: string; progress: Progress | null; log: string }> {
   status: Status = "offline";
   progress: Progress | null = null;
 
@@ -99,6 +108,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private buried = new Map<string, number>();
   private fetched = new Map<string, Uint8Array[]>();
   private unsent = new Map<string, { stamp: string; attempts: number }>();
+  private told = new Set<string>();
 
   constructor(options: EngineOptions) {
     super();
@@ -470,7 +480,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       const id = this.byPath.get(file.path);
       const known = id ? this.byId.get(id) : undefined;
       const kind = known && known.kind !== "folder" ? known.kind : kindFor(file.path);
-      if (kind !== "doc" && this.tooLarge(file.size)) return false;
+      if (kind !== "doc" && this.tooLarge(file.size)) return this.leftOut(file.path, file.size);
       if (this.setAsideAsUnsendable(file)) return false;
       return thoroughly || !known || known.mtime !== file.mtime || known.size !== file.size;
     });
@@ -510,7 +520,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
       if (attempts < ATTEMPTS) return this.fallBehind();
       this.emit("log", `leaving ${file.path} unsent after ${ATTEMPTS} attempts, until it changes`);
-      this.emit("error", `${file.path} cannot be sent: ${reason}`);
+      this.emit("error", `${file.path} cannot be sent: ${explained(error, reason)}`);
     }
   }
 
@@ -684,6 +694,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     if (remote.blob_hash === null) return;
     if (this.tooLarge(remote.size)) {
+      this.leftOut(remote.path, remote.size);
       this.remember(entry);
       await this.persist(entry);
       return;
@@ -749,7 +760,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
         await this.syncDoc(local.id);
       }
     } else if (remote.kind === "blob" && remote.blob_hash && remote.blob_hash !== local.hash) {
-      if (this.tooLarge(remote.size)) return;
+      if (this.tooLarge(remote.size)) return void this.leftOut(remote.path, remote.size);
       const disk = await this.diskHash(local);
       if (disk !== null && disk !== local.hash && disk !== remote.blob_hash) {
         await this.keepCopy(local.path);
@@ -793,7 +804,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       return;
     }
 
-    if (!this.sending) return;
+    if (!this.sending) return this.heldBack();
 
     try {
       const created = await this.vault!.create(path, { text });
@@ -822,7 +833,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const hash = await blobHash(data);
 
     if (entry && hash === entry.hash) return this.touch(entry);
-    if (!this.sending) return;
+    if (!this.sending) return this.heldBack();
 
     await client.upload(vaultId, data);
 
@@ -962,6 +973,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     try {
       if (announce && live.session.writable) await live.session.flush();
+      if (announce && !live.session.writable) this.heldBack();
       const entry = this.byId.get(id);
       if (entry && live.session.writable) entry.dirty = false;
     } catch (error) {
@@ -1086,6 +1098,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     let aside = stamped;
     for (let copy = 2; this.byPath.has(aside) || (await fs.stat(aside)); copy++) aside = numbered(stamped, copy);
     this.emit("log", `kept the copy of ${path} here as ${aside}`);
+    this.emit("notice", `${path} was changed here and elsewhere. The copy from this device is kept as ${aside}.`);
     await fs.rename(path, aside);
     return aside;
   }
@@ -1194,6 +1207,28 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private ignored(path: string): boolean {
     if (this.vault && !this.vault.admin && PLUGIN_CODE.test(path)) return true;
     return this.options.ignore?.(path) ?? false;
+  }
+
+  get writable(): boolean {
+    return this.vault?.joined !== true || this.vault.writable;
+  }
+
+  private tell(about: string, message: string): void {
+    if (this.told.has(about)) return;
+    this.told.add(about);
+    this.emit("log", message);
+    this.emit("notice", message);
+  }
+
+  private leftOut(path: string, size: number): false {
+    const limit = Math.round((this.options.maxBlobBytes ?? 0) / MEBIBYTE);
+    this.tell(`large:${path}:${size}`, `${path} is larger than the ${limit} MiB this device syncs, so it is left out.`);
+    return false;
+  }
+
+  private heldBack(): void {
+    if (!this.online) return;
+    this.tell("read-only", "You can read this vault but not change it. Changes made on this device stay on this device.");
   }
 
   private tooLarge(size: number): boolean {

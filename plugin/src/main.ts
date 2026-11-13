@@ -17,6 +17,7 @@ const UPDATE_FETCH_MS = 3_600_000;
 const UPDATE_FETCH_AFTER_MS = 600_000;
 const AWAY_MS = 20_000;
 const SHIPPED = ["manifest.json", "main.js"];
+const LINGERING_MS = 15_000;
 const PASSING = /^(timed out waiting for (synced|joined)|timeout)$/;
 const CURSOR_COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#ca8a04", "#ea580c", "#dc2626", "#db2777"];
 const DEVICE_ONLY = [/^\.obsidian\/workspace[^/]*\.json$/, /^\.obsidian\/plugins\/babelsync\//, /^\.obsidian\/cache$/, /^\.trash\//];
@@ -606,6 +607,7 @@ export default class BabelSyncPlugin extends Plugin {
       this.lastError = reason;
       this.notify(`Babel Sync: ${reason}`);
     });
+    engine.on("notice", (message) => this.notify(`Babel Sync: ${message}`, LINGERING_MS));
     engine.on("progress", () => this.onStatus?.(this.status));
 
     this.client = client;
@@ -692,7 +694,8 @@ export default class BabelSyncPlugin extends Plugin {
       this.lastError = "";
     }
     this.onStatus?.(status);
-    this.statusBar?.setText(LABELS[status]);
+    const held = status === "synced" && this.engine?.writable === false;
+    this.statusBar?.setText(held ? `${LABELS[status]}, read-only` : LABELS[status]);
   }
 }
 

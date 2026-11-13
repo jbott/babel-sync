@@ -16,6 +16,7 @@ type Device = {
   client: BabelSyncClient;
   engine: SyncEngine;
   errors: string[];
+  notices: string[];
 };
 
 const devices: Device[] = [];
@@ -66,13 +67,15 @@ async function boot(
     ignore: (path) => path.startsWith(".trash/"),
     ...options,
   });
+  const notices: string[] = [];
   engine.on("error", (message) => errors.push(message));
+  engine.on("notice", (message) => notices.push(message));
   if (logs) engine.on("log", (line) => logs.push(line));
   watch(fs, engine);
   client.connect();
   await engine.start();
 
-  const device = { name, fs, store, client, engine, errors };
+  const device = { name, fs, store, client, engine, errors, notices };
   devices.push(device);
   await eventually(() => engine.status === "synced", `${name} to finish its first sync`);
   return device;
@@ -347,6 +350,10 @@ test("an attachment replaced on two devices keeps both versions", async () => {
   const copy = "logo (conflict phone 2026-11-10 120000).png";
 
   await eventually(async () => (await laptop.fs.stat(copy)) !== null, "the conflict copy on the laptop");
+  assert.ok(
+    devices.some((device) => device.notices.some((notice) => notice.includes(copy))),
+    "the device that kept a copy says so",
+  );
   assert.deepEqual(await back.fs.readBinary("logo.png"), new Uint8Array([2, 2, 2]));
   assert.deepEqual(await laptop.fs.readBinary(copy), new Uint8Array([3, 3, 3]));
 });
@@ -455,6 +462,7 @@ test("attachments over the device's size limit are skipped without being deleted
 
   assert.deepEqual(paths(phone), ["small.md"]);
   assert.deepEqual(paths(laptop), ["small.md", "video.mp4"]);
+  assert.equal(phone.notices.filter((notice) => notice.includes("video.mp4")).length, 1);
 
   await shutdown(phone);
   const roomier = await boot("phone", vault, phone);

@@ -83,6 +83,26 @@ function parts(data: Uint8Array, partSize: number): Uint8Array[] {
   return out;
 }
 
+export class HttpError extends Error {
+  readonly status: number;
+  readonly reason: string | null;
+
+  constructor(message: string, status: number, reason: string | null) {
+    super(message);
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+function named(detail: string): string | null {
+  try {
+    const reply = JSON.parse(detail) as { error?: unknown };
+    return typeof reply.error === "string" ? reply.error : null;
+  } catch {
+    return null;
+  }
+}
+
 async function send(api: BlobApi, url: string, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers);
   const token = api.token?.();
@@ -91,7 +111,7 @@ async function send(api: BlobApi, url: string, init: RequestInit): Promise<Respo
   const response = await (api.fetch ?? fetch)(url, { ...init, headers });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(`${init.method} ${url} failed with ${response.status} ${detail}`);
+    throw new HttpError(`${init.method} ${url} failed with ${response.status} ${detail}`, response.status, named(detail));
   }
   return response;
 }
