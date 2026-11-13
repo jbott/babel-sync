@@ -71,6 +71,45 @@ defmodule BabelSyncWeb.AuthLive.Account do
     end
   end
 
+  def handle_event("leave", %{"id" => id}, %{assigns: %{multi?: true}} = socket) do
+    user = socket.assigns.current_scope.user
+
+    case Enum.find(Vaults.list_vaults(user), &(&1.id == id)) do
+      nil ->
+        {:noreply, socket}
+
+      vault ->
+        case Vaults.leave(vault, user) do
+          :ok ->
+            {:noreply,
+             socket |> stream_delete(:vaults, vault) |> put_flash(:info, "Left #{vault.name}.")}
+
+          {:error, :last_owner} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "You are the only owner of #{vault.name}. Make someone else an owner, or delete the vault."
+             )}
+        end
+    end
+  end
+
+  def handle_event("delete_account", _params, %{assigns: %{multi?: true}} = socket) do
+    case Accounts.delete_user(socket.assigns.current_scope.user) do
+      :ok ->
+        {:noreply, redirect(socket, to: ~p"/login")}
+
+      {:error, {:sole_owner, names}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Others use #{Enum.join(names, ", ")} and you are the only owner. Make someone else an owner, or delete it, first."
+         )}
+    end
+  end
+
   def handle_event("save_profile", %{"user" => params}, socket) do
     scope = socket.assigns.current_scope
 
@@ -253,6 +292,16 @@ defmodule BabelSyncWeb.AuthLive.Account do
                       </span>
                       <.badge :if={@roles[vault.id]}>{@roles[vault.id]}</.badge>
                     </.link>
+                    <.icon_button
+                      :if={@multi?}
+                      id={"leave-#{vault.id}"}
+                      phx-click="leave"
+                      phx-value-id={vault.id}
+                      data-confirm={"Leave #{vault.name}? You will need to be invited again to come back."}
+                      icon="hero-arrow-right-start-on-rectangle"
+                      label={"Leave #{vault.name}"}
+                      class="relative z-10"
+                    />
                     <.icon_button
                       :if={admin?(assigns, vault)}
                       navigate={Paths.settings(vault.id)}
@@ -543,6 +592,30 @@ defmodule BabelSyncWeb.AuthLive.Account do
                 </.link>
               </.group>
             </.panel>
+
+            <.panel
+              :if={@multi? and @signed_in?}
+              id="delete-account"
+              title="Delete account"
+              tone="danger"
+              class="scroll-mt-8"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-danger/30 bg-danger/5 p-4">
+                <p class="min-w-0 flex-1 basis-64 text-sm text-muted">
+                  Removes your account, your sign-ins, the devices and agents you connected, and
+                  every vault only you are a member of. Vaults you share stay with their other
+                  members.
+                </p>
+                <.button
+                  id="delete-account-button"
+                  phx-click="delete_account"
+                  data-confirm="Delete your account and the vaults only you use? This cannot be undone."
+                  variant="danger"
+                >
+                  Delete account
+                </.button>
+              </div>
+            </.panel>
           </div>
         </div>
       </div>
@@ -557,7 +630,8 @@ defmodule BabelSyncWeb.AuthLive.Account do
       {"appearance", "Appearance"},
       assigns.passkeys? && {"passkeys", "Passkeys"},
       assigns.signed_in? && {"sessions", "Browsers"},
-      {"grants", "Devices and agents"}
+      {"grants", "Devices and agents"},
+      assigns.multi? && assigns.signed_in? && {"delete-account", "Delete account"}
     ]
     |> Enum.filter(& &1)
   end

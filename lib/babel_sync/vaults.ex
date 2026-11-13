@@ -190,6 +190,19 @@ defmodule BabelSync.Vaults do
     :ok
   end
 
+  @spec leave(Vault.t(), User.t()) :: :ok | {:error, :last_owner}
+  def leave(%Vault{} = vault, %User{} = user) do
+    if sole_owner?(vault, user), do: {:error, :last_owner}, else: remove_member(vault, user)
+  end
+
+  @spec sole_owner?(Vault.t(), User.t()) :: boolean()
+  def sole_owner?(%Vault{id: vault_id}, %User{id: user_id}) do
+    Repo.all(
+      from m in Member, where: m.vault_id == ^vault_id and m.role == :owner, select: m.user_id
+    ) ==
+      [user_id]
+  end
+
   @spec remove_member(Vault.t(), User.t()) :: :ok
   def remove_member(%Vault{id: vault_id}, %User{id: user_id}) do
     Repo.delete_all(from m in Member, where: m.vault_id == ^vault_id and m.user_id == ^user_id)

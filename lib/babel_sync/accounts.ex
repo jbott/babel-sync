@@ -4,8 +4,9 @@ defmodule BabelSync.Accounts do
   and every way of signing in leads to it.
   """
 
-  alias BabelSync.Accounts.{Identity, User}
+  alias BabelSync.Accounts.{Identity, Sessions, User}
   alias BabelSync.Repo
+  alias BabelSync.Vaults
 
   @owner_name "Owner"
 
@@ -21,6 +22,30 @@ defmodule BabelSync.Accounts do
 
   @spec change_user(User.t(), map()) :: Ecto.Changeset.t()
   def change_user(%User{} = user, attrs \\ %{}), do: User.changeset(user, attrs)
+
+  @doc """
+  Removes a person and everything that is only theirs: their sign-ins,
+  the apps they approved, and the vaults nobody else is a member of. A
+  vault they alone own but others use is not theirs to take away, so
+  the account stays until it has another owner or has been deleted.
+  """
+  @spec delete_user(User.t()) :: :ok | {:error, {:sole_owner, [String.t()]}}
+  def delete_user(%User{} = user) do
+    owned = Enum.filter(Vaults.list_vaults(user), &Vaults.sole_owner?(&1, user))
+    {alone, shared} = Enum.split_with(owned, &(length(Vaults.list_members(&1)) == 1))
+
+    case shared do
+      [] ->
+        Enum.each(alone, fn vault -> {:ok, _deleted} = Vaults.delete_vault(vault) end)
+        :ok = Sessions.finish_others(user, nil)
+        :ok = BabelSync.OAuth.revoke_grants(user)
+        Repo.delete!(user)
+        :ok
+
+      still_needed ->
+        {:error, {:sole_owner, Enum.map(still_needed, & &1.name)}}
+    end
+  end
 
   @spec get_user_by_email(String.t()) :: User.t() | nil
   def get_user_by_email(email) when is_binary(email) do
@@ -81,7 +106,7 @@ defmodule BabelSync.Accounts do
 
   defp create_user!(attrs) do
     {:ok, user} = create_user(attrs)
-    :ok = BabelSync.Vaults.accept_invitations(user)
+    :ok = Vaults.accept_invitations(user)
     user
   end
 end

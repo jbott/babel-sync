@@ -9,6 +9,7 @@ defmodule BabelSyncWeb.Auth.LoginTest do
   alias BabelSync.Auth
   alias BabelSync.Auth.{Passkeys, Setup}
   alias BabelSync.TestAuthenticator
+  alias BabelSync.Vaults
 
   defp with_mode(mode) do
     Application.put_env(:babel_sync, :mode, mode)
@@ -314,6 +315,46 @@ defmodule BabelSyncWeb.Auth.LoginTest do
       assert redirected_to(signed_in) == "/"
       assert [%{id: id}] = BabelSync.Repo.all(Accounts.User)
       assert id == owner.id
+    end
+
+    test "a member leaves a vault, and an account is deleted with what is only its own", %{
+      conn: conn
+    } do
+      with_mode(:multi)
+      with_auth([:magic_link])
+      ada = user(%{email: "ada@example.com"})
+      bob = user(%{email: "bob@example.com"})
+      shared = vault(ada, %{name: "Shared"})
+      private = vault(ada, %{name: "Private"})
+      {:ok, _} = Vaults.put_member(shared, bob, :editor)
+      {:ok, blob} = BabelSync.Blobs.put(private.id, "only ada's")
+
+      {:ok, bobs, _html} = live(sign_in(conn, bob), ~p"/account")
+      bobs |> element("#leave-#{shared.id}") |> render_click()
+      assert Vaults.role(bob, shared.id) == nil
+      refute has_element?(bobs, "#leave-#{shared.id}")
+
+      {:ok, _} = Vaults.put_member(shared, bob, :editor)
+      {:ok, adas, _html} = live(sign_in(conn, ada), ~p"/account")
+      adas |> element("#leave-#{shared.id}") |> render_click()
+      assert has_element?(adas, "#flash-error", "only owner")
+      assert Vaults.role(ada, shared.id) == :owner
+
+      adas |> element("#delete-account-button") |> render_click()
+      assert has_element?(adas, "#flash-error", "Shared")
+      assert Accounts.get_user(ada.id)
+
+      {:ok, _} = Vaults.put_member(shared, bob, :owner)
+
+      assert {:error, {:redirect, %{to: "/login"}}} =
+               adas |> element("#delete-account-button") |> render_click()
+
+      refute Accounts.get_user(ada.id)
+      refute Vaults.get_vault(private.id)
+      refute BabelSync.Blobs.get(private.id, blob.hash)
+      assert Vaults.get_vault(shared.id)
+      assert Vaults.role(bob, shared.id) == :owner
+      assert Accounts.Sessions.list(ada) == []
     end
 
     test "expired links are pruned and cannot be used", %{conn: conn} do
