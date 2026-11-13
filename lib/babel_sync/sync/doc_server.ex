@@ -13,7 +13,11 @@ defmodule BabelSync.Sync.DocServer do
   any Yjs update does. A broadcast can be missed, when nodes lose sight
   of each other or one has just joined, so a replica also reads what the
   store holds that it has not applied: before it saves a version, before
-  it compacts, and when a node appears. Nothing is ever asked of a
+  it compacts, when a node appears, and every few seconds for as long as
+  the server is one of several. The last of these is what bounds how
+  stale a note can be on a node cut off from the others, since nothing
+  tells a node that an announcement never reached it. Nothing is ever
+  asked of a
   process on another node, so nodes running different versions of the
   code can share a note.
   """
@@ -26,6 +30,7 @@ defmodule BabelSync.Sync.DocServer do
   @text_name "content"
   @empty_update <<0, 0>>
   @membership_settles_ms 5_000
+  @used_at {__MODULE__, :used_at}
 
   defstruct [
     :entry_id,
@@ -50,6 +55,7 @@ defmodule BabelSync.Sync.DocServer do
     Process.flag(:trap_exit, true)
     :ok = BabelSync.Sync.subscribe(entry_id)
     :ok = :net_kernel.monitor_nodes(true)
+    if BabelSync.Cluster.enabled?(), do: keep_up_later()
     doc = Yex.Doc.new()
     text = Yex.Doc.get_text(doc, @text_name)
     server = take_in(%__MODULE__{entry_id: entry_id, doc: doc, text: text})
@@ -137,18 +143,25 @@ defmodule BabelSync.Sync.DocServer do
 
   def handle_info({:doc_update, _entry_id, update, _origin}, server) do
     Yex.apply_update(server.doc, update)
-    {:noreply, server, idle_timeout()}
+    {:noreply, server, rest_of_idle()}
   end
 
   def handle_info({:nodeup, _node}, server) do
     Process.send_after(self(), :catch_up, @membership_settles_ms)
-    {:noreply, catch_up(server), idle_timeout()}
+    {:noreply, catch_up(server), rest_of_idle()}
   end
 
-  def handle_info(:catch_up, server), do: {:noreply, catch_up(server), idle_timeout()}
+  def handle_info(:catch_up, server), do: {:noreply, catch_up(server), rest_of_idle()}
+
+  def handle_info(:keep_up, server) do
+    if BabelSync.Cluster.enabled?(), do: keep_up_later()
+    {:noreply, catch_up(server), rest_of_idle()}
+  end
 
   def handle_info({:EXIT, _from, reason}, server), do: {:stop, reason, server}
-  def handle_info(_elsewhere, server), do: {:noreply, server, idle_timeout()}
+  def handle_info(_elsewhere, server), do: {:noreply, server, rest_of_idle()}
+
+  defp keep_up_later, do: Process.send_after(self(), :keep_up, config(:keep_up_every))
 
   defp take_in(server) do
     {state, state_at, updates} = Store.news(server.entry_id, server.state_at, server.applied)
@@ -248,7 +261,17 @@ defmodule BabelSync.Sync.DocServer do
   end
 
   defp config(key), do: Application.fetch_env!(:babel_sync, BabelSync.Sync)[key]
-  defp idle_timeout, do: config(:idle_timeout)
+
+  defp idle_timeout do
+    Process.put(@used_at, System.monotonic_time(:millisecond))
+    config(:idle_timeout)
+  end
+
+  defp rest_of_idle do
+    used_at = Process.get(@used_at) || System.monotonic_time(:millisecond)
+    max(used_at + config(:idle_timeout) - System.monotonic_time(:millisecond), 0)
+  end
+
   defp settle_after, do: config(:settle_after)
   defp settle_within, do: config(:settle_within)
   defp compact_after, do: config(:compact_after)

@@ -162,6 +162,39 @@ defmodule BabelSync.SyncTest do
       assert [%{content: "known. written while" <> _} | _] = Sync.list_versions(entry.id)
     end
 
+    test "a note nobody uses on this node stops, whatever happens to it elsewhere", %{
+      entry: entry
+    } do
+      previous = Application.fetch_env!(:babel_sync, BabelSync.Sync)
+
+      Application.put_env(:babel_sync, BabelSync.Sync, Keyword.put(previous, :idle_timeout, 150))
+
+      on_exit(fn -> Application.put_env(:babel_sync, BabelSync.Sync, previous) end)
+      elsewhere = replica(entry.id)
+      ref = Process.monitor(elsewhere)
+      "" = text_of(elsewhere)
+
+      {:ok, announcing} =
+        :timer.send_interval(10, elsewhere, {:doc_update, entry.id, <<0, 0>>, self()})
+
+      {:ok, keeping_up} = :timer.send_interval(10, elsewhere, :keep_up)
+
+      assert_receive {:DOWN, ^ref, :process, ^elsewhere, :normal}, 2_000
+      :timer.cancel(announcing)
+      :timer.cancel(keeping_up)
+    end
+
+    test "a note that keeps up reads an edit it was never told about", %{entry: entry} do
+      elsewhere = replica(entry.id)
+      {missed, missed_text} = client_doc(4)
+      Yex.Text.insert(missed_text, 0, "never announced")
+      BabelSync.Sync.Store.append(entry.id, Yex.encode_state_as_update!(missed))
+
+      send(elsewhere, :keep_up)
+
+      assert text_of(elsewhere) == "never announced"
+    end
+
     test "two nodes that settle the same text save one version", %{entry: entry} do
       elsewhere = replica(entry.id)
       :ok = Sync.replace_text(entry.id, "once")

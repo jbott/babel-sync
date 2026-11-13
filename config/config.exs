@@ -24,6 +24,7 @@ config :babel_sync,
 
 config :babel_sync, BabelSync.Sync,
   idle_timeout: :timer.minutes(5),
+  keep_up_every: :timer.seconds(10),
   settle_after: :timer.seconds(30),
   settle_within: :timer.minutes(5),
   compact_after: 200
