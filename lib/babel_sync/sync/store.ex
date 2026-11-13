@@ -110,6 +110,24 @@ defmodule BabelSync.Sync.Store do
     |> Map.new()
   end
 
+  @spec unsettled([Ecto.UUID.t()]) :: [Ecto.UUID.t()]
+  def unsettled(entry_ids) do
+    saved =
+      from v in Version,
+        where: v.entry_id in ^entry_ids,
+        group_by: v.entry_id,
+        select: %{entry_id: v.entry_id, at: max(v.inserted_at)}
+
+    Repo.all(
+      from u in Update,
+        left_join: s in subquery(saved),
+        on: s.entry_id == u.entry_id,
+        where: u.entry_id in ^entry_ids and (is_nil(s.at) or u.inserted_at >= s.at),
+        distinct: true,
+        select: u.entry_id
+    )
+  end
+
   @spec prune_versions(DateTime.t()) :: non_neg_integer()
   def prune_versions(older_than) do
     newest =

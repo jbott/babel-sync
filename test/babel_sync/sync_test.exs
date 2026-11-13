@@ -211,6 +211,28 @@ defmodule BabelSync.SyncTest do
              BabelSync.Sync.Store.hash("typed just before a crash")
   end
 
+  test "reading a settled note nobody has open does not bring it to life", %{entry: entry} do
+    :ok = Sync.replace_text(entry.id, "at rest")
+    stop(entry.id)
+
+    assert Sync.text(entry.id) == "at rest"
+    assert Sync.texts([entry.id]) == %{entry.id => "at rest"}
+    refute Sync.live?(entry.id)
+  end
+
+  test "reading a note with an edit newer than its last version opens it", %{entry: entry} do
+    :ok = Sync.replace_text(entry.id, "saved")
+    :ok = Sync.flush(entry.id)
+    :ok = Sync.replace_text(entry.id, "saved, then typed just before a crash")
+    [{pid, _}] = Registry.lookup(BabelSync.Sync.Registry, entry.id)
+    ref = Process.monitor(pid)
+    Process.exit(pid, :kill)
+    assert_receive {:DOWN, ^ref, _, _, :killed}
+
+    assert Sync.texts([entry.id]) == %{entry.id => "saved, then typed just before a crash"}
+    assert Sync.live?(entry.id)
+  end
+
   test "opening a settled or empty note saves nothing", %{entry: entry} do
     assert Sync.text(entry.id) == ""
     stop(entry.id)

@@ -9,6 +9,12 @@ defmodule BabelSync.Sync do
   with concurrent typing. `rewrite_text/3` computes the new text from the
   current one inside the document's process, so nothing typed in between
   is lost, and returns the text before and after.
+
+  Reading a note nobody has open takes its text from the last saved
+  version, so that reading, searching or exporting does not bring every
+  note it touches to life. A note with an edit stored after its last
+  version, as a server that stopped without warning leaves behind, is
+  opened instead, which saves that version.
   """
 
   alias BabelSync.Sync.{DocServer, Store}
@@ -33,7 +39,7 @@ defmodule BabelSync.Sync do
   end
 
   @spec text(Ecto.UUID.t()) :: String.t()
-  def text(entry_id), do: call(entry_id, :text)
+  def text(entry_id), do: texts([entry_id])[entry_id]
 
   @spec replace_text(Ecto.UUID.t(), String.t(), keyword()) :: :ok
   def replace_text(entry_id, text, opts \\ []) do
@@ -66,9 +72,9 @@ defmodule BabelSync.Sync do
   @spec texts([Ecto.UUID.t()]) :: %{Ecto.UUID.t() => String.t()}
   def texts(entry_ids) do
     {live, idle} = Enum.split_with(entry_ids, &live?/1)
-    saved = Store.latest_contents(idle)
+    saved = Store.latest_contents(idle -- Store.unsettled(idle))
 
-    Map.new(live ++ (idle -- Map.keys(saved)), &{&1, text(&1)}) |> Map.merge(saved)
+    Map.new(live ++ (idle -- Map.keys(saved)), &{&1, call(&1, :text)}) |> Map.merge(saved)
   end
 
   defdelegate list_versions(entry_id), to: Store
