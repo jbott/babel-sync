@@ -5,6 +5,17 @@ defmodule BabelSync.Sync.DocServer do
   Every update is written to the store before it is acknowledged or
   broadcast, so the process can stop at any time and be rebuilt from the
   database. It stops by itself after a period without activity.
+
+  In a cluster every node that needs a note runs its own process for
+  it, and the processes are replicas of one document rather than one
+  owner and its callers. An update accepted on one node reaches the
+  others as the same broadcast its clients receive, and merges there as
+  any Yjs update does. A broadcast can be missed, when nodes lose sight
+  of each other or one has just joined, so a replica also reads what the
+  store holds that it has not applied: before it saves a version, before
+  it compacts, and when a node appears. Nothing is ever asked of a
+  process on another node, so nodes running different versions of the
+  code can share a note.
   """
 
   use GenServer, restart: :temporary
@@ -14,6 +25,7 @@ defmodule BabelSync.Sync.DocServer do
 
   @text_name "content"
   @empty_update <<0, 0>>
+  @membership_settles_ms 5_000
 
   defstruct [
     :entry_id,
@@ -21,6 +33,7 @@ defmodule BabelSync.Sync.DocServer do
     :text,
     :settle_timer,
     :unsettled_since,
+    :state_at,
     applied: [],
     last_author: {nil, nil},
     versioned_hash: nil
@@ -35,25 +48,14 @@ defmodule BabelSync.Sync.DocServer do
   @impl true
   def init(entry_id) do
     Process.flag(:trap_exit, true)
+    :ok = BabelSync.Sync.subscribe(entry_id)
+    :ok = :net_kernel.monitor_nodes(true)
     doc = Yex.Doc.new()
-    {state, updates} = Store.load(entry_id)
-
-    Enum.each(
-      List.wrap(state) ++ Enum.map(updates, &elem(&1, 1)),
-      &(:ok = Yex.apply_update(doc, &1))
-    )
-
     text = Yex.Doc.get_text(doc, @text_name)
+    server = take_in(%__MODULE__{entry_id: entry_id, doc: doc, text: text})
 
-    server = %__MODULE__{
-      entry_id: entry_id,
-      doc: doc,
-      text: text,
-      applied: Enum.map(updates, &elem(&1, 0)),
-      versioned_hash: settled_hash(entry_id, Yex.Text.to_string(text))
-    }
-
-    {:ok, server, {:continue, :settle}}
+    {:ok, %{server | versioned_hash: settled_hash(entry_id, Yex.Text.to_string(text))},
+     {:continue, :settle}}
   end
 
   @impl true
@@ -133,13 +135,55 @@ defmodule BabelSync.Sync.DocServer do
 
   def handle_info(:timeout, server), do: {:stop, :normal, server}
 
+  def handle_info({:doc_update, _entry_id, update, _origin}, server) do
+    Yex.apply_update(server.doc, update)
+    {:noreply, server, idle_timeout()}
+  end
+
+  def handle_info({:nodeup, _node}, server) do
+    Process.send_after(self(), :catch_up, @membership_settles_ms)
+    {:noreply, catch_up(server), idle_timeout()}
+  end
+
+  def handle_info(:catch_up, server), do: {:noreply, catch_up(server), idle_timeout()}
+
   def handle_info({:EXIT, _from, reason}, server), do: {:stop, reason, server}
+  def handle_info(_elsewhere, server), do: {:noreply, server, idle_timeout()}
+
+  defp take_in(server) do
+    {state, state_at, updates} = Store.news(server.entry_id, server.state_at, server.applied)
+
+    Enum.each(
+      List.wrap(state) ++ Enum.map(updates, &elem(&1, 1)),
+      &(:ok = Yex.apply_update(server.doc, &1))
+    )
+
+    %{server | state_at: state_at, applied: Enum.map(updates, &elem(&1, 0)) ++ server.applied}
+  end
+
+  defp catch_up(server) do
+    before = Yex.encode_state_vector!(server.doc)
+    server = take_in(server)
+
+    with {:ok, missed} when missed != @empty_update <-
+           Yex.encode_state_as_update(server.doc, before) do
+      Phoenix.PubSub.local_broadcast_from(
+        BabelSync.PubSub,
+        self(),
+        BabelSync.Sync.topic(server.entry_id),
+        {:doc_update, server.entry_id, missed, self()}
+      )
+    end
+
+    server
+  end
 
   defp record(server, update, origin, author) do
     id = Store.append(server.entry_id, update)
 
-    Phoenix.PubSub.broadcast(
+    Phoenix.PubSub.broadcast_from(
       BabelSync.PubSub,
+      self(),
       BabelSync.Sync.topic(server.entry_id),
       {:doc_update, server.entry_id, update, origin}
     )
@@ -150,8 +194,13 @@ defmodule BabelSync.Sync.DocServer do
   end
 
   defp compact(server) do
-    :ok = Store.compact(server.entry_id, Yex.encode_state_as_update!(server.doc), server.applied)
-    %{server | applied: []}
+    server = catch_up(server)
+    full_state = Yex.encode_state_as_update!(server.doc)
+
+    case Store.compact(server.entry_id, full_state, server.state_at, server.applied) do
+      {:ok, state_at} -> %{server | applied: [], state_at: state_at}
+      {:error, :stale} -> server
+    end
   end
 
   defp schedule_settle(server) do
@@ -169,15 +218,15 @@ defmodule BabelSync.Sync.DocServer do
 
   defp settle(server) do
     if server.settle_timer, do: Process.cancel_timer(server.settle_timer)
+    server = catch_up(server)
     content = Yex.Text.to_string(server.text)
     hash = Store.hash(content)
 
-    if hash != server.versioned_hash do
+    with true <- hash != server.versioned_hash,
+         %Vaults.Entry{} = entry when entry.content_hash != hash <-
+           Vaults.get_entry(server.entry_id) do
       Store.put_version(server.entry_id, content, server.last_author)
-
-      with %Vaults.Entry{} = entry <- Vaults.get_entry(server.entry_id) do
-        Vaults.update_entry(entry, %{content_hash: hash, size: byte_size(content)})
-      end
+      Vaults.update_entry(entry, %{content_hash: hash, size: byte_size(content)})
     end
 
     %{server | settle_timer: nil, unsettled_since: nil, versioned_hash: hash}

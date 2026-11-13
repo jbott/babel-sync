@@ -9,6 +9,8 @@ defmodule BabelSync.Sync.Store do
   alias BabelSync.Repo
   alias BabelSync.Sync.{State, Update, Version}
 
+  @asked_together 500
+
   @spec load(Ecto.UUID.t()) :: {binary() | nil, [{integer(), binary()}]}
   def load(entry_id) do
     state = Repo.one(from s in State, where: s.entry_id == ^entry_id, select: s.data)
@@ -44,24 +46,74 @@ defmodule BabelSync.Sync.Store do
     Repo.insert!(%Update{entry_id: entry_id, data: update, inserted_at: DateTime.utc_now()}).id
   end
 
-  @spec compact(Ecto.UUID.t(), binary(), [integer()]) :: :ok
-  def compact(entry_id, full_state, applied) do
-    {:ok, :ok} =
-      Repo.transact(fn ->
-        Repo.insert!(
-          %State{entry_id: entry_id, data: full_state, updated_at: DateTime.utc_now()},
-          on_conflict: {:replace, [:data, :updated_at]},
-          conflict_target: :entry_id
-        )
+  @doc """
+  What is stored for a note that its process has not yet taken in: the
+  compacted state when it is not the one saved at `seen_at`, and every
+  update other than those in `applied`.
+  """
+  @spec news(Ecto.UUID.t(), DateTime.t() | nil, [integer()]) ::
+          {binary() | nil, DateTime.t() | nil, [{integer(), binary()}]}
+  def news(entry_id, seen_at, applied) do
+    saved_at = Repo.one(from s in State, where: s.entry_id == ^entry_id, select: s.updated_at)
 
-        applied
-        |> Enum.chunk_every(500)
-        |> Enum.each(&Repo.delete_all(from u in Update, where: u.id in ^&1))
+    state =
+      if saved_at != seen_at,
+        do:
+          Repo.one(
+            from s in State, where: s.entry_id == ^entry_id, select: {s.data, s.updated_at}
+          )
 
-        {:ok, :ok}
-      end)
+    updates =
+      Repo.all(
+        from u in Update,
+          where: u.entry_id == ^entry_id and u.id not in ^applied,
+          order_by: u.id,
+          select: {u.id, u.data}
+      )
 
-    :ok
+    case state do
+      {data, at} -> {data, at, updates}
+      nil -> {nil, seen_at, updates}
+    end
+  end
+
+  @doc """
+  Replaces the compacted state and drops the updates folded into it,
+  unless another node has replaced the state since `seen_at`: its state
+  may hold edits this one lacks, and has to be taken in first.
+  """
+  @spec compact(Ecto.UUID.t(), binary(), DateTime.t() | nil, [integer()]) ::
+          {:ok, DateTime.t()} | {:error, :stale}
+  def compact(entry_id, full_state, seen_at, applied) do
+    now = DateTime.utc_now()
+
+    Repo.transact(fn ->
+      case replace_state(entry_id, full_state, seen_at, now) do
+        {1, _} ->
+          applied
+          |> Enum.chunk_every(500)
+          |> Enum.each(&Repo.delete_all(from u in Update, where: u.id in ^&1))
+
+          {:ok, now}
+
+        {0, _} ->
+          {:error, :stale}
+      end
+    end)
+  end
+
+  defp replace_state(entry_id, data, nil, now) do
+    Repo.insert_all(State, [%{entry_id: entry_id, data: data, updated_at: now}],
+      on_conflict: :nothing,
+      conflict_target: :entry_id
+    )
+  end
+
+  defp replace_state(entry_id, data, seen_at, now) do
+    Repo.update_all(
+      from(s in State, where: s.entry_id == ^entry_id and s.updated_at == ^seen_at),
+      set: [data: data, updated_at: now]
+    )
   end
 
   @spec put_version(Ecto.UUID.t(), String.t(), {Ecto.UUID.t() | nil, String.t() | nil}) ::
@@ -112,6 +164,10 @@ defmodule BabelSync.Sync.Store do
 
   @spec unsettled([Ecto.UUID.t()]) :: [Ecto.UUID.t()]
   def unsettled(entry_ids) do
+    entry_ids |> Enum.chunk_every(@asked_together) |> Enum.flat_map(&unsettled_among/1)
+  end
+
+  defp unsettled_among(entry_ids) do
     saved =
       from v in Version,
         where: v.entry_id in ^entry_ids,

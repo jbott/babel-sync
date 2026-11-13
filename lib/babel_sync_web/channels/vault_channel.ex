@@ -153,12 +153,9 @@ defmodule BabelSyncWeb.VaultChannel do
   defp expect_base(_entry, _params), do: :ok
 
   defp expect_unchanged(%Entry{kind: :doc} = note, %{"base_hash" => base}) when is_binary(base) do
-    if Sync.live?(note.id), do: :ok = Sync.flush(note.id)
-    current = Vaults.get_entry(note.id)
-
-    if (current.content_hash || Sync.Store.hash("")) == base,
+    if Sync.Store.hash(Sync.text(note.id)) == base,
       do: :ok,
-      else: {:error, {:conflict, current}}
+      else: {:error, {:conflict, Vaults.get_entry(note.id)}}
   end
 
   defp expect_unchanged(%Entry{kind: :blob} = file, %{"base_hash" => base})

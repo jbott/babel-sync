@@ -119,22 +119,85 @@ defmodule BabelSync.SyncTest do
     assert Sync.text(entry.id) == "durable"
   end
 
-  test "compaction leaves alone updates the note's process never applied", %{entry: entry} do
-    {client, client_text} = client_doc(1)
-    Yex.Text.insert(client_text, 0, "first ")
-    push(entry.id, client)
-
-    {elsewhere, elsewhere_text} = client_doc(3)
-    Yex.Text.insert(elsewhere_text, 0, "written by another node")
-    foreign = BabelSync.Sync.Store.append(entry.id, Yex.encode_state_as_update!(elsewhere))
-
-    for n <- 1..Application.fetch_env!(:babel_sync, BabelSync.Sync)[:compact_after] do
-      Yex.Text.insert(client_text, Yex.Text.length(client_text), "#{n} ")
-      push(entry.id, client)
+  describe "a note open on several nodes" do
+    defp replica(entry_id) do
+      start_supervised!(%{
+        id: make_ref(),
+        start: {GenServer, :start_link, [DocServer, entry_id, []]},
+        restart: :temporary
+      })
     end
 
-    {_state, updates} = BabelSync.Sync.Store.load(entry.id)
-    assert foreign in Enum.map(updates, &elem(&1, 0))
+    defp text_of(replica), do: GenServer.call(replica, :text)
+
+    test "an edit taken on one node reaches the note's process on another", %{entry: entry} do
+      elsewhere = replica(entry.id)
+      :ok = Sync.replace_text(entry.id, "typed here")
+      _ = :sys.get_state(elsewhere)
+
+      assert text_of(elsewhere) == "typed here"
+
+      {:ok, "typed here", _after} =
+        GenServer.call(elsewhere, {:rewrite_text, &{:ok, &1 <> ", and there"}, nil, {nil, nil}})
+
+      [{here, _}] = Registry.lookup(BabelSync.Sync.Registry, entry.id)
+      _ = :sys.get_state(here)
+      assert Sync.text(entry.id) == "typed here, and there"
+    end
+
+    test "an edit whose announcement was missed is read from the store", %{entry: entry} do
+      :ok = Sync.replace_text(entry.id, "known. ")
+      :ok = Sync.subscribe(entry.id)
+      {missed, missed_text} = client_doc(3)
+      pull(entry.id, missed)
+      before = Yex.encode_state_vector!(missed)
+      Yex.Text.insert(missed_text, 7, "written while the nodes could not see each other")
+      {:ok, update} = Yex.encode_state_as_update(missed, before)
+      BabelSync.Sync.Store.append(entry.id, update)
+
+      :ok = Sync.flush(entry.id)
+
+      assert Sync.text(entry.id) == "known. written while the nodes could not see each other"
+      assert_receive {:doc_update, _id, _update, _origin}
+      assert [%{content: "known. written while" <> _} | _] = Sync.list_versions(entry.id)
+    end
+
+    test "two nodes that settle the same text save one version", %{entry: entry} do
+      elsewhere = replica(entry.id)
+      :ok = Sync.replace_text(entry.id, "once")
+      :ok = Sync.flush(entry.id)
+      :ok = GenServer.call(elsewhere, :flush)
+
+      assert [%{content: "once"}] = Sync.list_versions(entry.id)
+    end
+
+    test "compacting on one node never drops what another node compacted", %{entry: entry} do
+      most = Application.fetch_env!(:babel_sync, BabelSync.Sync)[:compact_after]
+      elsewhere = replica(entry.id)
+      {client, client_text} = client_doc(1)
+
+      for n <- 1..(most + 1) do
+        Yex.Text.insert(client_text, Yex.Text.length(client_text), "#{n} ")
+        push(entry.id, client)
+      end
+
+      for n <- 1..(most + 1) do
+        {:ok, _before, _after} =
+          GenServer.call(elsewhere, {:rewrite_text, &{:ok, &1 <> "e#{n} "}, nil, {nil, nil}})
+      end
+
+      [{here, _}] = Registry.lookup(BabelSync.Sync.Registry, entry.id)
+      _ = :sys.get_state(here)
+      expected = Sync.text(entry.id)
+      assert expected == text_of(elsewhere)
+      assert expected =~ "#{most + 1} " and expected =~ "e#{most + 1} "
+
+      stop(entry.id)
+      :ok = GenServer.stop(elsewhere)
+      assert Sync.text(entry.id) == expected
+      :ok = Sync.flush(entry.id)
+      assert Sync.text(entry.id) == expected
+    end
   end
 
   test "compaction keeps content and lets old clients still sync", %{entry: entry} do

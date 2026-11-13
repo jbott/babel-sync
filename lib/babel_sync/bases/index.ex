@@ -39,11 +39,13 @@ defmodule BabelSync.Bases.Index do
   def notes(entries) do
     readable = for %Entry{kind: :doc} = entry <- entries, markdown?(entry.path), do: entry
     stored = stored(Enum.map(readable, & &1.id))
+    unsettled = MapSet.new(Sync.Store.unsettled(Enum.map(readable, & &1.id)))
 
     {current, stale} =
       Enum.split_with(readable, fn entry ->
         match?({hash, _facts} when hash == entry.content_hash, stored[entry.id]) and
-          not is_nil(entry.content_hash) and not Sync.live?(entry.id)
+          not is_nil(entry.content_hash) and not Sync.live?(entry.id) and
+          entry.id not in unsettled
       end)
 
     facts =
