@@ -214,6 +214,97 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert has_element?(view, "#preview-body .embed-content p", "Shown in place")
     end
 
+    test "a canvas is drawn as a board of cards, and a broken one is shown as text", %{
+      conn: conn,
+      vault: vault
+    } do
+      board = entry(vault, "Board.canvas")
+
+      canvas = %{
+        "nodes" => [
+          %{
+            "id" => "a",
+            "type" => "text",
+            "text" => "# Idea",
+            "x" => 0,
+            "y" => 0,
+            "width" => 200,
+            "height" => 80
+          },
+          %{
+            "id" => "b",
+            "type" => "text",
+            "text" => "next",
+            "x" => 300,
+            "y" => 0,
+            "width" => 200,
+            "height" => 80
+          }
+        ],
+        "edges" => [%{"id" => "e", "fromNode" => "a", "toNode" => "b"}]
+      }
+
+      :ok = Sync.replace_text(board.id, Jason.encode!(canvas))
+      {:ok, view, _html} = live(conn, Paths.entry(board))
+      view |> element("button", "Read") |> render_click()
+
+      assert has_element?(view, "#canvas[phx-hook=Canvas] .canvas-node h1", "Idea")
+      assert has_element?(view, "#canvas .canvas-edge")
+      assert has_element?(view, "#canvas-fit")
+
+      :ok = Sync.replace_text(board.id, "{not json")
+      send(view.pid, :render_preview)
+      refute has_element?(view, "#canvas")
+      assert has_element?(view, "#preview-body .callout", "not valid JSON")
+    end
+
+    test "a base is shown as a table of its notes, one tab per view", %{
+      conn: conn,
+      vault: vault
+    } do
+      for {name, status} <- [{"Alpha", "open"}, {"Beta", "done"}] do
+        note = entry(vault, "Tasks/#{name}.md")
+        :ok = Sync.replace_text(note.id, "---\nstatus: #{status}\n---\n# #{name}")
+      end
+
+      base = entry(vault, "Tasks.base")
+
+      :ok =
+        Sync.replace_text(base.id, """
+        filters: file.inFolder("Tasks")
+        views:
+          - type: table
+            name: All
+            order: [status]
+          - type: table
+            name: Open
+            filters: status == "open"
+            order: [status]
+        """)
+
+      {:ok, view, _html} = live(conn, Paths.entry(base))
+      view |> element("button", "Read") |> render_click()
+
+      assert has_element?(view, "#base-table th", "status")
+
+      assert has_element?(
+               view,
+               ~s(#base-table a[href="#{Paths.entry(Vaults.get_entry_by_path(vault.id, "Tasks/Beta.md"))}"]),
+               "Beta"
+             )
+
+      assert has_element?(view, "#base-table td", "done")
+
+      view |> element("#base-views button", "Open") |> render_click()
+      assert has_element?(view, "#base-views [aria-selected=true]", "Open")
+      assert has_element?(view, "#base-table a", "Alpha")
+      refute has_element?(view, "#base-table a", "Beta")
+
+      :ok = Sync.replace_text(base.id, "filters: \"(((\"")
+      send(view.pid, :render_preview)
+      assert has_element?(view, "#preview-body .callout", "could not be run")
+    end
+
     test "creates, renames and deletes notes", %{conn: conn, vault: vault} do
       {:ok, view, _html} = live(conn, Paths.vault(vault.id))
 

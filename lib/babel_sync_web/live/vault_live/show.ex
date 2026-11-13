@@ -2,7 +2,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   use BabelSyncWeb, :live_view
 
   alias BabelSync.Accounts.Scope
-  alias BabelSync.{Auth, Blobs, History, Markdown, Sync, Vaults}
+  alias BabelSync.{Agent, Auth, Bases, Blobs, Canvas, History, Markdown, Sync, Vaults}
   alias BabelSync.Vaults.Entry
   alias BabelSyncWeb.Paths
   alias BabelSyncWeb.VaultLive.Tree
@@ -11,6 +11,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   @audio ~w(.mp3 .wav .ogg .m4a .flac)
   @video ~w(.mp4 .webm .mov .mkv)
   @preview_delay 250
+  @base_rows 500
 
   @fence String.duplicate("`", 12)
 
@@ -34,6 +35,9 @@ defmodule BabelSyncWeb.VaultLive.Show do
        |> assign(:socket_token, Auth.socket_token(scope))
        |> assign(:entry, nil)
        |> assign(:preview, nil)
+       |> assign(:shown_as, :markdown)
+       |> assign(:base, nil)
+       |> assign(:base_view, nil)
        |> assign(:versions, nil)
        |> assign(:version, nil)
        |> assign(:against, :previous)
@@ -227,6 +231,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end)
   end
 
+  def handle_event("base_view", %{"view" => view}, %{assigns: %{base: %{}}} = socket) do
+    {:noreply, socket |> assign(:base_view, view) |> render_preview()}
+  end
+
   def handle_event(_event_for_an_entry_no_longer_open, _params, socket), do: {:noreply, socket}
 
   @impl true
@@ -332,21 +340,74 @@ defmodule BabelSyncWeb.VaultLive.Show do
     |> assign(:version, nil)
     |> assign(:blob_versions, nil)
     |> assign(:rename_form, nil)
+    |> assign(:base_view, nil)
     |> render_preview()
   end
 
   defp render_preview(%{assigns: %{entry: %Entry{kind: :doc} = entry, mode: :read}} = socket) do
-    html =
-      Markdown.to_html(readable(entry, Sync.text(entry.id)), socket.assigns.entries, %{
-        note: &Paths.entry/1,
-        raw: &Paths.raw/1,
-        text: &readable(&1, Sync.text(&1.id))
-      })
+    text = Sync.text(entry.id)
 
-    assign(socket, :preview, html)
+    case String.downcase(Path.extname(entry.path)) do
+      ".canvas" -> show_canvas(socket, entry, text)
+      ".base" -> show_base(socket, entry, text)
+      _note -> show_markdown(socket, entry, text)
+    end
   end
 
-  defp render_preview(socket), do: assign(socket, :preview, nil)
+  defp render_preview(socket), do: socket |> assign(:preview, nil) |> assign(:base, nil)
+
+  defp show_markdown(socket, entry, text, notice \\ "") do
+    html = Markdown.to_html(notice <> readable(entry, text), socket.assigns.entries, links())
+    socket |> assign(:shown_as, :markdown) |> assign(:base, nil) |> assign(:preview, html)
+  end
+
+  defp show_canvas(socket, entry, text) do
+    case Canvas.to_html(text, socket.assigns.entries, links()) do
+      {:ok, html} ->
+        socket |> assign(:shown_as, :canvas) |> assign(:base, nil) |> assign(:preview, html)
+
+      :error ->
+        show_markdown(socket, entry, text, "> [!warning] This canvas is not valid JSON.\n\n")
+    end
+  end
+
+  defp show_base(socket, entry, text) do
+    %{current_scope: scope, vault: vault, base_view: wanted} = socket.assigns
+
+    with {:ok, definition} <- Bases.Definition.parse(text),
+         names = Enum.map(definition.views, & &1.name),
+         view = if(wanted in names, do: wanted, else: List.first(names)),
+         {:ok, %{rows: _} = table} <-
+           Agent.query_notes(scope, vault.id, base: entry.path, view: view, limit: @base_rows) do
+      socket
+      |> assign(:shown_as, :base)
+      |> assign(:preview, nil)
+      |> assign(:base, %{views: names, view: view, table: based(table, socket.assigns.entries)})
+    else
+      failed ->
+        notice = "> [!warning] This base could not be run: #{problem(failed)}\n\n"
+        show_markdown(socket, entry, text, notice)
+    end
+  end
+
+  defp based(table, entries) do
+    paths = Map.new(entries, &{&1.path, &1})
+
+    %{
+      columns: table.columns |> tl() |> Enum.map(&String.replace_prefix(&1, "note.", "")),
+      rows:
+        for([path | cells] <- table.rows, do: %{path: path, entry: paths[path], cells: cells}),
+      total: table.total
+    }
+  end
+
+  defp problem({:error, {:invalid_query, message}}), do: message
+  defp problem({:error, message}) when is_binary(message), do: message
+  defp problem(_other), do: "its views could not be read."
+
+  defp links do
+    %{note: &Paths.entry/1, raw: &Paths.raw/1, text: &readable(&1, Sync.text(&1.id))}
+  end
 
   defp readable(%Entry{path: path}, text) do
     if Vaults.Path.markdown?(path),
@@ -681,12 +742,108 @@ defmodule BabelSyncWeb.VaultLive.Show do
           </div>
 
           <article
-            :if={@entry && @entry.kind == :doc && @mode == :read}
+            :if={@entry && @entry.kind == :doc && @mode == :read && @shown_as == :markdown}
             id="preview"
             class="flex-1 overflow-y-auto px-5 pb-24 pt-7 md:px-10 md:pt-12"
           >
             <div id="preview-body" phx-hook="Markdown" class="markdown mx-auto max-w-[42rem]">
               {raw(@preview)}
+            </div>
+          </article>
+
+          <article
+            :if={@entry && @entry.kind == :doc && @mode == :read && @shown_as == :canvas}
+            id="canvas"
+            phx-hook="Canvas"
+            class="relative min-h-0 flex-1 touch-none overflow-hidden bg-sunken/60"
+          >
+            <div id="canvas-body" phx-hook="Markdown" class="markdown canvas">
+              {raw(@preview)}
+            </div>
+            <div class="absolute bottom-4 right-4 flex gap-1 rounded-lg border border-line bg-surface p-1 shadow-raise">
+              <button
+                :for={
+                  {action, icon, label} <- [
+                    {"out", "hero-minus-mini", "Zoom out"},
+                    {"in", "hero-plus-mini", "Zoom in"},
+                    {"fit", "hero-arrows-pointing-in-mini", "Fit to screen"}
+                  ]
+                }
+                id={"canvas-#{action}"}
+                type="button"
+                data-canvas={action}
+                aria-label={label}
+                title={label}
+                class="grid size-8 place-items-center rounded-md text-muted transition hover:bg-sunken hover:text-ink"
+              >
+                <.icon name={icon} class="size-4" />
+              </button>
+            </div>
+          </article>
+
+          <article
+            :if={@entry && @entry.kind == :doc && @mode == :read && @shown_as == :base && @base}
+            id="base"
+            class="flex min-h-0 flex-1 flex-col"
+          >
+            <div
+              :if={length(@base.views) > 1}
+              id="base-views"
+              role="tablist"
+              class="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-3 py-2 md:px-5"
+            >
+              <button
+                :for={view <- @base.views}
+                type="button"
+                role="tab"
+                aria-selected={to_string(view == @base.view)}
+                phx-click="base_view"
+                phx-value-view={view}
+                class={[mode_class(view == @base.view), "whitespace-nowrap"]}
+              >
+                {view}
+              </button>
+            </div>
+            <div class="min-h-0 flex-1 overflow-auto">
+              <p :if={@base.table.rows == []} class="px-6 py-12 text-center text-sm text-muted">
+                No notes match this view.
+              </p>
+              <table :if={@base.table.rows != []} id="base-table" class="w-full text-sm">
+                <thead class="sticky top-0 bg-canvas">
+                  <tr class="border-b border-line text-left text-xs font-medium text-faint">
+                    <th class="px-4 py-2 font-medium md:px-5">Note</th>
+                    <th :for={column <- @base.table.columns} class="px-3 py-2 font-medium">
+                      {column}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    :for={row <- @base.table.rows}
+                    class="border-b border-line/60 transition hover:bg-sunken/60"
+                  >
+                    <td class="whitespace-nowrap px-4 py-2 md:px-5">
+                      <.link
+                        :if={row.entry}
+                        patch={Paths.entry(row.entry)}
+                        class="font-medium text-ink underline-offset-2 hover:underline"
+                      >
+                        {Path.rootname(Path.basename(row.path))}
+                      </.link>
+                      <span :if={is_nil(row.entry)}>{row.path}</span>
+                    </td>
+                    <td :for={cell <- row.cells} class="max-w-xs truncate px-3 py-2 text-muted">
+                      {cell}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p
+                :if={@base.table.total > length(@base.table.rows)}
+                class="px-4 py-3 text-xs text-faint md:px-5"
+              >
+                Showing {length(@base.table.rows)} of {@base.table.total} notes.
+              </p>
             </div>
           </article>
 

@@ -176,6 +176,41 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
       async () => `the PDF did not open in the browser's viewer: ${frame.childFrames().map((child) => child.url())}`,
     );
 
+    const drawer = await connectAgent(baseUrl, token);
+    const board = {
+      nodes: [
+        { id: "a", type: "text", text: "# Plan", x: 0, y: 0, width: 240, height: 120 },
+        { id: "b", type: "file", file: "Notes/pixel.png", x: 400, y: 0, width: 120, height: 120, color: "4" },
+      ],
+      edges: [{ id: "e", fromNode: "a", toNode: "b", label: "shows" }],
+    };
+    assert.equal((await drawer.call("write_file", { vault: vaultId, path: "Notes/board.canvas", content: JSON.stringify(board) })).failed, false);
+    await drawer.close();
+    await one.locator('#tree a[href$="/f/Notes/board.canvas"]').click();
+    await waitForText(one, "#canvas .canvas-node h1", "Plan");
+    const scale = () => one.$eval("#canvas .canvas-board", (element) => new DOMMatrix(getComputedStyle(element).transform).a);
+    const fitted = await scale();
+    const centre = await one.$eval("#canvas", (element) => {
+      const bounds = element.getBoundingClientRect();
+      return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+    });
+    await one.mouse.move(centre.x, centre.y);
+    await one.keyboard.down("Control");
+    await one.mouse.wheel({ deltaY: -200 });
+    await one.keyboard.up("Control");
+    await eventually(
+      async () => (await scale()) > fitted,
+      async () => `zooming left the scale at ${await scale()}`,
+    );
+    const before = await one.$eval("#canvas .canvas-node", (element) => element.getBoundingClientRect().left);
+    await one.mouse.down();
+    await one.mouse.move(centre.x + 120, centre.y + 40, { steps: 6 });
+    await one.mouse.up();
+    const after = await one.$eval("#canvas .canvas-node", (element) => element.getBoundingClientRect().left);
+    assert.ok(Math.abs(after - before - 120) < 2, `dragging moved the board by ${after - before}`);
+    await one.locator("#canvas-fit").click();
+    assert.equal(await scale(), fitted);
+
     await one.locator('#tree a[href$="/f/Notes/browser.md"]').click();
     await waitForText(one, "#entry-path", "Notes/browser.md");
     await one.locator("#rename-button").click();
