@@ -240,13 +240,6 @@ defmodule BabelSyncWeb.VaultLive.Show do
     {:noreply, socket |> assign(:base_view, view) |> render_preview()}
   end
 
-  def handle_event("open_place", %{"href" => href}, socket) do
-    case Enum.find(socket.assigns.entries, &(Paths.entry(&1) == href)) do
-      %Entry{} = entry -> {:noreply, push_patch(socket, to: Paths.entry(entry))}
-      nil -> {:noreply, socket}
-    end
-  end
-
   def handle_event(_event_for_an_entry_no_longer_open, _params, socket), do: {:noreply, socket}
 
   @impl true

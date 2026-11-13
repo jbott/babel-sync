@@ -281,7 +281,7 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert has_element?(view, "#preview-body .callout", "not valid JSON")
     end
 
-    test "a map view sends its places to the map and a marker opens its note", %{
+    test "a map view sends its places, with links to their notes, to the map", %{
       conn: conn,
       vault: vault
     } do
@@ -332,9 +332,6 @@ defmodule BabelSyncWeb.VaultLiveTest do
              ]
 
       refute has_element?(view, "#base-table")
-      render_hook(view, "open_place", %{"href" => "/elsewhere"})
-      assert render_hook(view, "open_place", %{"href" => href})
-      assert_patch(view, href)
     end
 
     test "a base is shown as a table of its notes, one tab per view", %{

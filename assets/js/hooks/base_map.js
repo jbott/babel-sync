@@ -94,7 +94,8 @@ export const BaseMap = {
       attributionControl: { compact: true },
     });
     this.map.addControl(new library.NavigationControl({ showCompass: false }), "top-right");
-    this.popup = new library.Popup({ closeButton: touch(), closeOnClick: touch(), offset: 12, maxWidth: "300px" });
+    this.popup = new library.Popup({ closeButton: true, closeOnClick: false, offset: 12, maxWidth: "300px" });
+    this.popup.on("close", () => (this.pinned = false));
     this.bindPopupHover();
 
     this.map.on("style.load", () => this.drawLayers());
@@ -160,17 +161,33 @@ export const BaseMap = {
 
     this.map.on("mouseenter", "place-pins", (event) => {
       this.map.getCanvas().style.cursor = "pointer";
-      if (!touch()) this.show(event.features[0]);
+      if (!touch() && !this.pinned) this.show(event.features[0]);
     });
     this.map.on("mouseleave", "place-pins", () => {
       this.map.getCanvas().style.cursor = "";
-      if (!touch()) this.hideSoon();
+      if (!touch() && !this.pinned) this.hideSoon();
     });
-    this.map.on("click", "place-pins", (event) => {
-      const place = this.places.markers[event.features[0].properties.index];
-      if (touch()) this.show(event.features[0]);
-      else if (place?.href) this.pushEvent("open_place", { href: place.href });
+    this.map.on("click", (event) => {
+      const feature = this.pinAt(event.point);
+      if (feature) {
+        this.show(feature);
+        this.pinned = true;
+      } else {
+        this.popup.remove();
+      }
     });
+  },
+
+  pinAt({ x, y }) {
+    const reach = touch() ? 14 : 4;
+    const [first] = this.map.queryRenderedFeatures(
+      [
+        [x - reach, y - reach],
+        [x + reach, y + reach],
+      ],
+      { layers: ["place-pins"] },
+    );
+    return first;
   },
 
   show(feature) {
@@ -189,7 +206,7 @@ export const BaseMap = {
     this.popup.on("open", () => {
       const element = this.popup.getElement();
       element?.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
-      element?.addEventListener("mouseleave", () => !touch() && this.hideSoon());
+      element?.addEventListener("mouseleave", () => !touch() && !this.pinned && this.hideSoon());
     });
   },
 
