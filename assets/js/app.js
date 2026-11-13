@@ -11,7 +11,7 @@ import { Markdown } from "./hooks/markdown";
 import { Canvas } from "./hooks/canvas";
 import { BaseMap } from "./hooks/base_map";
 import { Finder } from "./hooks/finder";
-import { allNotesSaved, anyNoteUnsent } from "./hooks/client";
+import { allNotesSaved, anyNoteUnsent } from "./hooks/open_notes";
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
 const liveSocket = new LiveSocket("/live", Socket, {

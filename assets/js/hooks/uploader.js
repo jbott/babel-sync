@@ -1,9 +1,8 @@
-import { sharedClient } from "./client";
-
 export const Uploader = {
   mounted() {
     this.el.addEventListener("change", async () => {
       const { vaultId, token } = this.el.dataset;
+      const { sharedClient } = await import("./client");
       const client = sharedClient(token);
       const progress = document.getElementById("upload-progress");
       const files = [...this.el.files];

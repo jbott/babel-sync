@@ -1,4 +1,5 @@
 import { BabelSyncClient } from "@babelsync/core";
+import { openNotes } from "./open_notes";
 
 let client = null;
 let currentToken = null;
@@ -14,7 +15,6 @@ export function sharedClient(token) {
   return client;
 }
 
-const openNotes = new Set();
 const leftUnsent = new Map();
 
 export function openNote(token, entryId) {
@@ -46,12 +46,4 @@ export function closeNote(session) {
 function finish(session) {
   openNotes.delete(session);
   session.close();
-}
-
-export function anyNoteUnsent() {
-  return [...openNotes].some((session) => session.pending);
-}
-
-export function allNotesSaved(timeoutMs) {
-  return Promise.all([...openNotes].map((session) => session.whenSynced(timeoutMs)));
 }
