@@ -3,6 +3,7 @@ DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/a
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:759,5B9D488
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:761,7F46EAC
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:774,5DB85FF
+DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:785,5DA3FFA
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent/glob.ex:15,186480B
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/auth/passkeys.ex:91,E3BA49
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/bases/index.ex:76,66AB627
@@ -23,6 +24,7 @@ Traversal.FileModule: Directory Traversal in `File.open!`,lib/babel_sync/blobs/s
 Traversal.FileModule: Directory Traversal in `File.open`,lib/babel_sync_web/controllers/transfer_controller.ex:93,10FFA71
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.ex:315,391E84B
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.ex:317,406106F
+Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.ex:320,1BD71B6
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/obsidian/plugin.ex:95,608A612
 Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:28,37FC872
 Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:38,596F766
@@ -30,9 +32,11 @@ Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian
 Traversal.FileModule: Directory Traversal in `File.rm!`,lib/babel_sync/backup.ex:87,552C05E
 Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync/backup.ex:39,F5DFCA
 Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync/blobs/store/disk.ex:25,3992B25
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync/blobs/store/disk.ex:91,17BF1F7
 Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync/blobs/store/disk.ex:91,69E7DBF
 Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync_web/controllers/transfer_controller.ex:88,74A1C73
 Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs.ex:163,DC72DB
+Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs.ex:181,CD1475
 Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs/store/disk.ex:46,25ED74F
 Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs/store/disk.ex:66,5C24D08
 Traversal.FileModule: Directory Traversal in `File.write`,lib/babel_sync/blobs/store/disk.ex:20,14FE10E
@@ -40,6 +44,7 @@ Traversal.SendFile: Directory Traversal in `send_file`,lib/babel_sync_web/blob_s
 Traversal.SendFile: Directory Traversal in `send_file`,lib/babel_sync_web/blob_sender.ex:57,61F7C8
 XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/obsidian_controller.ex:26,1C81858
 XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/transfer_controller.ex:146,44B9F6E
+XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/transfer_controller.ex:154,1F9E044
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/reader.ex:199,17727DF
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/reader.ex:210,10D891C
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:676,E545E1
@@ -59,5 +64,7 @@ XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:927,4743CF9
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:931,28D26AA
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:935,400F5
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:938,3E9E2A
+XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/health_controller.ex:29,1257BB0
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/obsidian_controller.ex:28,3242BD8
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/transfer_controller.ex:147,1F70068
+XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/transfer_controller.ex:155,3E4E8FC
