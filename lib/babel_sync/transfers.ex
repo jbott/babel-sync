@@ -88,6 +88,7 @@ defmodule BabelSync.Transfers do
         token_hash: digest(token),
         direction: direction,
         user_id: attrs.user_id,
+        grant_id: attrs[:grant_id],
         vault_id: attrs.vault_id,
         entry_id: attrs[:entry_id],
         path: attrs[:path],

@@ -181,17 +181,19 @@ defmodule BabelSync.OAuth do
   @spec scope_from_access_token(String.t()) :: {:ok, Scope.t()} | :error
   def scope_from_access_token(token) do
     case grant_for_access_token(token) do
-      %Grant{id: id, user: %User{} = user, client: client} = grant ->
-        {:ok,
-         Scope.for_user(user,
-           read_only: grant.read_only,
-           grant_id: id,
-           vault_ids: grant.vault_ids,
-           app: client.name
-         )}
+      %Grant{} = grant ->
+        {:ok, scope(grant)}
 
       nil ->
         :error
+    end
+  end
+
+  @spec scope_from_grant(Ecto.UUID.t()) :: {:ok, Scope.t()} | :error
+  def scope_from_grant(grant_id) do
+    case Repo.one(from g in Grant, where: g.id == ^grant_id, preload: [:user, :client]) do
+      %Grant{} = grant -> {:ok, scope(grant)}
+      nil -> :error
     end
   end
 
@@ -261,6 +263,15 @@ defmodule BabelSync.OAuth do
     idle = DateTime.add(now, -config(:idle_grant_days), :day)
     Repo.all(from g in Grant, where: g.last_used_at < ^idle) |> Enum.each(&drop/1)
     :ok
+  end
+
+  defp scope(%Grant{user: %User{} = user, client: client} = grant) do
+    Scope.for_user(user,
+      read_only: grant.read_only,
+      grant_id: grant.id,
+      vault_ids: grant.vault_ids,
+      app: client.name
+    )
   end
 
   defp within(%Scope{vault_ids: nil}, nil), do: nil

@@ -12,6 +12,7 @@ defmodule BabelSync.Transfers.Transfer do
     field :token_hash, :binary
     field :direction, Ecto.Enum, values: [:upload, :download]
     field :user_id, :binary_id
+    field :grant_id, :binary_id
     field :vault_id, :binary_id
     field :entry_id, :binary_id
     field :path, :string

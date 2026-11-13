@@ -131,15 +131,23 @@ defmodule BabelSyncWeb.TransferController do
   end
 
   defp scope(%Transfer{} = transfer, access) do
-    with %Accounts.User{} = user <- Accounts.get_user(transfer.user_id),
-         scope = Scope.for_user(user),
+    with {:ok, scope} <- issuer(transfer),
          :ok <- Scope.authorize(scope, transfer.vault_id, access) do
       {:ok, scope}
     else
-      nil -> {:error, :forbidden}
+      :error -> {:error, :forbidden}
       error -> error
     end
   end
+
+  defp issuer(%Transfer{grant_id: nil, user_id: user_id}) do
+    case Accounts.get_user(user_id) do
+      %Accounts.User{} = user -> {:ok, Scope.for_user(user)}
+      nil -> :error
+    end
+  end
+
+  defp issuer(%Transfer{grant_id: grant_id}), do: BabelSync.OAuth.scope_from_grant(grant_id)
 
   defp deliver(conn, %Entry{kind: :doc} = entry) do
     conn

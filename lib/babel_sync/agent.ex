@@ -281,6 +281,7 @@ defmodule BabelSync.Agent do
       target =
         BabelSync.Transfers.upload_target(%{
           user_id: user.id,
+          grant_id: scope.grant_id,
           vault_id: vault.id,
           path: path,
           size: size,
@@ -810,9 +811,9 @@ defmodule BabelSync.Agent do
     end
   end
 
-  defp download(%Scope{user: user}, %Entry{} = entry, size) do
+  defp download(%Scope{user: user, grant_id: grant_id}, %Entry{} = entry, size) do
     BabelSync.Transfers.download_target(
-      %{user_id: user.id, vault_id: entry.vault_id, entry_id: entry.id},
+      %{user_id: user.id, grant_id: grant_id, vault_id: entry.vault_id, entry_id: entry.id},
       %{
         name: Elixir.Path.basename(entry.path),
         mimeType: MIME.from_path(entry.path),

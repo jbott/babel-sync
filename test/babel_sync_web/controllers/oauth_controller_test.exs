@@ -140,6 +140,50 @@ defmodule BabelSyncWeb.OAuthControllerTest do
     assert {:ok, %{vault_ids: nil}} = BabelSync.Auth.scope_from_token(unlimited)
   end
 
+  test "a file link dies with the grant it was made under, and keeps that grant's limits", %{
+    conn: conn
+  } do
+    with_auth([:passkey])
+    owner = Accounts.single_user!()
+    vault = vault(owner, %{name: "Work"})
+    note = BabelSync.Fixtures.entry(vault, "plan.md")
+    :ok = BabelSync.Sync.replace_text(note.id, "the plan")
+    %{"client_id" => client_id} = register(conn)
+    browser = sign_in(conn, owner)
+
+    scope_for = fn extra ->
+      approved =
+        post(
+          browser,
+          ~p"/oauth/authorize",
+          authorize_params(client_id, extra) |> Map.put(:decision, "approve")
+        )
+
+      %{"access_token" => access} = tokens(conn, client_id, query_of(approved)["code"])
+      {:ok, scope} = BabelSync.Auth.scope_from_token(access)
+      scope
+    end
+
+    path_of = fn url -> URI.parse(url).path end
+    scope = scope_for.(%{})
+    {:ok, %{url: download}} = BabelSync.Agent.download_link(scope, vault.id, "plan.md")
+    {:ok, %{url: upload}} = BabelSync.Agent.upload_link(scope, vault.id, "new.bin", 3)
+
+    assert conn |> get(path_of.(download)) |> response(200) == "the plan"
+
+    :ok = BabelSync.OAuth.revoke_grant(owner, scope.grant_id)
+    assert conn |> get(path_of.(download)) |> json_response(404)
+
+    refused =
+      conn
+      |> put_req_header("content-type", "application/octet-stream")
+      |> put_req_header("content-length", "3")
+      |> put(path_of.(upload), "abc")
+
+    assert json_response(refused, 403)
+    refute BabelSync.Vaults.get_entry_by_path(vault.id, "new.bin")
+  end
+
   test "an agent is approved, uses its token over MCP and the API, and is disconnected", %{
     conn: conn
   } do
