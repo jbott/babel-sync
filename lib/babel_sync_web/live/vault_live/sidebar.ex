@@ -1,0 +1,234 @@
+defmodule BabelSyncWeb.VaultLive.Sidebar do
+  @moduledoc """
+  The side of a vault's page: making and uploading files, the tree of
+  everything in the vault, and the way to its other vaults, trash and
+  settings.
+  """
+
+  use BabelSyncWeb, :html
+
+  alias BabelSyncWeb.Paths
+  alias BabelSyncWeb.VaultLive.Tree
+
+  attr :entry, :any, required: true
+  attr :writable, :boolean, required: true
+  attr :admin, :boolean, required: true
+  attr :new_form, :any, required: true
+  attr :notes_created, :integer, required: true
+  attr :vault, :any, required: true
+  attr :vaults, :list, required: true
+  attr :socket_token, :string, required: true
+  attr :tree, :list, required: true
+  attr :current_scope, :any, required: true
+
+  def sidebar(assigns) do
+    ~H"""
+    <aside
+      id="sidebar"
+      class={[
+        "flex-col border-line bg-sunken pt-[env(safe-area-inset-top)] md:flex md:w-72 md:shrink-0 md:border-r",
+        if(@entry, do: "hidden", else: "flex w-full")
+      ]}
+    >
+      <div class="px-4 pt-3">
+        <Layouts.brand />
+      </div>
+
+      <div :if={@writable} class="px-2 pt-2.5">
+        <div class="flex items-center gap-1">
+          <.form
+            for={@new_form}
+            id="new-note"
+            phx-submit="create_note"
+            class="relative min-w-0 flex-1"
+          >
+            <button
+              class="absolute left-0 top-0 grid size-9 cursor-pointer place-items-center rounded-lg text-faint transition-colors duration-150 hover:text-ink md:size-8"
+              title="Create note"
+              aria-label="Create note"
+            >
+              <.icon name="hero-plus-mini" class="size-[1.125rem]" />
+            </button>
+            <input
+              type="text"
+              id={"new-note-path-#{@notes_created}"}
+              name={@new_form[:path].name}
+              value=""
+              placeholder="New note"
+              aria-label="New note path"
+              autocapitalize="off"
+              autocomplete="off"
+              spellcheck="false"
+              required
+              class="block h-9 w-full min-w-0 rounded-lg bg-ink/5 pl-9 pr-3 text-sm text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus:bg-surface focus:ring-2 focus:ring-accent/60 md:h-8 md:pl-8"
+            />
+          </.form>
+          <label
+            class="grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors duration-150 hover:bg-ink/7 hover:text-ink has-focus-visible:ring-2 has-focus-visible:ring-accent/60 md:size-8"
+            title="Upload files"
+          >
+            <.icon name="hero-arrow-up-tray" class="size-[1.125rem]" />
+            <input
+              id="uploader"
+              type="file"
+              multiple
+              class="sr-only"
+              aria-label="Upload files"
+              phx-hook="Uploader"
+              data-vault-id={@vault.id}
+              data-token={@socket_token}
+            />
+          </label>
+        </div>
+        <progress
+          id="upload-progress"
+          phx-update="ignore"
+          class="upload-meter mt-2"
+          value="0"
+          max="100"
+          hidden
+        ></progress>
+      </div>
+
+      <div :if={@tree != []} class="mt-2 flex items-center gap-0.5 pl-4 pr-2">
+        <span class="flex-1 text-2xs font-semibold uppercase tracking-[0.1em] text-faint">
+          Files
+        </span>
+        <.icon_button
+          id="open-all-folders"
+          phx-click={JS.dispatch("babelsync:folders", to: "#tree", detail: %{open: true})}
+          icon="hero-arrows-pointing-out-mini"
+          label="Open all folders"
+        />
+        <.icon_button
+          id="close-all-folders"
+          phx-click={JS.dispatch("babelsync:folders", to: "#tree", detail: %{open: false})}
+          icon="hero-arrows-pointing-in-mini"
+          label="Close all folders"
+        />
+      </div>
+
+      <nav
+        id="tree"
+        aria-label="Files"
+        phx-hook="Folders"
+        data-vault-id={@vault.id}
+        class="mt-1 flex-1 overflow-y-auto px-2 pb-6 text-base md:text-sm"
+      >
+        <div :if={@tree == []} class="px-3 py-10 text-center">
+          <.icon name="hero-document-plus" class="size-7 text-faint" />
+          <p class="mt-2 text-muted">This vault is empty.</p>
+          <.link
+            id="tree-connect"
+            navigate={Paths.connect(@vault.id)}
+            class="mt-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 font-medium text-accent transition-colors duration-150 hover:text-ink"
+          >
+            Connect Obsidian <.icon name="hero-arrow-right-mini" class="size-4" />
+          </.link>
+        </div>
+        <.tree nodes={@tree} selected={@entry && @entry.path} vault_id={@vault.id} />
+      </nav>
+
+      <div class="flex items-center gap-0.5 border-t border-line px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+        <form
+          id="vault-switcher-form"
+          phx-change="switch_vault"
+          phx-auto-recover="ignore"
+          class="relative mr-1 min-w-0 flex-1"
+        >
+          <select
+            id="vault-switcher"
+            name="vault"
+            aria-label="Vault"
+            title="Switch vault"
+            class="block h-9 w-full min-w-0 cursor-pointer appearance-none truncate rounded-lg bg-ink/5 pl-3 pr-8 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus-visible:ring-2 focus-visible:ring-accent/60 md:h-8"
+          >
+            <option :for={vault <- @vaults} value={vault.id} selected={vault.id == @vault.id}>
+              {vault.name}
+            </option>
+            <hr />
+            <option value="connect">Connect Obsidian…</option>
+            <option value="manage">Manage vaults…</option>
+          </select>
+          <.icon
+            name="hero-chevron-up-down-mini"
+            class="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-faint"
+          />
+        </form>
+        <.icon_button
+          navigate={Paths.trash(@vault.id)}
+          id="vault-trash"
+          icon="hero-trash"
+          label="Trash"
+        />
+        <.icon_button
+          :if={@admin}
+          navigate={Paths.settings(@vault.id)}
+          id="vault-settings"
+          icon="hero-cog-6-tooth"
+          label="Vault settings"
+        />
+        <.icon_button
+          :if={@current_scope}
+          id="account-link"
+          navigate={~p"/account?#{[from: @vault.id]}"}
+          icon="hero-user-circle"
+          label="Your settings"
+        />
+      </div>
+    </aside>
+    """
+  end
+
+  defp unfolded?(node, selected) do
+    is_binary(selected) and String.starts_with?(selected, node.path <> "/")
+  end
+
+  attr :nodes, :list, required: true
+  attr :selected, :string, default: nil
+  attr :vault_id, :string, required: true
+
+  defp tree(assigns) do
+    ~H"""
+    <ul class="space-y-px">
+      <li :for={node <- @nodes}>
+        <details
+          :if={Tree.folder?(node)}
+          data-path={node.path}
+          open={unfolded?(node, @selected)}
+          phx-mounted={JS.ignore_attributes(["open", "data-seen"])}
+        >
+          <summary class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-2 font-medium text-ink transition-colors duration-100 hover:bg-ink/6 md:py-1">
+            <.icon name="hero-chevron-right-mini" class="tree-chevron size-4 shrink-0 text-faint" />
+            <span class="truncate">{node.name}</span>
+          </summary>
+          <div class="ml-[0.9375rem] border-l border-line pl-1.5">
+            <.tree nodes={node.children} selected={@selected} vault_id={@vault_id} />
+          </div>
+        </details>
+        <.link
+          :if={not Tree.folder?(node)}
+          patch={Paths.entry(node.entry)}
+          aria-current={@selected == node.path && "page"}
+          class={[
+            "flex items-center gap-1.5 rounded-md px-2 py-2 transition-colors duration-100 md:py-1",
+            if(@selected == node.path,
+              do: "bg-accent/14 font-medium text-ink",
+              else: "text-muted hover:bg-ink/6 hover:text-ink"
+            )
+          ]}
+        >
+          <.icon
+            name={if node.entry.kind == :doc, do: "hero-document-text", else: "hero-paper-clip"}
+            class={[
+              "size-4 shrink-0",
+              if(@selected == node.path, do: "text-accent", else: "text-faint")
+            ]}
+          />
+          <span class="truncate">{node.name}</span>
+        </.link>
+      </li>
+    </ul>
+    """
+  end
+end
