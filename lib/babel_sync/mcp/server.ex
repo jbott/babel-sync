@@ -49,6 +49,9 @@ defmodule BabelSync.MCP.Server do
 
   alias BabelSync.MCP.Tools
 
+  @impl true
+  def serialize_assigns(_assigns), do: %{}
+
   component(Tools.ListVaults)
   component(Tools.ListDirectory)
   component(Tools.FindFiles)

@@ -114,6 +114,19 @@ defmodule BabelSyncWeb.MCPTest do
     assert edits["items"]["required"] |> Enum.sort() == ["new_text", "old_text"]
   end
 
+  test "a session is picked up by a server that has never seen it", %{session: session} do
+    registry = Anubis.Server.Registry.registry_name(BabelSync.MCP.Server)
+    {:ok, opened_on} = Anubis.Server.Registry.Local.lookup_session(registry, session.id)
+    ref = Process.monitor(opened_on)
+    Process.exit(opened_on, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^opened_on, :killed}
+
+    assert {:ok, listing} = call(session, "list_vaults", %{})
+    assert listing =~ "Notes"
+    assert {:ok, restored} = Anubis.Server.Registry.Local.lookup_session(registry, session.id)
+    assert restored != opened_on
+  end
+
   test "an agent finds its way around a vault", %{session: session, vault: vault} do
     {:ok, _} =
       call(session, "write_file", %{path: "Inbox/idea.md", content: "# Idea\n\nbuy milk\n"})

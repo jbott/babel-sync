@@ -28,6 +28,8 @@ config :babel_sync, BabelSync.Sync,
   settle_within: :timer.minutes(5),
   compact_after: 200
 
+config :anubis_mcp, :session_store, enabled: true, adapter: BabelSync.MCP.SessionStore
+
 config :babel_sync, BabelSync.Janitor,
   enabled: true,
   retention_days: 30,
