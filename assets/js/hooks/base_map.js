@@ -171,12 +171,6 @@ export const BaseMap = {
   drawLayers() {
     this.map.addSource(SOURCE, { type: "geojson", data: this.features() });
     this.map.addLayer({
-      id: "place-pins",
-      type: "symbol",
-      source: SOURCE,
-      layout: { "icon-image": ["get", "pin"], "icon-allow-overlap": true, "icon-padding": 0 },
-    });
-    this.map.addLayer({
       id: "place-labels",
       type: "symbol",
       source: SOURCE,
@@ -185,7 +179,7 @@ export const BaseMap = {
         "text-font": [LABEL_FONT],
         "text-size": 12,
         "text-max-width": 9,
-        "text-variable-anchor": ["bottom", "top", "left", "right"],
+        "text-variable-anchor": ["bottom", "bottom-left", "bottom-right", "left", "right", "top"],
         "text-radial-offset": 1.15,
         "text-justify": "auto",
         "text-padding": 3,
@@ -195,6 +189,12 @@ export const BaseMap = {
         "text-halo-color": dark() ? "rgba(20, 20, 20, 0.9)" : "rgba(255, 255, 255, 0.92)",
         "text-halo-width": 1.5,
       },
+    });
+    this.map.addLayer({
+      id: "place-pins",
+      type: "symbol",
+      source: SOURCE,
+      layout: { "icon-image": ["get", "pin"], "icon-allow-overlap": true, "icon-padding": 0 },
     });
     if (this.layersBound) return;
     this.layersBound = true;
