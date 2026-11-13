@@ -682,6 +682,8 @@ defmodule BabelSync.Agent do
       else: :ok
   end
 
+  defp named(_vault, ""), do: {:error, :invalid_path}
+
   defp named(vault, path) do
     case Vaults.get_entry_by_path(vault.id, path) do
       %Entry{} = entry ->

@@ -467,6 +467,18 @@ defmodule BabelSync.AgentTest do
   end
 
   describe "moving, deleting and restoring" do
+    test "the vault itself can be neither deleted nor moved", %{scope: scope} do
+      write(scope, "a.md", "x")
+      write(scope, "Notes/b.md", "y")
+
+      for whole <- ["", "/", "//", "\\"] do
+        assert {:error, :invalid_path} = Agent.delete_file(scope, nil, whole)
+        assert {:error, :invalid_path} = Agent.move_file(scope, nil, whole, "Elsewhere")
+      end
+
+      assert {:ok, ["Notes/b.md", "a.md"]} = Agent.find_files(scope, nil, "**")
+    end
+
     test "moves and deletes single files", %{scope: scope} do
       write(scope, "a.md", "x")
       write(scope, "b.md", "y")
