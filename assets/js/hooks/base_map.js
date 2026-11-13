@@ -5,6 +5,10 @@ const STYLES = { light: "https://tiles.openfreemap.org/styles/bright", dark: "ht
 const DEFAULT_COLOR = "var(--accent)";
 const SOURCE = "places";
 const LABEL_FONT = "Noto Sans Regular";
+const PIN_RADIUS = 10;
+const LABEL_SIZE = 12;
+const LABEL_PADDING = 3;
+const LABEL_GAP = (PIN_RADIUS + LABEL_PADDING + 2) / LABEL_SIZE;
 
 const dark = () =>
   document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
@@ -34,7 +38,7 @@ function resolveColor(color, cache) {
 const PIN_SCALE = 2;
 
 function pinImage(color) {
-  const size = 20 * PIN_SCALE;
+  const size = PIN_RADIUS * 2 * PIN_SCALE;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const context = canvas.getContext("2d");
@@ -110,11 +114,10 @@ export const BaseMap = {
     this.map = new library.Map({
       container: this.el.querySelector("[data-map-canvas]"),
       style: dark() ? STYLES.dark : STYLES.light,
-      center: [0, 0],
-      zoom: 4,
       minZoom: minZoom ?? 0,
       maxZoom: maxZoom ?? 18,
       attributionControl: { compact: true },
+      ...this.opening(),
     });
     this.map.addControl(new library.NavigationControl({ showCompass: false }), "top-right");
     this.popup = new library.Popup({ closeButton: true, closeOnClick: false, offset: 12, maxWidth: "300px" });
@@ -125,7 +128,6 @@ export const BaseMap = {
     this.map.setMissingStyleImageResolver(async (id) => {
       if (id.startsWith("pin:") && !this.map.hasImage(id)) this.map.addImage(id, pinImage(id.slice(4)), { pixelRatio: PIN_SCALE });
     });
-    this.map.once("load", () => this.frame());
 
     this.theme = new MutationObserver(() => {
       this.colors.clear();
@@ -177,12 +179,23 @@ export const BaseMap = {
       layout: {
         "text-field": ["get", "title"],
         "text-font": [LABEL_FONT],
-        "text-size": 12,
+        "text-size": LABEL_SIZE,
         "text-max-width": 9,
-        "text-variable-anchor": ["bottom", "bottom-left", "bottom-right", "left", "right", "top"],
-        "text-radial-offset": 1.15,
-        "text-justify": "auto",
-        "text-padding": 3,
+        "text-padding": LABEL_PADDING,
+        "text-variable-anchor-offset": [
+          "bottom",
+          [0, -LABEL_GAP],
+          "bottom-left",
+          [LABEL_GAP / 2, -LABEL_GAP],
+          "bottom-right",
+          [-LABEL_GAP / 2, -LABEL_GAP],
+          "left",
+          [LABEL_GAP, 0],
+          "right",
+          [-LABEL_GAP, 0],
+          "top",
+          [0, LABEL_GAP],
+        ],
       },
       paint: {
         "text-color": dark() ? "#ececec" : "#1f2328",
@@ -250,15 +263,20 @@ export const BaseMap = {
     });
   },
 
-  frame() {
+  opening() {
     const { markers, center, zoom } = this.places;
     const points = markers.map((place) => [place.longitude, place.latitude]);
     const bounds = points.length > 0 ? points.reduce((box, point) => box.extend(point), new maplibre.LngLatBounds(points[0], points[0])) : null;
+    const middle = center ? [center[1], center[0]] : bounds?.getCenter();
 
-    if (center) this.map.setCenter([center[1], center[0]]);
-    else if (bounds) this.map.setCenter(bounds.getCenter());
+    if (typeof zoom === "number") return { center: middle ?? [0, 0], zoom };
+    if (bounds) return { bounds, fitBoundsOptions: { padding: 20 } };
+    return { center: middle ?? [0, 0], zoom: 4 };
+  },
 
-    if (typeof zoom === "number") this.map.setZoom(zoom);
-    else if (bounds) this.map.fitBounds(bounds, { padding: 20, animate: false });
+  frame() {
+    const view = this.opening();
+    if (view.bounds) this.map.fitBounds(view.bounds, { ...view.fitBoundsOptions, animate: false });
+    else this.map.jumpTo(view);
   },
 };
