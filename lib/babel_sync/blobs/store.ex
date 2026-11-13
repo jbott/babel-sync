@@ -16,6 +16,7 @@ defmodule BabelSync.Blobs.Store do
   @callback abort_upload(key(), ref()) :: :ok
   @callback stream(key(), range()) :: Enumerable.t()
   @callback delete(key()) :: :ok
+  @callback reachable?() :: boolean()
 
   @spec impl() :: module()
   def impl do

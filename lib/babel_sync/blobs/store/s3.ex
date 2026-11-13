@@ -75,6 +75,14 @@ defmodule BabelSync.Blobs.Store.S3 do
     :ok
   end
 
+  @impl true
+  def reachable? do
+    match?(
+      {:ok, %{status: 200}},
+      request(:head, "", retry: false, receive_timeout: 3_000, connect_options: [timeout: 3_000])
+    )
+  end
+
   defp request(method, key, options) do
     config = Application.fetch_env!(:babel_sync, __MODULE__)
 

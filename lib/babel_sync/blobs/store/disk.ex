@@ -92,6 +92,14 @@ defmodule BabelSync.Blobs.Store.Disk do
     :ok
   end
 
+  @impl true
+  def reachable? do
+    match?(
+      {:ok, %File.Stat{type: :directory, access: :read_write}},
+      File.stat(BabelSync.data_dir())
+    )
+  end
+
   @spec path(String.t()) :: Path.t()
   def path(key), do: Path.join([BabelSync.data_dir(), "blobs", key])
 
