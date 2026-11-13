@@ -11,6 +11,7 @@ defmodule BabelSync.E2E.BrowserTest do
   setup_all do
     Mix.Task.rerun("tailwind", ["babel_sync"])
     Mix.Task.rerun("esbuild", ["babel_sync"])
+    Mix.Task.rerun("esbuild", ["maplibre_worker"])
     :ok
   end
 

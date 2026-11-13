@@ -4,7 +4,7 @@ defmodule BabelSync.Bases.Definition do
   it defines, and its views with their own filters, columns and order.
   """
 
-  alias BabelSync.Bases.Expression
+  alias BabelSync.Bases.{Expression, Geo}
 
   defstruct filter: nil, formulas: %{}, views: [], names: %{}
 
@@ -14,7 +14,18 @@ defmodule BabelSync.Bases.Definition do
           columns: [String.t()],
           sort: [{String.t(), :asc | :desc}],
           group_by: {String.t(), :asc | :desc} | nil,
-          limit: pos_integer() | nil
+          limit: pos_integer() | nil,
+          type: String.t(),
+          map: map_settings() | nil
+        }
+
+  @type map_settings :: %{
+          coordinates: String.t() | nil,
+          color: String.t() | nil,
+          center: BabelSync.Bases.Geo.point() | nil,
+          zoom: number() | nil,
+          min_zoom: number() | nil,
+          max_zoom: number() | nil
         }
 
   @type t :: %__MODULE__{
@@ -125,9 +136,31 @@ defmodule BabelSync.Bases.Definition do
           {property, direction(sort["direction"])}
         end,
       group_by: group_by(view["groupBy"]),
-      limit: if(is_integer(view["limit"]) and view["limit"] > 0, do: view["limit"])
+      limit: if(is_integer(view["limit"]) and view["limit"] > 0, do: view["limit"]),
+      type: if(is_binary(view["type"]), do: view["type"], else: "table"),
+      map: if(view["type"] == "map", do: map_settings(view))
     }
   end
+
+  defp map_settings(view) do
+    %{
+      coordinates: text(view["coordinates"]),
+      color: text(view["markerColor"]),
+      center: center(view["center"]),
+      zoom: zoom(view["defaultZoom"]),
+      min_zoom: zoom(view["minZoom"]),
+      max_zoom: zoom(view["maxZoom"])
+    }
+  end
+
+  defp center(text) when is_binary(text), do: Geo.point(String.replace(text, ~r/[\[\]\s]/, ""))
+  defp center(other), do: Geo.point(other)
+
+  defp zoom(level) when is_number(level) and level >= 0 and level <= 24, do: level
+  defp zoom(_other), do: nil
+
+  defp text(value) when is_binary(value) and value != "", do: value
+  defp text(_other), do: nil
 
   defp group_by(%{"property" => property} = group) when is_binary(property),
     do: {property, direction(group["direction"])}

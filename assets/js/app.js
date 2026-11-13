@@ -9,11 +9,12 @@ import { Passkey } from "./hooks/passkey";
 import { Folders } from "./hooks/folders";
 import { Markdown } from "./hooks/markdown";
 import { Canvas } from "./hooks/canvas";
+import { BaseMap } from "./hooks/base_map";
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ...colocatedHooks, Editor, Uploader, Passkey, Folders, Markdown, Canvas },
+  hooks: { ...colocatedHooks, Editor, Uploader, Passkey, Folders, Markdown, Canvas, BaseMap },
 });
 
 const barColor = () => (document.documentElement.dataset.theme === "dark" ? "#74cdc0" : "#1f6e69");

@@ -229,4 +229,43 @@ defmodule BabelSync.BasesTest do
 
     assert definition.names == %{"rating" => "Stars", "formula.kind" => "Kind"}
   end
+
+  test "a map view places notes by its coordinates property, coloured by its formula" do
+    {:ok, definition} =
+      Definition.parse("""
+      formulas:
+        tint: if(kind == "cafe", "#92400E", if(kind == "bar", "red", "url(x)"))
+      views:
+        - type: map
+          name: Places
+          order: [file.name, kind]
+          coordinates: note.coordinates
+          markerColor: formula.tint
+          center: "[37.7749, -122.4194]"
+          defaultZoom: 11
+          maxZoom: 16
+      """)
+
+    notes = [
+      Note.new(path: "Cafe.md", text: "---\nkind: cafe\ncoordinates: 37.75, -122.47\n---\n"),
+      Note.new(path: "Bar.md", text: "---\nkind: bar\ncoordinates: [40.7, -73.9]\n---\n"),
+      Note.new(path: "Park.md", text: "---\nkind: park\ncoordinates: [40.7, -73.9]\n---\n"),
+      Note.new(path: "Elsewhere.md", text: "---\nkind: cafe\nlocation: 1, 2\n---\n"),
+      Note.new(path: "Nowhere.md", text: "---\nkind: cafe\ncoordinates: 95, 10\n---\n")
+    ]
+
+    assert {:ok, places} = Bases.query(notes, definition: definition, as: :map)
+    assert places.center == {37.7749, -122.4194}
+    assert {places.zoom, places.max_zoom, places.min_zoom} == {11, 16, nil}
+    assert places.columns == ["file.name", "kind"]
+
+    assert [cafe, bar, park] = Enum.sort_by(places.markers, &(&1.path != "Cafe.md"))
+
+    assert {cafe.path, cafe.latitude, cafe.longitude, cafe.color} ==
+             {"Cafe.md", 37.75, -122.47, "#92400E"}
+
+    assert cafe.fields == ["Cafe.md", "cafe"]
+    assert bar.color == "red"
+    assert park.color == nil
+  end
 end

@@ -1,5 +1,6 @@
 @import "tailwindcss" source(none);
 @import "phoenix-colocated/babel_sync/colocated.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
 @source "../css";
 @source "../js";
 @source "../../lib/babel_sync_web";
@@ -637,6 +638,32 @@ progress.upload-meter::-moz-progress-bar {
 }
 
 .markdown iframe.embed-pdf:not([height]) { height: 36rem; }
+
+#base-map .maplibregl-popup-content {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--elev-2);
+  font-family: var(--ff-sans);
+}
+
+#base-map .maplibregl-popup-tip { display: none; }
+#base-map .maplibregl-popup-close-button { color: var(--muted); font-size: 1.1rem; padding: 0 0.4rem; }
+#base-map .maplibregl-ctrl-group { background: var(--surface); border: 1px solid var(--line); box-shadow: var(--elev-1); }
+#base-map .maplibregl-ctrl-group button + button { border-top-color: var(--line); }
+[data-theme="dark"] #base-map .maplibregl-ctrl-icon { filter: invert(1); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) #base-map .maplibregl-ctrl-icon { filter: invert(1); }
+}
+.base-map-popup { display: grid; gap: 0.45rem; font-size: 0.8rem; line-height: 1.4; }
+.base-map-popup-title { color: var(--ink); font-weight: 600; font-size: 0.9rem; text-decoration: none; }
+.base-map-popup-title:hover { text-decoration: underline; }
+.base-map-popup dl { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; margin: 0; }
+.base-map-popup dt { color: var(--faint); }
+.base-map-popup dd { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.base-map-popup dd a { color: var(--accent); }
 
 #canvas { cursor: grab; }
 #canvas[data-dragging] { cursor: grabbing; }

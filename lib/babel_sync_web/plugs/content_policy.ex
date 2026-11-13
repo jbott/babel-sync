@@ -7,7 +7,10 @@ defmodule BabelSyncWeb.Plugs.ContentPolicy do
   root layout, which carries the nonce made here for each response.
   Styles may be inline because the editor and LiveView set them on
   elements. Images may come from any HTTPS address, since notes link to
-  pictures elsewhere. No other site may frame these pages.
+  pictures elsewhere. Base map views fetch their styles and tiles from
+  OpenFreeMap, the map service Obsidian's own map view uses, and that is
+  the only other place a page may fetch from. No other site may frame
+  these pages.
   """
 
   import Plug.Conn
@@ -35,7 +38,7 @@ defmodule BabelSyncWeb.Plugs.ContentPolicy do
         "img-src 'self' data: blob: https:",
         "media-src 'self' blob:",
         "font-src 'self'",
-        "connect-src 'self'",
+        "connect-src 'self' https://tiles.openfreemap.org",
         "frame-src 'self'",
         "object-src 'none'",
         "base-uri 'self'",

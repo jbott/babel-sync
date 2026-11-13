@@ -127,7 +127,7 @@ defmodule BabelSync.Agent do
   end
 
   @spec query_notes(Scope.t(), vault_reference(), keyword()) ::
-          {:ok, Bases.table() | Bases.groups()} | error()
+          {:ok, Bases.table() | Bases.groups() | Bases.places()} | error()
   def query_notes(scope, vault, opts \\ []) do
     with {:ok, vault} <- vault(scope, vault, :read),
          {:ok, definition} <- definition(vault, opts[:base]),
@@ -135,7 +135,9 @@ defmodule BabelSync.Agent do
          {:ok, near} <- near(notes, opts[:near], opts[:coordinates]) do
       query =
         opts
-        |> Keyword.take(~w(view folder where radius_km coordinates sort select group_by limit)a)
+        |> Keyword.take(
+          ~w(view folder where radius_km coordinates sort select group_by limit as)a
+        )
         |> Keyword.merge(definition: definition, near: near)
         |> Enum.reject(fn {_name, value} -> value in [nil, "", []] end)
 

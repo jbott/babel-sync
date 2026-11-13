@@ -1,5 +1,6 @@
 Config.CSWH: Cross-Site Websocket Hijacking,lib/babel_sync_web/endpoint.ex:17,6731413
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:757,59F2C97
+DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:759,5B9D488
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:774,5DB85FF
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent/glob.ex:15,186480B
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/auth/passkeys.ex:91,E3BA49
@@ -15,6 +16,7 @@ Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/babel_sync/blobs
 Traversal.FileModule: Directory Traversal in `File.open!`,lib/babel_sync/blobs/store/disk.ex:42,361C94E
 Traversal.FileModule: Directory Traversal in `File.open`,lib/babel_sync_web/controllers/transfer_controller.ex:93,10FFA71
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.ex:315,391E84B
+Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.ex:317,406106F
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/obsidian/plugin.ex:95,608A612
 Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:28,37FC872
 Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:38,596F766
@@ -41,5 +43,7 @@ XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:816,6E86786
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:827,6573616
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:870,30AFD1C
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:881,7748F4E
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:927,4743CF9
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:938,3E9E2A
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/obsidian_controller.ex:28,3242BD8
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/transfer_controller.ex:147,1F70068

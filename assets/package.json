@@ -10,6 +10,7 @@
     "@codemirror/view": "^6.36.0",
     "@lezer/highlight": "^1.2.0",
     "codemirror": "^6.0.1",
+    "maplibre-gl": "6.16.0",
     "mermaid": "12.2.0",
     "temml": "0.14.0",
     "y-codemirror.next": "^0.3.5",

@@ -133,7 +133,7 @@ beamPackages.mixRelease {
   npmDeps = fetchNpmDeps {
     name = "babel_sync-npm-deps";
     src = sources packages;
-    hash = "sha256-EHd3oa3cWKxWE5N+L9yPYCY2L1uKFby5xGtwdvGAEIo=";
+    hash = "sha256-S8nUqQ/qoPFs90un+L7Oe4uPiBnKZeKRURBDN4r6T2o=";
   };
 
   nativeBuildInputs = [

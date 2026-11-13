@@ -15,11 +15,32 @@ defmodule BabelSync.Bases do
   @default_columns 12
   @cell_width 160
   @examples 3
+  @popup_fields 20
+  @css_color ~r/^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,30}|(?:rgb|hsl)a?\([0-9a-zA-Z.,%\s\/+-]{1,60}\)|var\(--[a-zA-Z0-9_-]{1,60}\))$/
+  @most_markers 5_000
 
   @type table :: %{
           columns: [String.t()],
           rows: [[String.t()]],
           groups: [String.t()] | nil,
+          total: non_neg_integer()
+        }
+
+  @type marker :: %{
+          path: String.t(),
+          latitude: float(),
+          longitude: float(),
+          color: String.t() | nil,
+          fields: [String.t() | nil]
+        }
+
+  @type places :: %{
+          markers: [marker()],
+          columns: [String.t()],
+          center: Geo.point() | nil,
+          zoom: number() | nil,
+          min_zoom: number() | nil,
+          max_zoom: number() | nil,
           total: non_neg_integer()
         }
 
@@ -42,8 +63,10 @@ defmodule BabelSync.Bases do
           | {:group_by, String.t()}
           | {:limit, pos_integer()}
           | {:now, DateTime.t()}
+          | {:as, :table | :map}
 
-  @spec query([Note.t()], [option()]) :: {:ok, table() | groups()} | {:error, String.t()}
+  @spec query([Note.t()], [option()]) ::
+          {:ok, table() | groups() | places()} | {:error, String.t()}
   def query(notes, opts \\ []) do
     definition = opts[:definition] || %Definition{}
 
@@ -62,10 +85,16 @@ defmodule BabelSync.Bases do
           |> Enum.map(&%{note: &1, distance: distance(&1, opts)})
           |> Enum.filter(&(within?(&1, opts) and matches?(&1, filters, context)))
 
-        if group,
-          do: {:ok, grouped(rows, group, opts[:group_by], context)},
-          else:
+        cond do
+          group ->
+            {:ok, grouped(rows, group, opts[:group_by], context)}
+
+          opts[:as] == :map ->
+            {:ok, placed(rows, view, context)}
+
+          true ->
             {:ok, table(sorted(rows, sections ++ sort, context), view, opts, context, sections)}
+        end
       catch
         {:invalid, message} -> {:error, message}
       end
@@ -226,6 +255,54 @@ defmodule BabelSync.Bases do
       total: length(rows)
     }
   end
+
+  defp placed(rows, view, context) do
+    settings =
+      (view && view.map) ||
+        %{coordinates: nil, color: nil, center: nil, zoom: nil, min_zoom: nil, max_zoom: nil}
+
+    property = settings.coordinates && String.replace_prefix(settings.coordinates, "note.", "")
+    color = settings.color && optional_tree(settings.color)
+    columns = ((view && view.columns) || []) |> Enum.take(@popup_fields)
+
+    trees = Enum.map(columns, &optional_tree/1)
+
+    markers =
+      for row <- rows,
+          property,
+          {latitude, longitude} <- [Geo.point(row.note.properties[property])],
+          do: %{
+            path: row.note.path,
+            latitude: latitude,
+            longitude: longitude,
+            color: color && css_color(evaluated(color, row, context)),
+            fields: Enum.map(trees, &(&1 && cell(evaluated(&1, row, context))))
+          }
+
+    %{
+      markers: Enum.take(markers, @most_markers),
+      columns: columns,
+      center: settings.center,
+      zoom: settings.zoom,
+      min_zoom: settings.min_zoom,
+      max_zoom: settings.max_zoom,
+      total: length(markers)
+    }
+  end
+
+  defp optional_tree(source) do
+    case column(source) do
+      {:ok, tree} -> tree
+      {:error, _message} -> nil
+    end
+  end
+
+  defp css_color(color) when is_binary(color) do
+    color = String.trim(color)
+    if Regex.match?(@css_color, color), do: color
+  end
+
+  defp css_color(_other), do: nil
 
   defp labels([{tree, _direction}], rows, context),
     do: for(row <- rows, do: cell(evaluated(tree, row, context)))

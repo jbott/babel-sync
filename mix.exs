@@ -101,10 +101,17 @@ defmodule BabelSync.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind babel_sync", "esbuild babel_sync", "plugin.build"],
+      "assets.build": [
+        "compile",
+        "tailwind babel_sync",
+        "esbuild babel_sync",
+        "esbuild maplibre_worker",
+        "plugin.build"
+      ],
       "assets.deploy": [
         "tailwind babel_sync --minify",
         "esbuild babel_sync --minify",
+        "esbuild maplibre_worker --minify",
         "plugin.build",
         "phx.digest"
       ],

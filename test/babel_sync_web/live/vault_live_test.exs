@@ -281,6 +281,62 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert has_element?(view, "#preview-body .callout", "not valid JSON")
     end
 
+    test "a map view sends its places to the map and a marker opens its note", %{
+      conn: conn,
+      vault: vault
+    } do
+      cafe = entry(vault, "Places/Cafe.md")
+
+      :ok =
+        Sync.replace_text(
+          cafe.id,
+          "---\ncoordinates: 37.75, -122.47\nsite: \"[Menu](https://example.com/menu)\"\n---\n"
+        )
+
+      base = entry(vault, "Places.base")
+
+      :ok =
+        Sync.replace_text(base.id, """
+        properties:
+          note.site:
+            displayName: Website
+        views:
+          - type: map
+            name: Map
+            order: [file.name, site]
+            coordinates: note.coordinates
+            defaultZoom: 3
+          - type: table
+            name: List
+        """)
+
+      {:ok, view, _html} = live(conn, Paths.entry(base))
+      render_async(view)
+
+      [places] =
+        view
+        |> render()
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("#base-map")
+        |> LazyHTML.attribute("data-places")
+
+      assert %{"columns" => ["file.name", "Website"], "zoom" => 3, "markers" => [marker]} =
+               Jason.decode!(places)
+
+      assert %{"latitude" => 37.75, "href" => href, "title" => "Cafe"} = marker
+      assert href == Paths.entry(cafe)
+
+      assert marker["fields"] == [
+               [%{"kind" => "text", "text" => "Cafe"}],
+               [%{"kind" => "web", "href" => "https://example.com/menu", "text" => "Menu"}]
+             ]
+
+      refute has_element?(view, "#base-table")
+      render_hook(view, "open_place", %{"href" => "/elsewhere"})
+      assert render_hook(view, "open_place", %{"href" => href})
+      assert_patch(view, href)
+    end
+
     test "a base is shown as a table of its notes, one tab per view", %{
       conn: conn,
       vault: vault

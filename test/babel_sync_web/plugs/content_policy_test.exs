@@ -12,6 +12,7 @@ defmodule BabelSyncWeb.Plugs.ContentPolicyTest do
 
     assert policy =~ "script-src 'self' 'nonce-"
     assert policy =~ "frame-ancestors 'none'"
+    assert policy =~ "connect-src 'self' https://tiles.openfreemap.org;"
 
     scripts =
       conn

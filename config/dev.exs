@@ -32,6 +32,7 @@ config :babel_sync, BabelSyncWeb.Endpoint,
   secret_key_base: "v9SU0xWrclmHzYS7IwDz0I6yno6WrlTGCaS+2un3r4ESEqd1FiC6DWBDD8PO+WkJ",
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:babel_sync, ~w(--sourcemap=inline --watch)]},
+    maplibre_worker: {Esbuild, :install_and_run, [:maplibre_worker, []]},
     tailwind: {Tailwind, :install_and_run, [:babel_sync, ~w(--watch)]}
   ]
 

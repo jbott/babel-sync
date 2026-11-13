@@ -240,6 +240,13 @@ defmodule BabelSyncWeb.VaultLive.Show do
     {:noreply, socket |> assign(:base_view, view) |> render_preview()}
   end
 
+  def handle_event("open_place", %{"href" => href}, socket) do
+    case Enum.find(socket.assigns.entries, &(Paths.entry(&1) == href)) do
+      %Entry{} = entry -> {:noreply, push_patch(socket, to: Paths.entry(entry))}
+      nil -> {:noreply, socket}
+    end
+  end
+
   def handle_event(_event_for_an_entry_no_longer_open, _params, socket), do: {:noreply, socket}
 
   @impl true
@@ -435,18 +442,72 @@ defmodule BabelSyncWeb.VaultLive.Show do
     with {:ok, definition} <- Bases.Definition.parse(text),
          names = Enum.map(definition.views, & &1.name),
          view = if(wanted in names, do: wanted, else: List.first(names)),
-         {:ok, %{rows: _} = table} <-
-           Agent.query_notes(scope, vault_id, base: entry.path, view: view, limit: @base_rows) do
-      {:ok,
-       %{
-         entry_id: entry.id,
-         views: names,
-         view: view,
-         table: based(table, definition.names, entries)
-       }}
+         map? = Enum.any?(definition.views, &(&1.name == view and &1.type == "map")),
+         {:ok, result} <-
+           Agent.query_notes(scope, vault_id,
+             base: entry.path,
+             view: view,
+             limit: @base_rows,
+             as: if(map?, do: :map, else: :table)
+           ) do
+      shown =
+        case result do
+          %{markers: _} -> %{places: placed(result, definition.names, entries), table: nil}
+          %{rows: _} -> %{places: nil, table: based(result, definition.names, entries)}
+        end
+
+      {:ok, Map.merge(%{entry_id: entry.id, views: names, view: view}, shown)}
     else
       failed -> {:error, problem(failed)}
     end
+  end
+
+  defp placed(places, names, entries) do
+    paths = Map.new(entries, &{&1.path, &1})
+    resolve = Markdown.resolver(entries)
+    file_name = Enum.find_index(places.columns, &(&1 == "file.name"))
+
+    Jason.encode!(%{
+      columns: Enum.map(places.columns, &display_name(&1, names)),
+      center: places.center && Tuple.to_list(places.center),
+      zoom: places.zoom,
+      minZoom: places.min_zoom,
+      maxZoom: places.max_zoom,
+      markers:
+        for place <- places.markers do
+          entry = paths[place.path]
+
+          %{
+            latitude: place.latitude,
+            longitude: place.longitude,
+            color: place.color,
+            title: Path.rootname(Path.basename(place.path)),
+            href: entry && Paths.entry(entry),
+            fields:
+              place.fields
+              |> Enum.with_index()
+              |> Enum.map(fn
+                {value, ^file_name} when is_binary(value) ->
+                  [%{kind: "text", text: Path.rootname(value)}]
+
+                {value, _at} when value in [nil, ""] ->
+                  nil
+
+                {value, _at} ->
+                  Enum.map(linked(value, resolve), &piece/1)
+              end)
+          }
+        end
+    })
+  end
+
+  defp piece({:note, href, label}), do: %{kind: "note", href: href, text: label}
+  defp piece({:web, href, label}), do: %{kind: "web", href: href, text: label}
+  defp piece({:text, text}), do: %{kind: "text", text: text}
+
+  defp display_name(column, names) do
+    column = String.replace_prefix(column, "note.", "")
+    Map.get(names, column, column)
   end
 
   defp based(table, names, entries) do
@@ -460,11 +521,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
       |> Enum.reject(fn {column, _at} -> column == "file.name" end)
 
     %{
-      columns:
-        Enum.map(shown, fn {column, _at} ->
-          column = String.replace_prefix(column, "note.", "")
-          Map.get(names, column, column)
-        end),
+      columns: Enum.map(shown, fn {column, _at} -> display_name(column, names) end),
       rows:
         table.rows
         |> Enum.zip(table.groups || List.duplicate(nil, length(table.rows)))
@@ -936,7 +993,18 @@ defmodule BabelSyncWeb.VaultLive.Show do
                 {view}
               </button>
             </div>
-            <div class="min-h-0 flex-1 overflow-auto">
+            <div
+              :if={@base.places}
+              id="base-map"
+              phx-hook="BaseMap"
+              data-places={@base.places}
+              data-view={@base.view}
+              class="relative min-h-0 flex-1"
+            >
+              <div id="base-map-canvas" phx-update="ignore" data-map-canvas class="h-full w-full">
+              </div>
+            </div>
+            <div :if={@base.table} class="min-h-0 flex-1 overflow-auto">
               <p :if={@base.table.rows == []} class="px-6 py-12 text-center text-sm text-muted">
                 No notes match this view.
               </p>
