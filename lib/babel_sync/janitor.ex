@@ -11,6 +11,9 @@ defmodule BabelSync.Janitor do
   sign-in artifacts go regardless of the retention setting. Attachments
   that have since been recognised as text become notes.
 
+  Servers in a cluster take turns: one that finds another in the middle
+  of a cleanup skips its own and tries again at its next hour.
+
   Each kind of cleanup runs on its own, so one that fails is logged and
   tried again next time without holding up the rest.
   """
@@ -29,6 +32,15 @@ defmodule BabelSync.Janitor do
 
   @spec run(DateTime.t()) :: :ok
   def run(now \\ DateTime.utc_now()) do
+    alone(fn -> clean(now) end)
+  end
+
+  defp alone(clean) do
+    :global.trans({__MODULE__, self()}, clean, [node() | Node.list()], 0)
+    :ok
+  end
+
+  defp clean(now) do
     recent = DateTime.add(now, -@grace, :second)
     signed_in = DateTime.add(now, -BabelSync.Auth.session_lifetime(), :second)
 
@@ -42,7 +54,8 @@ defmodule BabelSync.Janitor do
           grants: fn -> OAuth.prune(now) end,
           sessions: fn -> BabelSync.Accounts.Sessions.prune(signed_in) end,
           sign_in_links: fn -> MagicLink.prune(now) end,
-          transfers: fn -> BabelSync.Transfers.prune(now) end
+          transfers: fn -> BabelSync.Transfers.prune(now) end,
+          agent_sessions: fn -> BabelSync.MCP.SessionStore.cleanup_expired([]) end
         ],
       &attempt/1
     )

@@ -25,7 +25,7 @@ let
       }
 
       export SECRET_KEY_BASE="''${SECRET_KEY_BASE:-$(secret "$BABELSYNC_DATA_DIR/secret_key_base")}"
-      export RELEASE_COOKIE="''${RELEASE_COOKIE:-$(head -c 32 /dev/urandom | base64 -w 0)}"
+      export RELEASE_COOKIE="''${RELEASE_COOKIE:-$(printf 'cookie:%s' "$SECRET_KEY_BASE" | sha256sum | cut -d' ' -f1)}"
 
       if [ "$#" -eq 0 ]; then set -- start; fi
       exec ${lib.getExe babelsync} "$@"

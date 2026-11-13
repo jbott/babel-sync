@@ -3,15 +3,14 @@ defmodule BabelSync.Auth.Setup do
   First-run protection for a single-user server that signs in with a
   passkey. Until the owner has registered one, registering needs a code
   that is only written to the server log, so reaching the address first
-  is not enough to claim the server.
+  is not enough to claim the server. The code is made from the server's
+  secret, so every node of a cluster prints and accepts the same one.
   """
 
   require Logger
 
   alias BabelSync.Auth
   alias BabelSync.Auth.Passkeys
-
-  @key {__MODULE__, :code}
 
   @spec needed?() :: boolean()
   def needed? do
@@ -20,15 +19,12 @@ defmodule BabelSync.Auth.Setup do
 
   @spec code() :: String.t()
   def code do
-    case :persistent_term.get(@key, nil) do
-      nil ->
-        code = Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
-        :persistent_term.put(@key, code)
-        code
+    secret = BabelSyncWeb.Endpoint.config(:secret_key_base)
 
-      code ->
-        code
-    end
+    :hmac
+    |> :crypto.mac(:sha256, secret, "first passkey")
+    |> binary_part(0, 18)
+    |> Base.url_encode64(padding: false)
   end
 
   @spec valid?(String.t()) :: boolean()

@@ -23,7 +23,7 @@ defmodule BabelSync.Application do
 
     opts = [strategy: :one_for_one, name: BabelSync.Supervisor]
 
-    children = children ++ sign_in_children() ++ cleanup_children()
+    children = children ++ sign_in_children() ++ cleanup_children() ++ cluster_children()
 
     with {:ok, supervisor} <- Supervisor.start_link(children, opts) do
       BabelSync.Auth.Setup.announce()
@@ -35,6 +35,10 @@ defmodule BabelSync.Application do
     if Application.fetch_env!(:babel_sync, BabelSync.Janitor)[:enabled],
       do: [BabelSync.Janitor],
       else: []
+  end
+
+  defp cluster_children do
+    if BabelSync.Cluster.enabled?(), do: [BabelSync.Cluster], else: []
   end
 
   defp sign_in_children do

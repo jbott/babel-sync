@@ -5,8 +5,10 @@ DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/a
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:774,5DB85FF
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:785,5DA3FFA
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent/glob.ex:15,186480B
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/babel_sync/cluster.ex:77,15668C2
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/auth/passkeys.ex:91,E3BA49
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/bases/index.ex:76,66AB627
+Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/bases/index.ex:78,7000D
 Traversal.FileModule: Directory Traversal in `File.cp!`,lib/babel_sync/backup.ex:57,61E583B
 Traversal.FileModule: Directory Traversal in `File.cp!`,lib/babel_sync/backup.ex:60,4165A38
 Traversal.FileModule: Directory Traversal in `File.cp!`,lib/babel_sync/backup.ex:117,56D6BD0
@@ -37,6 +39,7 @@ Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync/blobs/stor
 Traversal.FileModule: Directory Traversal in `File.rm`,lib/babel_sync_web/controllers/transfer_controller.ex:88,74A1C73
 Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs.ex:163,DC72DB
 Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs.ex:181,CD1475
+Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs.ex:182,63F2C60
 Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs/store/disk.ex:46,25ED74F
 Traversal.FileModule: Directory Traversal in `File.stream!`,lib/babel_sync/blobs/store/disk.ex:66,5C24D08
 Traversal.FileModule: Directory Traversal in `File.write`,lib/babel_sync/blobs/store/disk.ex:20,14FE10E

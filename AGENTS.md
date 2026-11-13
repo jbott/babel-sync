@@ -13,6 +13,16 @@ Babel Sync is a self-hosted live-sync server for Obsidian vaults: a Phoenix/Live
 - After changing `mix.lock`, run `mix deps.nix --output nix/deps.nix`; after changing `package-lock.json`, refresh the npm hash in `nix/package.nix`. When `y_ex` or `mdex_native` changes version, refresh its crates hash there too. Then check that `nix build` still works
 - If a library is poor, write the piece in-tree instead of working around it, and say so in the commit message
 
+### Several servers at once
+
+Servers that share a database run as a cluster, and during an upgrade the old version and the new one run side by side. `BabelSync.Cluster` describes how they find each other
+
+- **Never** call a process on another node, and never send a function to one. Share through the database and through PubSub messages
+- A PubSub message is read by the previous release too. Do not change the shape of an existing message; add a new one and keep handling the old one for a release. A struct sent in a message may arrive without a field that was added since, so read new fields with a default
+- A migration must leave the previous release working: add columns and tables in one release, and remove or rename what the previous release used only in the next
+- State kept in a process, ETS or `:persistent_term` exists once per node. If every node must agree on it, it belongs in the database
+- Run `BABELSYNC_STORAGE=remote mix test` (after `bin/dev-services up`) when a change touches queries, storage or anything above
+
 ### Tools
 
 - Elixir 1.20 on Erlang/OTP 28, Phoenix 1.8, LiveView 1.2
