@@ -243,6 +243,24 @@ defmodule BabelSyncWeb.OAuthControllerTest do
       end
     end
 
+    test "the token endpoint answers one address only so often", %{conn: conn} do
+      limits = Application.fetch_env!(:babel_sync, :rate_limits)
+      on_exit(fn -> Application.put_env(:babel_sync, :rate_limits, limits) end)
+      Application.put_env(:babel_sync, :rate_limits, Keyword.put(limits, :token, {1, 60}))
+
+      ask = fn address ->
+        conn
+        |> put_req_header("cf-connecting-ip", address)
+        |> post(~p"/oauth/token", %{grant_type: "refresh_token", refresh_token: "bsr_nope"})
+      end
+
+      assert %{"error" => "invalid_grant"} = json_response(ask.("203.0.113.30"), 400)
+      refused = ask.("203.0.113.30")
+      assert %{"error" => "too_many_requests"} = json_response(refused, 429)
+      assert [_seconds] = get_resp_header(refused, "retry-after")
+      assert %{"error" => "invalid_grant"} = json_response(ask.("203.0.113.31"), 400)
+    end
+
     test "registration is limited per address, as reported by a local proxy", %{conn: conn} do
       settings = Application.fetch_env!(:babel_sync, BabelSync.OAuth)
 

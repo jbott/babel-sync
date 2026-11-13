@@ -4,6 +4,7 @@ defmodule BabelSyncWeb.AuthLive.Login do
   alias BabelSync.Accounts
   alias BabelSync.Auth
   alias BabelSync.Auth.{MagicLink, OIDC, Passkeys, Setup}
+  alias BabelSync.RateLimit
 
   on_mount {BabelSyncWeb.LiveScope, :signed_out}
 
@@ -14,10 +15,18 @@ defmodule BabelSyncWeb.AuthLive.Login do
      |> assign(:page_title, "Sign in")
      |> assign(:methods, Auth.methods())
      |> assign(:challenge, nil)
+     |> assign(:address, BabelSyncWeb.ClientAddress.of_socket(socket))
      |> assign(:sent_to, nil)
      |> assign(:email_form, to_form(%{"email" => ""}, as: :link))
      |> assign(:oidc_label, if(Auth.enabled?(:oidc), do: OIDC.label()))
      |> assign_stage(params)}
+  end
+
+  defp request_link(address, email) do
+    case RateLimit.allow(:sign_in_link, address) do
+      :ok -> MagicLink.request(email, &url(~p"/login/link/#{&1}"))
+      {:error, _retry_after} -> {:error, :busy}
+    end
   end
 
   defp assign_stage(socket, %{"token" => token}) do
@@ -40,7 +49,7 @@ defmodule BabelSyncWeb.AuthLive.Login do
   @impl true
   def handle_event("request_link", %{"link" => %{"email" => email}}, socket) do
     if Auth.enabled?(:magic_link) do
-      case MagicLink.request(email, &url(~p"/login/link/#{&1}")) do
+      case request_link(socket.assigns.address, email) do
         :ok ->
           {:noreply, assign(socket, :sent_to, String.trim(email))}
 
@@ -78,9 +87,10 @@ defmodule BabelSyncWeb.AuthLive.Login do
     socket = assign(socket, :challenge, nil)
 
     result =
-      case socket.assigns.stage do
-        :setup -> register_owner(challenge, response)
-        :sign_in -> Passkeys.authenticate(challenge, response)
+      case {socket.assigns.stage, RateLimit.allow(:sign_in, socket.assigns.address)} do
+        {_stage, {:error, _retry_after}} -> {:error, :too_many}
+        {:setup, :ok} -> register_owner(challenge, response)
+        {:sign_in, :ok} -> Passkeys.authenticate(challenge, response)
       end
 
     case result do
@@ -89,6 +99,10 @@ defmodule BabelSyncWeb.AuthLive.Login do
 
       {:error, :invalid} ->
         {:noreply, put_flash(socket, :error, "That passkey was not accepted.")}
+
+      {:error, :too_many} ->
+        {:noreply,
+         put_flash(socket, :error, "Too many attempts from this address. Try again in a minute.")}
     end
   end
 

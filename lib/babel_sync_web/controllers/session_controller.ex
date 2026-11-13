@@ -8,7 +8,21 @@ defmodule BabelSyncWeb.SessionController do
   @oidc_flow "oidc_flow"
   @return_to "return_to"
 
+  plug :limit when action in [:complete, :link, :oidc_callback]
+
   def return_to_key, do: @return_to
+
+  defp limit(conn, _opts) do
+    case BabelSync.RateLimit.allow(:sign_in, BabelSyncWeb.ClientAddress.of(conn)) do
+      :ok ->
+        conn
+
+      {:error, _retry_after} ->
+        conn
+        |> refuse("Too many attempts from this address. Try again in a minute.")
+        |> halt()
+    end
+  end
 
   def complete(conn, %{"token" => token}) do
     case Auth.user_from_handoff(token) do

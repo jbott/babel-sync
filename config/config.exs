@@ -38,6 +38,11 @@ config :babel_sync, BabelSync.OAuth,
   registrations_per_hour: 30,
   idle_grant_days: 180
 
+config :babel_sync, :rate_limits,
+  sign_in: {30, 60},
+  sign_in_link: {10, 3600},
+  token: {120, 60}
+
 config :babel_sync, BabelSync.Blobs, max_size: 5 * 1024 * 1024 * 1024
 
 # Configure the endpoint

@@ -28,6 +28,11 @@ config :babel_sync, BabelSyncWeb.Endpoint,
   secret_key_base: "sj+jwuZO/j3G9eYuaaSWTWGHcYCNANkZLsa0qNLAAEcVRApOnQ5NxTWShL+eAKCT",
   server: true
 
+config :babel_sync, :rate_limits,
+  sign_in: {100_000, 60},
+  sign_in_link: {100_000, 3600},
+  token: {100_000, 60}
+
 config :babel_sync, BabelSync.OAuth,
   unapproved_clients: 1000,
   registrations_per_hour: 100_000,

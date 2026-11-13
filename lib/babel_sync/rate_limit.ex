@@ -23,6 +23,12 @@ defmodule BabelSync.RateLimit do
       else: {:error, (window + 1) * window_seconds - now}
   end
 
+  @spec allow(atom(), term()) :: :ok | {:error, pos_integer()}
+  def allow(kind, who) do
+    {limit, window_seconds} = Application.fetch_env!(:babel_sync, :rate_limits)[kind]
+    hit({kind, who}, limit, window_seconds)
+  end
+
   @impl true
   def init(_opts) do
     :ets.new(@table, [:named_table, :public, write_concurrency: true])

@@ -11,6 +11,7 @@ defmodule BabelSyncWeb.OAuthController do
   @hour 3600
 
   plug :limit_registrations when action == :register
+  plug BabelSyncWeb.Plugs.Limit, :token when action == :token
 
   def server_metadata(conn, _params) do
     issuer = BabelSyncWeb.Endpoint.url()

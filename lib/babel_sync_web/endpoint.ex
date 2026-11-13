@@ -23,8 +23,10 @@ defmodule BabelSyncWeb.Endpoint do
     max_channels_per_transport: 2000
 
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [:user_agent, session: @session_options]],
-    longpoll: [connect_info: [:user_agent, session: @session_options]]
+    websocket: [
+      connect_info: [:user_agent, :peer_data, :x_headers, session: @session_options]
+    ],
+    longpoll: [connect_info: [:user_agent, :peer_data, :x_headers, session: @session_options]]
 
   # Serve at "/" the static files from "priv/static" directory.
   #

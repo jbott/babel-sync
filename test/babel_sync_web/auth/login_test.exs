@@ -222,6 +222,41 @@ defmodule BabelSyncWeb.Auth.LoginTest do
       assert conn |> get(~p"/login/complete?token=made-up") |> redirected_to() == "/login"
     end
 
+    test "one address can only try to sign in, or ask for links, so often", %{conn: conn} do
+      with_mode(:multi)
+      with_auth([:magic_link])
+      limits = Application.fetch_env!(:babel_sync, :rate_limits)
+      on_exit(fn -> Application.put_env(:babel_sync, :rate_limits, limits) end)
+
+      Application.put_env(
+        :babel_sync,
+        :rate_limits,
+        Keyword.merge(limits, sign_in: {2, 60}, sign_in_link: {1, 3600})
+      )
+
+      user(%{email: "ada@example.com"})
+      from = fn address -> put_req_header(conn, "x-forwarded-for", address) end
+      attempt = fn address -> get(from.(address), ~p"/login/complete?token=made-up") end
+
+      for _ <- 1..2 do
+        assert Phoenix.Flash.get(attempt.("203.0.113.20").assigns.flash, :error) =~ "expired"
+      end
+
+      assert Phoenix.Flash.get(attempt.("203.0.113.20").assigns.flash, :error) =~ "Too many"
+      assert Phoenix.Flash.get(attempt.("203.0.113.21").assigns.flash, :error) =~ "expired"
+
+      {:ok, view, _html} = live(from.("203.0.113.22"), ~p"/login")
+      view |> form("#link-form", link: %{email: "ada@example.com"}) |> render_submit()
+      assert has_element?(view, "#link-sent")
+      assert_email_sent()
+
+      {:ok, view, _html} = live(from.("203.0.113.22"), ~p"/login")
+      view |> form("#link-form", link: %{email: "ada@example.com"}) |> render_submit()
+      refute has_element?(view, "#link-sent")
+      assert has_element?(view, "#flash-error")
+      refute_email_sent()
+    end
+
     test "a signed-in user adds and removes passkeys on the account page", %{conn: conn} do
       owner = Accounts.single_user!()
       {:ok, view, _html} = conn |> sign_in(owner) |> live(~p"/account")

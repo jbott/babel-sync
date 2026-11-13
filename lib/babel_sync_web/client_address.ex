@@ -9,14 +9,27 @@ defmodule BabelSyncWeb.ClientAddress do
   @forwarding_headers ~w(cf-connecting-ip x-forwarded-for)
 
   @spec of(Plug.Conn.t()) :: String.t()
-  def of(%Plug.Conn{remote_ip: remote_ip} = conn) do
-    forwarded = if loopback?(remote_ip), do: forwarded(conn)
+  def of(%Plug.Conn{remote_ip: remote_ip, req_headers: headers}), do: resolve(remote_ip, headers)
+
+  @spec of_socket(Phoenix.LiveView.Socket.t()) :: String.t()
+  def of_socket(socket) do
+    case Phoenix.LiveView.get_connect_info(socket, :peer_data) do
+      %{address: address} ->
+        resolve(address, Phoenix.LiveView.get_connect_info(socket, :x_headers) || [])
+
+      nil ->
+        "unknown"
+    end
+  end
+
+  defp resolve(remote_ip, headers) do
+    forwarded = if loopback?(remote_ip), do: forwarded(headers)
     forwarded || remote_ip |> :inet.ntoa() |> to_string()
   end
 
-  defp forwarded(conn) do
+  defp forwarded(headers) do
     Enum.find_value(@forwarding_headers, fn header ->
-      with [value | _rest] <- Plug.Conn.get_req_header(conn, header),
+      with {^header, value} <- List.keyfind(headers, header, 0),
            [first | _rest] <- String.split(value, ",", trim: true),
            {:ok, address} <- first |> String.trim() |> to_charlist() |> :inet.parse_address() do
         address |> :inet.ntoa() |> to_string()
