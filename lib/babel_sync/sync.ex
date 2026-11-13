@@ -94,9 +94,10 @@ defmodule BabelSync.Sync do
   defp author(opts), do: {opts[:author_id], opts[:author_app]}
 
   @attempts 4
+  @patience :timer.seconds(30)
 
   defp call(entry_id, message, attempts \\ @attempts) do
-    GenServer.call(server(entry_id), message)
+    GenServer.call(server(entry_id), message, @patience)
   catch
     :exit, {reason, _call} when reason in [:noproc, :normal] and attempts > 1 ->
       call(entry_id, message, attempts - 1)
