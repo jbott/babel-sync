@@ -116,6 +116,7 @@ defmodule BabelSync.Markdown do
       sanitize: @sanitize
     )
     |> local_anchors()
+    |> local_frames()
   end
 
   @spec resolve_target(String.t(), [Entry.t()] | index()) :: Entry.t() | nil
@@ -490,6 +491,28 @@ defmodule BabelSync.Markdown do
   defp escape(text), do: Plug.HTML.html_escape(text)
 
   defp local_anchors(html), do: Regex.replace(~r/href="#(?!md-|")/, html, ~s(href="#md-))
+
+  @frame ~r/<iframe\b((?:[^>"]|"[^"]*")*)><\/iframe>/
+
+  defp local_frames(html) do
+    Regex.replace(@frame, html, fn frame, attributes ->
+      case Regex.run(~r/\bsrc="([^"]*)"/, attributes, capture: :all_but_first) do
+        ["/" <> rest] when binary_part(rest, 0, min(byte_size(rest), 1)) != "/" -> frame
+        [address] -> framed_elsewhere(address)
+        nil -> ""
+      end
+    end)
+  end
+
+  defp framed_elsewhere(address) do
+    case URI.parse(String.replace(address, "&amp;", "&")) do
+      %URI{scheme: scheme, host: host} when scheme in ["http", "https"] and is_binary(host) ->
+        ~s(<a class="embed-file" href="#{address}" rel="noopener noreferrer">#{escape(host)}</a>)
+
+      _not_a_page ->
+        ""
+    end
+  end
 
   @spec index([Entry.t()] | index()) :: index()
   def index(%{paths: _paths, names: _names} = index), do: index

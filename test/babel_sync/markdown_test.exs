@@ -161,6 +161,20 @@ defmodule BabelSync.MarkdownTest do
     refute rendered =~ "onload"
   end
 
+  test "a frame of another site, which the page would refuse to load, becomes a link to it" do
+    frame = ~s|<iframe title="a > b" src="https://www.example.com/embed/x?a=1&b=2"></iframe>|
+
+    assert find(frame, "iframe") |> Enum.count() == 0
+
+    assert attribute(frame, "a.embed-file", "href") == [
+             "https://www.example.com/embed/x?a=1&b=2"
+           ]
+
+    assert find(~s|<iframe src="//example.com/x"></iframe>|, "iframe") |> Enum.count() == 0
+    assert find(~s|<iframe></iframe>|, "iframe") |> Enum.count() == 0
+    assert find("![[paper.pdf]]", "iframe.embed-pdf") |> Enum.count() == 1
+  end
+
   test "notes that embed themselves stop" do
     assert find("![[Loop]]", ".embed") |> Enum.count() == 1
   end

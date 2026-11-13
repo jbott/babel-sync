@@ -27,6 +27,7 @@ defmodule BabelSyncWeb.Plugs.ContentPolicy do
     conn
     |> assign(:csp_nonce, nonce)
     |> put_resp_header("content-security-policy", policy(nonce))
+    |> put_resp_header("referrer-policy", "no-referrer")
   end
 
   defp policy(nonce) do
@@ -36,7 +37,7 @@ defmodule BabelSyncWeb.Plugs.ContentPolicy do
         "script-src 'self' 'nonce-#{nonce}'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob: https:",
-        "media-src 'self' blob:",
+        "media-src 'self' blob: https:",
         "font-src 'self'",
         "connect-src 'self' https://tiles.openfreemap.org",
         "frame-src 'self'",
