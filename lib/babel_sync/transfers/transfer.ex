@@ -1,4 +1,9 @@
 defmodule BabelSync.Transfers.Transfer do
+  @moduledoc """
+  An opaque link to upload or download one file over HTTP. Only a hash of
+  its token is kept, with who may use it, for what, and until when.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

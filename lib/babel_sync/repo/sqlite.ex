@@ -1,4 +1,8 @@
 defmodule BabelSync.Repo.SQLite do
+  @moduledoc """
+  The repository in local mode, on SQLite.
+  """
+
   use Ecto.Repo,
     otp_app: :babel_sync,
     adapter: Ecto.Adapters.SQLite3

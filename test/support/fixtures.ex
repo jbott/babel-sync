@@ -1,4 +1,8 @@
 defmodule BabelSync.Fixtures do
+  @moduledoc """
+  Builds users, vaults and entries for tests.
+  """
+
   alias BabelSync.{Accounts, Vaults}
 
   def user(attrs \\ %{}) do

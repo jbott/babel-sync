@@ -1,4 +1,9 @@
 defmodule BabelSync.Vaults.Vault do
+  @moduledoc """
+  A synced folder of notes and attachments, with the sequence number of
+  its latest change.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

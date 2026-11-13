@@ -1,4 +1,9 @@
 defmodule BabelSync.OAuth.Grant do
+  @moduledoc """
+  A user's standing permission for an OAuth client: hashes of its access
+  and refresh tokens, when each expires, and when it was last used.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

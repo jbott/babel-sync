@@ -1,4 +1,8 @@
 defmodule BabelSyncWeb.ChannelCase do
+  @moduledoc """
+  Sets up tests of Phoenix channels with a sandboxed database.
+  """
+
   use ExUnit.CaseTemplate
 
   import Phoenix.ChannelTest

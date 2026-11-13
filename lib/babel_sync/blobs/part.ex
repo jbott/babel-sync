@@ -1,4 +1,8 @@
 defmodule BabelSync.Blobs.Part do
+  @moduledoc """
+  One received part of an attachment upload in progress.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

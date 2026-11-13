@@ -1,4 +1,9 @@
 defmodule BabelSync.OAuth.Client do
+  @moduledoc """
+  An application registered to sign in through OAuth, such as an MCP
+  client or the Obsidian plugin, with the addresses it may be sent back to.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

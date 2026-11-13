@@ -1,4 +1,9 @@
 defmodule BabelSync.Blobs.Upload do
+  @moduledoc """
+  An attachment upload in progress: the hash and size it will have, the
+  part size, and the storage's own handle for it.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

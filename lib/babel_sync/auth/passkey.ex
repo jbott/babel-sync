@@ -1,4 +1,9 @@
 defmodule BabelSync.Auth.Passkey do
+  @moduledoc """
+  A WebAuthn credential a user signs in with: its public key, the
+  signature counter that exposes a cloned authenticator, and a name.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

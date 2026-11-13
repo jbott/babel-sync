@@ -1,4 +1,9 @@
 defmodule BabelSync.Auth.LoginLink do
+  @moduledoc """
+  An emailed sign-in link. Only a hash of its token is kept, and it
+  expires.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

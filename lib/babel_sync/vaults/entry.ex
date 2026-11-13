@@ -1,4 +1,10 @@
 defmodule BabelSync.Vaults.Entry do
+  @moduledoc """
+  A file or folder in a vault: its path and folded path, whether it is a
+  note, an attachment or a folder, and the sequence number of its last
+  change.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

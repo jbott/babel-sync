@@ -1,4 +1,8 @@
 defmodule BabelSync.Accounts.User do
+  @moduledoc """
+  A person who can sign in and belong to vaults.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}

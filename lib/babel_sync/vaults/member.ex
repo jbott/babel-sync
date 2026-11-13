@@ -1,4 +1,8 @@
 defmodule BabelSync.Vaults.Member do
+  @moduledoc """
+  A user's role in a vault: owner, editor or viewer.
+  """
+
   use BabelSync.Schema
 
   @type t :: %__MODULE__{}
