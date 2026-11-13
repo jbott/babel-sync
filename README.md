@@ -145,7 +145,10 @@ mix precommit                        # compile without warnings, format, test (S
 bin/dev-services up
 BABELSYNC_STORAGE=remote mix test    # the same suite on PostgreSQL and S3
 mix dialyzer
+nix build -L .#checks.aarch64-linux.cluster   # two servers on one database, in NixOS VMs (or x86_64-linux)
 ```
+
+The cluster check starts a database machine and two servers and drives them as an agent would: the servers finding each other, a session opened on one and used on the other, an edit taken by one showing on the other, the network between them cut and restored, and one restarting while the other carries on. It needs a Linux builder that can run VMs.
 
 The end-to-end tests run the JavaScript client and two copies of the plugin's sync engine against the real server under Node. When Chrome or Chromium is installed (or `CHROME_BIN` names one) they also drive the web app in a headless browser: two tabs editing one note, uploads, rename, history, trash, and passkey sign-in through a virtual authenticator. Without a browser those tests are skipped. The MCP server is driven by the official `@modelcontextprotocol/sdk` client, alone and while a note is being typed in.
 

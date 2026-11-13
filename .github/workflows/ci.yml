@@ -75,3 +75,5 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v16
       - name: Build the release
         run: nix build --print-build-logs
+      - name: Run two servers on one database
+        run: nix build --print-build-logs .#checks.x86_64-linux.cluster

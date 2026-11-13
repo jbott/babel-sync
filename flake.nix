@@ -47,6 +47,12 @@
           };
         };
 
+        checks = pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          cluster = pkgs.testers.runNixOSTest (
+            import ./nix/cluster-test.nix { babelsync = self.packages.${system}.default; }
+          );
+        };
+
         devShells.default = pkgs.mkShell {
           packages =
             [
