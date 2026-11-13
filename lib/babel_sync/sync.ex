@@ -18,7 +18,7 @@ defmodule BabelSync.Sync do
   @spec topic(Ecto.UUID.t()) :: String.t()
   def topic(entry_id), do: "doc:" <> entry_id
 
-  @spec subscribe(Ecto.UUID.t()) :: :ok
+  @spec subscribe(Ecto.UUID.t()) :: :ok | {:error, term()}
   def subscribe(entry_id), do: Phoenix.PubSub.subscribe(BabelSync.PubSub, topic(entry_id))
 
   @spec state_vector(Ecto.UUID.t()) :: binary()

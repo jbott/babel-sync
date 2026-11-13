@@ -469,7 +469,7 @@ defmodule BabelSync.Vaults do
 
   defp with_seqs(entries), do: Enum.map(entries, &{&1, next_seq(&1.vault_id)})
 
-  @spec subscribe(Ecto.UUID.t()) :: :ok
+  @spec subscribe(Ecto.UUID.t()) :: :ok | {:error, term()}
   def subscribe(vault_id), do: Phoenix.PubSub.subscribe(BabelSync.PubSub, topic(vault_id))
 
   defp descendants(%Entry{kind: :folder, vault_id: vault_id, path: path}) do

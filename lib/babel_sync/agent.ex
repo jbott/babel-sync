@@ -49,6 +49,12 @@ defmodule BabelSync.Agent do
           | :ambiguous_heading
           | {:stale, String.t()}
           | {:no_match | :ambiguous_match, pos_integer()}
+          | :not_text
+          | :invalid_size
+          | :not_a_folder_target
+          | :storage_unavailable
+          | :search_timeout
+          | :too_large_to_read
 
   @type error :: {:error, reason()}
   @type vault_reference :: String.t() | nil
