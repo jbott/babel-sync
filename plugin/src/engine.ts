@@ -97,6 +97,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private failures = new Map<string, number>();
   private buried = new Map<string, number>();
   private fetched = new Map<string, Uint8Array[]>();
+  private unsent = new Map<string, { stamp: string; attempts: number }>();
 
   constructor(options: EngineOptions) {
     super();
@@ -469,11 +470,12 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       const known = id ? this.byId.get(id) : undefined;
       const kind = known && known.kind !== "folder" ? known.kind : kindFor(file.path);
       if (kind !== "doc" && this.tooLarge(file.size)) return false;
+      if (this.setAsideAsUnsendable(file)) return false;
       return thoroughly || !known || known.mtime !== file.mtime || known.size !== file.size;
     });
     for (const [done, file] of outgoing.entries()) {
       this.report("sending", done, outgoing.length);
-      await this.pushLocal(file.path);
+      await this.send(file);
     }
     this.report(null);
 
@@ -485,6 +487,30 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     await this.tidyFolders();
     return displaced.length + moved.length + (thoroughly ? 0 : outgoing.length) + missing.length + unsent.length > 0;
+  }
+
+  private setAsideAsUnsendable(file: { path: string; size: number; mtime: number }): boolean {
+    const stuck = this.unsent.get(file.path);
+    return stuck !== undefined && stuck.attempts >= ATTEMPTS && stuck.stamp === `${file.mtime}:${file.size}`;
+  }
+
+  private async send(file: { path: string; size: number; mtime: number }): Promise<void> {
+    try {
+      await this.pushLocal(file.path);
+      this.unsent.delete(file.path);
+    } catch (error) {
+      if (!this.online) throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      const stamp = `${file.mtime}:${file.size}`;
+      const before = this.unsent.get(file.path);
+      const attempts = before?.stamp === stamp ? before.attempts + 1 : 1;
+      this.unsent.set(file.path, { stamp, attempts });
+      this.emit("log", `could not send ${file.path}: ${error instanceof Error ? (error.stack ?? reason) : reason}`);
+
+      if (attempts < ATTEMPTS) return this.fallBehind();
+      this.emit("log", `leaving ${file.path} unsent after ${ATTEMPTS} attempts, until it changes`);
+      this.emit("error", `${file.path} cannot be sent: ${reason}`);
+    }
   }
 
   private settleSoon(): void {
@@ -842,21 +868,29 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     if (!entry || !this.sending) return;
     if (await this.options.fs.stat(path)) return;
 
-    await this.drop(entry);
+    await this.drop(entry, entry.kind === "folder" ? undefined : (entry.hash ?? undefined));
     await this.pushFolder(parentOf(path));
   }
 
-  private async drop(entry: LocalEntry): Promise<void> {
+  private async drop(entry: LocalEntry, baseHash?: string): Promise<void> {
     if (!this.sending) return;
 
     try {
-      await this.vault!.remove(entry.id);
+      await this.vault!.remove(entry.id, { baseHash });
     } catch (error) {
+      if (error instanceof RequestError && error.reason === "conflict" && error.entry) return this.revive(entry, error.entry);
       if (!this.gone(error)) throw error;
     }
 
     this.forget(entry);
     await this.discard(entry.id);
+  }
+
+  private async revive(entry: LocalEntry, remote: Entry): Promise<void> {
+    this.emit("log", `${entry.path} was changed elsewhere after it was deleted here; keeping the changed one`);
+    entry.hash = null;
+    await this.applyRemote(remote);
+    await this.mark(remote);
   }
 
   private async renameLocal(from: string, to: string): Promise<void> {

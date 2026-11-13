@@ -104,6 +104,7 @@ defmodule BabelSyncWeb.VaultChannel do
 
   defp handle("delete", %{"id" => id} = params, socket) do
     with {:ok, entry} <- fetch(id, socket),
+         :ok <- expect_unchanged(entry, params),
          {:ok, deleted} <- Vaults.delete_entry(entry, if_empty: params["if_empty"] == true) do
       {:ok, %{entries: Enum.map(deleted, &EntryJSON.entry/1)}}
     end
@@ -139,6 +140,22 @@ defmodule BabelSyncWeb.VaultChannel do
   end
 
   defp expect_base(_entry, _params), do: :ok
+
+  defp expect_unchanged(%Entry{kind: :doc} = note, %{"base_hash" => base}) when is_binary(base) do
+    if Sync.live?(note.id), do: :ok = Sync.flush(note.id)
+    current = Vaults.get_entry(note.id)
+
+    if (current.content_hash || Sync.Store.hash("")) == base,
+      do: :ok,
+      else: {:error, {:conflict, current}}
+  end
+
+  defp expect_unchanged(%Entry{kind: :blob} = file, %{"base_hash" => base})
+       when is_binary(base) and base != file.blob_hash do
+    {:error, {:conflict, file}}
+  end
+
+  defp expect_unchanged(_entry, _params), do: :ok
 
   defp fetch(id, socket) do
     with {:ok, id} <- Ecto.UUID.cast(id),

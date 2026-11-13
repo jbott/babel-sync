@@ -112,8 +112,10 @@ export class VaultSession extends Emitter<VaultEvents> {
     return reply.entries;
   }
 
-  async remove(id: string, options: { ifEmpty?: boolean } = {}): Promise<Entry[]> {
-    const reply = await this.request<{ entries: Entry[] }>("delete", { id, if_empty: options.ifEmpty === true });
+  async remove(id: string, options: { ifEmpty?: boolean; baseHash?: string } = {}): Promise<Entry[]> {
+    const payload: Record<string, unknown> = { id, if_empty: options.ifEmpty === true };
+    if (options.baseHash !== undefined) payload.base_hash = options.baseHash;
+    const reply = await this.request<{ entries: Entry[] }>("delete", payload);
     for (const entry of reply.entries) this.acknowledge(entry);
     return reply.entries;
   }

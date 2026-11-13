@@ -480,6 +480,53 @@ test("a note edited offline survives another device deleting it", async () => {
   assert.equal(await text(phone, "plan.md"), "first draft\nwritten on a plane\n");
 });
 
+test("a note deleted offline survives when another device edited it meanwhile", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await edit(laptop, "plan.md", "first draft\n");
+  await edit(laptop, "photo.png", "one");
+  await edit(laptop, "stale.md", "nobody wants this\n");
+  await eventually(() => paths(phone).join() === "photo.png,plan.md,stale.md", "the files on the phone");
+  await eventually(() => phone.engine.status === "synced" && laptop.engine.status === "synced", "both devices to settle");
+  await phone.client.disconnect();
+  await eventually(() => phone.engine.status === "offline", "the phone to notice it is offline");
+
+  await phone.fs.remove("plan.md");
+  await phone.fs.remove("photo.png");
+  await phone.fs.remove("stale.md");
+  await phone.engine.idle();
+  await edit(laptop, "plan.md", "first draft\nfinished at the desk\n");
+  await edit(laptop, "photo.png", "two");
+  await eventually(() => laptop.engine.status === "synced", "the laptop to send its edits");
+
+  phone.client.connect();
+  await eventually(async () => (await text(phone, "plan.md")) === "first draft\nfinished at the desk\n", "the edited plan back on the phone");
+  await eventually(async () => (await text(phone, "photo.png")) === "two", "the edited photo back on the phone");
+  await eventually(() => paths(laptop).join() === "photo.png,plan.md", "the unedited note to go from the laptop");
+  assert.equal(await text(laptop, "plan.md"), "first draft\nfinished at the desk\n");
+  assert.deepEqual(paths(phone), ["photo.png", "plan.md"]);
+});
+
+test("a file the server refuses does not hold up the files after it", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  await shutdown(laptop);
+
+  const refused = `${"a".repeat(1100)}.md`;
+  await laptop.fs.writeText(refused, "its path is too long for the server\n");
+  await laptop.fs.writeText("b.md", "fine\n");
+  await laptop.fs.writeText("c.png", "fine too");
+  const logs: string[] = [];
+  const back = await boot("laptop", vault, laptop, { retryMs: 20, logs });
+
+  await eventually(() => paths(phone).join() === "b.md,c.png", "the other files on the phone");
+  await eventually(() => back.errors.some((message) => message.includes("cannot be sent")), "the laptop to say what it could not send");
+  await eventually(() => back.engine.status === "synced", "the laptop to settle");
+  assert.equal(await text(back, refused), "its path is too long for the server\n");
+});
+
 test("typing in an open note while offline is sent once the connection returns", async () => {
   const vault = freshVault();
   const laptop = await boot("laptop", vault);
