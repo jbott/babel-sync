@@ -2,6 +2,7 @@ import type { Channel, Socket } from "phoenix";
 import * as Y from "yjs";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from "y-protocols/awareness";
 import { Emitter } from "./events.ts";
+import { PROTOCOL, refusal } from "./protocol.ts";
 import { fromBase64, toArrayBuffer, toBase64 } from "./encoding.ts";
 
 export const TEXT_NAME = "content";
@@ -36,6 +37,7 @@ export class DocSession extends Emitter<DocEvents> {
 
     this.channel = socket.channel(`doc:${entryId}`, () => ({
       sv: toBase64(Y.encodeStateVector(this.doc)),
+      protocol: PROTOCOL,
     }));
 
     this.channel.on("update", (payload: ArrayBuffer) => {
@@ -55,7 +57,7 @@ export class DocSession extends Emitter<DocEvents> {
     this.channel
       .join()
       .receive("ok", (reply: JoinReply) => this.onJoin(reply))
-      .receive("error", (reply: { reason?: string }) => this.emit("error", reply.reason ?? "error"));
+      .receive("error", (reply: { reason?: string }) => this.emit("error", refusal(reply.reason)));
   }
 
   get synced(): boolean {

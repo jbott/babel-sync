@@ -16,12 +16,14 @@ defmodule BabelSyncWeb.VaultChannel do
   alias BabelSync.{Blobs, Sync, Vaults}
   alias BabelSync.Vaults.Entry
   alias BabelSyncWeb.EntryJSON
+  alias BabelSyncWeb.Protocol
 
   @impl true
   def join("vault:" <> vault_id, params, socket) do
     scope = socket.assigns.scope
 
-    with {:ok, vault_id} <- Ecto.UUID.cast(vault_id),
+    with :ok <- Protocol.check(params),
+         {:ok, vault_id} <- Ecto.UUID.cast(vault_id),
          :ok <- Scope.authorize(scope, vault_id, :read),
          since when is_integer(since) and since >= 0 <- Map.get(params, "since", 0) do
       :ok = Vaults.subscribe(vault_id)
@@ -35,6 +37,7 @@ defmodule BabelSyncWeb.VaultChannel do
           else: Vaults.changes_since(vault_id, since)
 
       reply = %{
+        protocol: Protocol.current(),
         seq: vault.seq,
         digest: Vaults.digest(vault_id),
         complete: complete,
@@ -47,6 +50,7 @@ defmodule BabelSyncWeb.VaultChannel do
 
       {:ok, reply, assign(socket, :vault_id, vault_id)}
     else
+      {:error, :upgrade} -> {:error, Protocol.refusal()}
       _denied -> {:error, %{reason: "forbidden"}}
     end
   end

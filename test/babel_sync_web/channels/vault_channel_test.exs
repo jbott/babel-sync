@@ -301,6 +301,24 @@ defmodule BabelSyncWeb.VaultChannelTest do
     assert_reply push(owners, "set_blob", %{"id" => code.id, "blob_hash" => blob.hash}), :ok, _
   end
 
+  test "a client says which protocol it speaks, and one too old is told to upgrade", %{
+    owner: owner,
+    vault: vault
+  } do
+    assert {:ok, %{protocol: 1}, _socket} = join_vault(owner, vault, %{"protocol" => 1})
+    assert {:ok, %{protocol: 1}, _socket} = join_vault(owner, vault)
+
+    for spoken <- [0, -3, "1", nil] do
+      assert {:error, %{reason: "upgrade", oldest: 1, current: 1}} =
+               join_vault(owner, vault, %{"protocol" => spoken})
+    end
+
+    note = entry(vault, "note.md")
+
+    assert {:error, %{reason: "upgrade"}} =
+             owner |> connect_as([]) |> subscribe_and_join("doc:" <> note.id, %{"protocol" => 0})
+  end
+
   test "a viewer's requests to change the tree are refused", %{vault: vault} do
     viewer = user()
     {:ok, _} = Vaults.put_member(vault, viewer, :viewer)

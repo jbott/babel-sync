@@ -1,5 +1,6 @@
 import type { Channel, Socket } from "phoenix";
 import { Emitter } from "./events.ts";
+import { PROTOCOL, refusal } from "./protocol.ts";
 
 export type EntryKind = "doc" | "blob" | "folder";
 
@@ -53,7 +54,7 @@ export class VaultSession extends Emitter<VaultEvents> {
     super();
     this.vaultId = vaultId;
     this.seq = since;
-    this.channel = socket.channel(`vault:${vaultId}`, () => ({ since: this.seq }));
+    this.channel = socket.channel(`vault:${vaultId}`, () => ({ since: this.seq, protocol: PROTOCOL }));
     this.channel.on("entry", (entry: Entry) => this.apply(entry, true));
     this.channel.onClose(() => this.left());
     this.channel.onError(() => this.left());
@@ -71,7 +72,7 @@ export class VaultSession extends Emitter<VaultEvents> {
         this.seq = Math.max(this.seq, reply.seq);
         this.emit("joined", { entries: reply.entries, seq: reply.seq, complete: reply.complete, digest: reply.digest });
       })
-      .receive("error", (reply: { reason?: string }) => this.emit("error", reply.reason ?? "error"));
+      .receive("error", (reply: { reason?: string }) => this.emit("error", refusal(reply.reason)));
   }
 
   whenJoined(timeoutMs = 15000): Promise<void> {
