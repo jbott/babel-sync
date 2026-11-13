@@ -133,12 +133,32 @@ defmodule BabelSync.MarkdownTest do
     assert attribute("![[diagram.png|100x145]]", "img", "height") == ["145"]
     assert attribute("![[diagram.png|A chart]]", "img", "alt") == ["A chart"]
     assert attribute("![[song.mp3]]", "audio", "src") == ["/raw/song.mp3"]
-    assert attribute("![[paper.pdf]]", "a", "href") == ["/raw/Attachments/paper.pdf"]
+
+    assert attribute("![[paper.pdf]]", "iframe.embed-pdf", "src") == [
+             "/raw/Attachments/paper.pdf"
+           ]
+
+    assert attribute("[[paper.pdf]]", "a", "href") == ["/raw/Attachments/paper.pdf"]
     assert attribute("[[diagram.png]]", "a", "href") == ["/raw/Attachments/diagram.png"]
 
     assert texts("![[Plan#Goals]]", ".embed-content h2") == ["Later"]
     refute html("![[Plan#Goals]]") =~ "elsewhere"
     assert texts("![[Plan#^ship]]", ".embed-content p") == ["Ship it"]
+  end
+
+  test "embedded PDFs open at a page and height" do
+    pdf = "![[paper.pdf#page=3&height=400]]"
+    assert attribute(pdf, "iframe", "src") == ["/raw/Attachments/paper.pdf#page=3"]
+    assert attribute(pdf, "iframe", "height") == ["400"]
+    assert attribute("![[paper.pdf#page=x]]", "iframe", "src") == ["/raw/Attachments/paper.pdf"]
+  end
+
+  test "frames written into a note lose their scripts" do
+    rendered =
+      html(~s|<iframe src="https://example.com" srcdoc="<script>" onload="x()"></iframe>|)
+
+    refute rendered =~ "srcdoc"
+    refute rendered =~ "onload"
   end
 
   test "notes that embed themselves stop" do

@@ -621,6 +621,17 @@ progress.upload-meter::-moz-progress-bar {
 .markdown .embed-file::before { content: "📎 "; }
 .markdown audio { width: 100%; max-width: 28rem; margin: 0.5rem 0; }
 
+.markdown iframe.embed-pdf {
+  display: block;
+  width: 100%;
+  margin: 1rem 0;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+}
+
+.markdown iframe.embed-pdf:not([height]) { height: 36rem; }
+
 .markdown span[data-math-style="display"] { display: block; overflow-x: auto; margin: 1rem 0; text-align: center; }
 .markdown math { font-size: 1.08em; }
 

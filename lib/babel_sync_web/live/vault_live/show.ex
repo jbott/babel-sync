@@ -380,6 +380,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
       extension in @image -> :image
       extension in @audio -> :audio
       extension in @video -> :video
+      extension == ".pdf" -> :pdf
       true -> :other
     end
   end
@@ -712,6 +713,13 @@ defmodule BabelSyncWeb.VaultLive.Show do
               controls
               class="max-w-full rounded-lg border border-line shadow-float"
             ></video>
+            <iframe
+              :if={media(@entry) == :pdf}
+              id="attachment-pdf"
+              src={Paths.raw(@entry)}
+              title={Path.basename(@entry.path)}
+              class="min-h-[70vh] w-full max-w-4xl flex-1 rounded-lg border border-line bg-surface shadow-float"
+            ></iframe>
             <div
               :if={media(@entry) == :other}
               class="grid size-20 place-items-center rounded-2xl border border-line bg-surface text-faint shadow-raise"

@@ -12,6 +12,11 @@ const vaultId = process.env.BABELSYNC_VAULT_ID ?? "";
 const setupUrl = process.env.BABELSYNC_SETUP_URL ?? "";
 const token = process.env.BABELSYNC_TOKEN ?? "";
 
+const onePagePdf = Buffer.from(
+  "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+    "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n",
+);
+
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
 let browser: Browser;
@@ -159,6 +164,17 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
       const image = document.querySelector("#attachment img") as HTMLImageElement | null;
       return image?.complete && image.naturalWidth === 1;
     });
+
+    const paper = join(mkdtempSync(join(tmpdir(), "babelsync-")), "paper.pdf");
+    writeFileSync(paper, onePagePdf);
+    await uploader.uploadFile(paper);
+    await one.locator('#tree a[href$="/f/Notes/paper.pdf"]').click();
+    const frame = await (await one.waitForSelector("#attachment-pdf"))!.contentFrame();
+    await frame.waitForFunction(() => document.contentType === "application/pdf");
+    await eventually(
+      async () => frame.childFrames().some((child) => child.url().startsWith("chrome-extension://")),
+      async () => `the PDF did not open in the browser's viewer: ${frame.childFrames().map((child) => child.url())}`,
+    );
 
     await one.locator('#tree a[href$="/f/Notes/browser.md"]').click();
     await waitForText(one, "#entry-path", "Notes/browser.md");

@@ -319,6 +319,18 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert conn |> get(Paths.raw(note)) |> response(200) == "plain"
     end
 
+    test "a PDF opens in a frame and is still served sandboxed", %{conn: conn, vault: vault} do
+      {:ok, blob} = Blobs.put(vault.id, "<html><script>alert(1)</script>")
+      pdf = entry(vault, "paper.pdf", %{blob_hash: blob.hash})
+
+      served = get(conn, Paths.raw(pdf))
+      assert get_resp_header(served, "content-type") |> hd() =~ "application/pdf"
+      assert get_resp_header(served, "content-security-policy") |> hd() =~ "sandbox"
+
+      {:ok, view, _html} = live(conn, Paths.entry(pdf))
+      assert has_element?(view, ~s(#attachment-pdf[src="#{Paths.raw(pdf)}"]))
+    end
+
     test "refuses people outside the vault", %{anonymous: conn, vault: vault} do
       note = entry(vault, "note.md")
 

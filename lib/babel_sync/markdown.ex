@@ -11,7 +11,9 @@ defmodule BabelSync.Markdown do
   entries the way Obsidian does: an exact path first, then a note with
   that name anywhere. Links into a heading or block land on it. An
   embedded note, or one of its sections or blocks, is shown in place, two
-  levels deep at most. Images take a size, as in `![[photo.png|300]]`.
+  levels deep at most. Images take a size, as in `![[photo.png|300]]`,
+  and embedded PDFs open in place, at a page and height when given, as in
+  `![[paper.pdf#page=3&height=400]]`.
 
   A shared vault holds text written by other people, so raw HTML in a
   note is kept only after sanitizing: no scripts, event handlers or
@@ -55,12 +57,13 @@ defmodule BabelSync.Markdown do
   @highlight [engine: :syntect, opts: []]
 
   @sanitize [
-    add_tags: ~w(audio video input section),
+    add_tags: ~w(audio video input section iframe),
     tag_attributes: %{
       "a" => ~w(href hreflang title id),
       "img" => ~w(alt height src width title),
       "audio" => ~w(src controls),
       "video" => ~w(src controls),
+      "iframe" => ~w(src title height loading),
       "input" => ~w(type checked disabled),
       "details" => ~w(open data-callout data-callout-metadata),
       "div" => ~w(id data-callout data-callout-metadata),
@@ -84,6 +87,7 @@ defmodule BabelSync.Markdown do
       "dl" => @classes,
       "a" => ~w(footnote-backref embed-file),
       "sup" => ["footnote-ref"],
+      "iframe" => ["embed-pdf"],
       "pre" => ~w(mermaid syntax-highlighting),
       "section" => ["footnotes"]
     },
@@ -315,7 +319,7 @@ defmodule BabelSync.Markdown do
         %MDEx.Link{url: anchor(fragment), title: "", nodes: nodes}
 
       {_target, %Entry{kind: :blob} = entry} when embed ->
-        media(entry, shown, url, context)
+        media(entry, shown, url, fragment, context)
 
       {_target, %Entry{kind: :blob} = entry} ->
         %MDEx.Link{url: context.links.raw.(entry), title: "", nodes: nodes}
@@ -332,7 +336,7 @@ defmodule BabelSync.Markdown do
   defp link_text("", fragment), do: String.trim_leading(fragment, "^")
   defp link_text(target, fragment), do: target <> " › " <> String.trim_leading(fragment, "^")
 
-  defp media(entry, shown, url, context) do
+  defp media(entry, shown, url, fragment, context) do
     source = escape(context.links.raw.(entry))
     extension = String.downcase(Path.extname(entry.path))
 
@@ -350,8 +354,31 @@ defmodule BabelSync.Markdown do
       extension in @video_extensions ->
         raw(~s(<video controls src="#{source}"></video>))
 
+      extension == ".pdf" ->
+        pdf(source, entry, fragment)
+
       true ->
         raw(~s(<a class="embed-file" href="#{source}">#{escape(Path.basename(entry.path))}</a>))
+    end
+  end
+
+  defp pdf(source, entry, fragment) do
+    options = URI.decode_query(fragment || "")
+    page = if number = number(options["page"]), do: "#page=" <> to_string(number), else: ""
+    height = if pixels = number(options["height"]), do: ~s( height="#{pixels}"), else: ""
+
+    raw(
+      ~s(<iframe class="embed-pdf" loading="lazy" title="#{escape(Path.basename(entry.path))}") <>
+        ~s( src="#{source}#{page}"#{height}></iframe>)
+    )
+  end
+
+  defp number(nil), do: nil
+
+  defp number(text) do
+    case Integer.parse(text) do
+      {number, ""} when number > 0 -> number
+      _not_a_number -> nil
     end
   end
 
