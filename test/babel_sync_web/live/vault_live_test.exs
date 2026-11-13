@@ -64,6 +64,46 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
   end
 
+  describe "events no page of ours would send" do
+    test "are answered without the page going down", %{conn: conn, vault: vault} do
+      note = entry(vault, "Trips/Lisbon plan.md")
+      {:ok, view, _html} = live(conn, Paths.entry(note))
+      page = Process.monitor(view.pid)
+      view |> element("#history-button") |> render_click()
+
+      for {event, params} <- [
+            {"show_version", %{"id" => "not a number"}},
+            {"show_version", %{"id" => "12abc"}},
+            {"show_version", %{"id" => %{"nested" => 1}}},
+            {"restore", %{"id" => "999999"}},
+            {"restore", %{"id" => "; drop"}},
+            {"restore_blob", %{"id" => "x"}},
+            {"compare", %{"against" => "nothing"}},
+            {"reveal", %{"line" => "9"}},
+            {"find", %{"q" => 7}},
+            {"toggle_folder", %{"path" => 3, "open" => "yes"}},
+            {"open_folders", %{"paths" => [1, %{}]}},
+            {"all_folders", %{"open" => "maybe"}},
+            {"attach", %{"name" => 5, "hash" => []}},
+            {"attach", %{"name" => "a.png", "hash" => "not a hash"}},
+            {"create_note", %{"note" => %{"path" => 4}}},
+            {"create_note", %{"note" => "flat"}},
+            {"rename", %{"rename" => %{"path" => nil}}},
+            {"rename", %{"rename" => %{"path" => "../../etc/passwd"}}},
+            {"switch_vault", %{"vault" => "not-a-uuid"}},
+            {"mode", %{"mode" => "write"}},
+            {"base_view", %{"view" => %{}}},
+            {"upload_failed", %{"name" => %{}}},
+            {"never_heard_of_it", %{}}
+          ] do
+        render_hook(view, event, params)
+      end
+
+      refute_received {:DOWN, ^page, :process, _pid, _reason}
+      assert has_element?(view, "#entry-path", "Trips/Lisbon plan.md")
+    end
+  end
+
   describe "outline and links" do
     test "a note's headings and the notes that link to it are shown beside it", %{
       conn: conn,

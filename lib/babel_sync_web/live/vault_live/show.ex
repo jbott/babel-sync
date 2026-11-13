@@ -98,7 +98,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   @impl true
-  def handle_event("create_note", %{"note" => %{"path" => path}}, socket) do
+  def handle_event("create_note", %{"note" => %{"path" => path}}, socket) when is_binary(path) do
     path = if Path.extname(path) == "", do: path <> ".md", else: path
 
     write(socket, fn ->
@@ -121,7 +121,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   def handle_event("switch_vault", %{"vault" => id}, %{assigns: %{vault: %{id: id}}} = socket),
     do: {:noreply, socket}
 
-  def handle_event("switch_vault", %{"vault" => id}, socket) do
+  def handle_event("switch_vault", %{"vault" => id}, socket) when is_binary(id) do
     case Enum.find(socket.assigns.vaults, &(&1.id == id)) do
       %Vaults.Vault{id: ^id} -> {:noreply, push_navigate(socket, to: Paths.vault(id))}
       nil -> {:noreply, socket}
@@ -166,7 +166,8 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end
   end
 
-  def handle_event("attach", %{"name" => name, "hash" => hash}, socket) do
+  def handle_event("attach", %{"name" => name, "hash" => hash}, socket)
+      when is_binary(name) and is_binary(hash) do
     write(socket, fn ->
       vault_id = socket.assigns.vault.id
       path = Path.join(current_folder(socket), Path.basename(name))
@@ -180,7 +181,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end)
   end
 
-  def handle_event("upload_failed", %{"name" => name}, socket) do
+  def handle_event("upload_failed", %{"name" => name}, socket) when is_binary(name) do
     {:noreply, put_flash(socket, :error, "Uploading #{name} failed.")}
   end
 
@@ -205,7 +206,8 @@ defmodule BabelSyncWeb.VaultLive.Show do
         "rename",
         %{"rename" => %{"path" => path}},
         %{assigns: %{entry: %Entry{} = entry}} = socket
-      ) do
+      )
+      when is_binary(path) do
     write(socket, fn ->
       case Vaults.rename_entry(entry, path) do
         {:ok, moved} ->
@@ -274,7 +276,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         %{assigns: %{entry: %Entry{kind: :blob} = entry}} = socket
       ) do
     write(socket, fn ->
-      case Vaults.restore_blob_version(entry, String.to_integer(id)) do
+      case Vaults.restore_blob_version(entry, version_id(id)) do
         {:ok, restored} ->
           {:noreply,
            socket
@@ -289,7 +291,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   def handle_event("show_version", %{"id" => id}, socket) do
-    {:noreply, socket |> assign(:against, :previous) |> compare(String.to_integer(id))}
+    {:noreply, socket |> assign(:against, :previous) |> compare(version_id(id))}
   end
 
   def handle_event("compare", %{"against" => against}, %{assigns: %{version: version}} = socket)
@@ -301,18 +303,24 @@ defmodule BabelSyncWeb.VaultLive.Show do
   def handle_event("restore", %{"id" => id}, %{assigns: %{entry: %Entry{} = entry}} = socket) do
     write(socket, fn ->
       author = socket.assigns.current_scope.user.id
-      :ok = Sync.restore_version(entry.id, String.to_integer(id), author_id: author)
 
-      {:noreply,
-       socket
-       |> assign(:versions, History.versions(entry.id))
-       |> assign(:version, nil)
-       |> put_flash(:info, "Restored. The previous text is still in the history.")
-       |> render_preview()}
+      case Sync.restore_version(entry.id, version_id(id), author_id: author) do
+        :ok ->
+          {:noreply,
+           socket
+           |> assign(:versions, History.versions(entry.id))
+           |> assign(:version, nil)
+           |> put_flash(:info, "Restored. The previous text is still in the history.")
+           |> render_preview()}
+
+        {:error, _gone} ->
+          {:noreply, put_flash(socket, :error, "That version is no longer available.")}
+      end
     end)
   end
 
-  def handle_event("base_view", %{"view" => view}, %{assigns: %{base: %{}}} = socket) do
+  def handle_event("base_view", %{"view" => view}, %{assigns: %{base: %{}}} = socket)
+      when is_binary(view) do
     {:noreply, socket |> assign(:base_view, view) |> render_preview()}
   end
 
@@ -467,6 +475,16 @@ defmodule BabelSyncWeb.VaultLive.Show do
       {:error, :not_found} -> put_flash(socket, :error, "That version is no longer available.")
     end
   end
+
+  defp version_id(sent) when is_binary(sent) do
+    case Integer.parse(sent) do
+      {id, ""} -> id
+      _not_a_number -> 0
+    end
+  end
+
+  defp version_id(sent) when is_integer(sent), do: sent
+  defp version_id(_sent), do: 0
 
   defp write(socket, fun) do
     if socket.assigns.writable,
