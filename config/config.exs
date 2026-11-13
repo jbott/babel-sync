@@ -31,6 +31,7 @@ config :babel_sync, BabelSync.Sync,
 config :babel_sync, BabelSync.Janitor,
   enabled: true,
   retention_days: 30,
+  versions_per_note: 1000,
   interval: :timer.hours(1)
 
 config :babel_sync, BabelSync.OAuth,

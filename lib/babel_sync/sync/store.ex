@@ -125,6 +125,36 @@ defmodule BabelSync.Sync.Store do
     count
   end
 
+  @spec cap_versions(pos_integer()) :: non_neg_integer()
+  def cap_versions(most) do
+    crowded =
+      Repo.all(
+        from v in Version,
+          group_by: v.entry_id,
+          having: count(v.id) > ^most,
+          select: v.entry_id
+      )
+
+    crowded |> Enum.map(&drop_beyond(&1, most)) |> Enum.sum()
+  end
+
+  defp drop_beyond(entry_id, most) do
+    oldest_kept =
+      Repo.one(
+        from v in Version,
+          where: v.entry_id == ^entry_id,
+          order_by: [desc: v.id],
+          offset: ^(most - 1),
+          limit: 1,
+          select: v.id
+      )
+
+    {count, _} =
+      Repo.delete_all(from v in Version, where: v.entry_id == ^entry_id and v.id < ^oldest_kept)
+
+    count
+  end
+
   @spec hash(String.t()) :: String.t()
   def hash(content), do: :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
 end

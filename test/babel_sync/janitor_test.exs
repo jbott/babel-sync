@@ -136,6 +136,20 @@ defmodule BabelSync.JanitorTest do
       assert [%{content: "only"}] = Store.list_versions(quiet.id)
     end
 
+    test "a note keeps only so many versions, however recent" do
+      previous = Application.get_env(:babel_sync, Janitor)
+      Application.put_env(:babel_sync, Janitor, Keyword.put(previous, :versions_per_note, 3))
+      vault = vault()
+      busy = entry(vault, "busy.md")
+      quiet = entry(vault, "quiet.md")
+      for text <- ~w(a b c d e), do: Store.put_version(busy.id, text, {nil, nil})
+      for text <- ~w(x y z), do: Store.put_version(quiet.id, text, {nil, nil})
+
+      assert :ok = Janitor.run()
+      assert ~w(e d c) == Enum.map(Store.list_versions(busy.id), & &1.content)
+      assert ~w(z y x) == Enum.map(Store.list_versions(quiet.id), & &1.content)
+    end
+
     test "attachment bytes are deleted once no entry, trash or history refers to them" do
       vault = vault()
       entry = vault |> attachment("pic.png", "old bytes") |> replace("new bytes")

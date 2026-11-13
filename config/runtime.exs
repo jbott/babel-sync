@@ -161,6 +161,10 @@ if retention = System.get_env("BABELSYNC_RETENTION_DAYS") do
   config :babel_sync, BabelSync.Janitor, retention_days: String.to_integer(retention)
 end
 
+if versions = System.get_env("BABELSYNC_VERSIONS_PER_NOTE") do
+  config :babel_sync, BabelSync.Janitor, versions_per_note: String.to_integer(versions)
+end
+
 if max_blob = System.get_env("BABELSYNC_MAX_BLOB_BYTES") do
   config :babel_sync, BabelSync.Blobs, max_size: String.to_integer(max_blob)
 end

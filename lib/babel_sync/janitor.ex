@@ -5,7 +5,9 @@ defmodule BabelSync.Janitor do
   History and the trash are kept for `BABELSYNC_RETENTION_DAYS`; the
   newest version of every note and attachment is always kept. Attachment
   bytes go once nothing refers to them, whether a live entry, a trashed
-  one or a kept version. Uploads that were never finished and expired
+  one or a kept version. A note keeps at most
+  `BABELSYNC_VERSIONS_PER_NOTE` versions however recent they are, so one
+  that is written to all day cannot fill the database. Uploads that were never finished and expired
   sign-in artifacts go regardless of the retention setting. Attachments
   that have since been recognised as text become notes.
 
@@ -32,6 +34,7 @@ defmodule BabelSync.Janitor do
 
     Enum.each(
       expiry(now) ++
+        crowding() ++
         [
           text_files: &Vaults.TextFiles.promote/0,
           attachments: fn -> Blobs.collect_garbage(recent) end,
@@ -57,6 +60,16 @@ defmodule BabelSync.Janitor do
         ]
 
       _keep_forever ->
+        []
+    end
+  end
+
+  defp crowding do
+    case config(:versions_per_note) do
+      most when is_integer(most) and most > 0 ->
+        [crowded_notes: fn -> Sync.Store.cap_versions(most) end]
+
+      _keep_all ->
         []
     end
   end
