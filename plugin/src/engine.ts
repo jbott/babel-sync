@@ -546,6 +546,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   private async removeLocally(local: LocalEntry): Promise<void> {
     const { fs } = this.options;
     const edited = local.kind !== "folder" && (local.dirty || (await this.diskHash(local)) !== local.hash);
+    this.emit("log", `${local.path} is gone from the server; ${edited ? "sending the copy edited here as new" : "removing it here"}`);
     if (local.kind !== "folder" && !edited) await fs.remove(local.path);
     this.forget(local);
     await this.discard(local.id);
@@ -877,6 +878,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
 
     try {
       await this.vault!.remove(entry.id, { baseHash });
+      this.emit("log", `deleted ${entry.path} on the server`);
     } catch (error) {
       if (error instanceof RequestError && error.reason === "conflict" && error.entry) return this.revive(entry, error.entry);
       if (!this.gone(error)) throw error;
@@ -961,6 +963,11 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
       if (announce && live.session.writable) await live.session.flush();
       const entry = this.byId.get(id);
       if (entry && live.session.writable) entry.dirty = false;
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "not_found") throw error;
+      this.retire(id, live);
+      await this.lose(id);
+      return false;
     } finally {
       this.release(id);
     }
@@ -989,6 +996,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   }
 
   private async sendAsNew(entry: LocalEntry): Promise<void> {
+    this.emit("log", `sending ${entry.path} as a new file`);
     this.forget(entry);
     await this.discard(entry.id);
     await this.pushLocal(entry.path);
@@ -1015,6 +1023,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const hash = await textHash(disk);
     if (hash === entry.hash) return false;
 
+    this.emit("log", `${entry.path} changed on disk; taking the change into the note`);
     const fork = new Y.Doc();
     if (entry.doc) Y.applyUpdate(fork, entry.doc);
     applyTextChange(fork.getText("content"), disk, DISK);
@@ -1034,7 +1043,14 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
     const file = await fs.stat(entry.path);
     if (!file && entry.hash !== null) return;
     const disk = file ? normalize(await fs.readText(entry.path)) : null;
-    if (disk !== text) await placing(fs.writeText(entry.path, text));
+    const changedMeanwhile = disk !== null && disk !== text && entry.hash !== null && (await textHash(disk)) !== entry.hash;
+    if (changedMeanwhile) return this.settle(entry.id);
+    if (disk !== text) {
+      this.emit("log", `writing the note's text to ${entry.path}`);
+      entry.doc = Y.encodeStateAsUpdate(this.doc(entry.id));
+      await this.persist(entry);
+      await placing(fs.writeText(entry.path, text));
+    }
     await this.record(entry, await textHash(text));
   }
 

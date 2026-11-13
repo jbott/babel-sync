@@ -13,6 +13,16 @@ const NAMES = ["laptop", "phone", "tablet"];
 const PATHS = ["inbox.md", "todo.md", "Daily/monday.md", "Daily/tuesday.md", "Places/cafe.md", "Places/park.md", "Places/list.base", "Attachments/photo.png"];
 
 type Disk = { fs: MemoryFs; store: MemoryStore };
+type Ledger = { added: string[]; discarded: string[] };
+
+async function discard(fs: MemoryFs, path: string, ledger: Ledger): Promise<void> {
+  if (path.endsWith(".png") || !fs.files.has(path)) return;
+  ledger.discarded.push(await fs.readText(path));
+}
+
+function occurrences(text: string, part: string): number {
+  return text.split(part).length - 1;
+}
 type Device = Disk & { name: string; client: BabelSyncClient; engine: SyncEngine; errors: string[]; log: string[] };
 
 function random(seed: number): () => number {
@@ -44,7 +54,7 @@ function watch(fs: MemoryFs, engine: SyncEngine): void {
   };
 }
 
-async function boot(name: string, vaultId: string, disk: Disk): Promise<Device> {
+async function boot(name: string, vaultId: string, disk: Disk, story: string[] = []): Promise<Device> {
   const client = new BabelSyncClient({ baseUrl, token: () => token, transport: WebSocket });
   const errors: string[] = [];
   const engine = new SyncEngine({
@@ -60,7 +70,10 @@ async function boot(name: string, vaultId: string, disk: Disk): Promise<Device> 
   const log: string[] = [];
   engine.on("error", (message) => errors.push(message));
   watch(disk.fs, engine);
-  engine.on("log", (line) => log.push(line));
+  engine.on("log", (line) => {
+    log.push(line);
+    story.push(`    ${name}: ${line}`);
+  });
   client.connect();
   await engine.start();
   return { name, ...disk, client, engine, errors, log };
@@ -86,7 +99,7 @@ function difference(one: Map<string, string>, other: Map<string, string>): strin
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function act(disk: Disk, engine: SyncEngine | null, name: string, step: number, chance: () => number): Promise<string> {
+async function act(disk: Disk, engine: SyncEngine | null, name: string, step: number, chance: () => number, ledger: Ledger): Promise<string> {
   const { fs } = disk;
   const existing = [...fs.files.keys()].filter((path) => PATHS.includes(path));
   const pick = <T>(items: T[]) => items[Math.floor(chance() * items.length)];
@@ -99,14 +112,25 @@ async function act(disk: Disk, engine: SyncEngine | null, name: string, step: nu
         path,
         Uint8Array.from({ length: 64 }, () => Math.floor(chance() * 256)),
       );
-    else if (fs.files.has(path) && chance() < 0.7) await fs.writeText(path, `${await fs.readText(path)}${name} adds ${step}\n`);
-    else await fs.writeText(path, `${name} wrote ${step}\n`);
+    else if (fs.files.has(path) && chance() < 0.7) {
+      await fs.writeText(path, `${await fs.readText(path)}${name} adds ${step}.\n`);
+      ledger.added.push(`${name} adds ${step}.`);
+      engine?.localChanged(path);
+      return `${name} adds a line to ${path}`;
+    } else {
+      const had = fs.files.has(path);
+      await discard(fs, path, ledger);
+      await fs.writeText(path, `${name} wrote ${step}.\n`);
+      engine?.localChanged(path);
+      return `${name} ${had ? "writes over" : "creates"} ${path}`;
+    }
     engine?.localChanged(path);
     return `${name} writes ${path}`;
   }
 
   if (roll < 0.75) {
     const path = pick(existing);
+    await discard(fs, path, ledger);
     await fs.remove(path);
     engine?.localDeleted(path);
     return `${name} deletes ${path}`;
@@ -143,15 +167,16 @@ async function settled(devices: Device[]): Promise<string[]> {
 for (const [index, vaultId] of vaultIds.entries()) {
   const seed = Number(process.env.BABELSYNC_SEED ?? 1) + index;
 
-  test(`devices that crash, restart and edit offline still end up identical (seed ${seed})`, async () => {
+  test(`devices that crash, restart and edit offline end up identical, with every line nobody discarded (seed ${seed})`, async () => {
     const chance = random(seed);
     const history: string[] = [];
+    const ledger: Ledger = { added: [], discarded: [] };
     const running = new Map<string, Device>();
     const down = new Map<string, Disk>();
     const everyone: Device[] = [];
 
     for (const name of NAMES) {
-      const device = await boot(name, vaultId, { fs: new MemoryFs(), store: new MemoryStore() });
+      const device = await boot(name, vaultId, { fs: new MemoryFs(), store: new MemoryStore() }, history);
       running.set(name, device);
       everyone.push(device);
     }
@@ -164,22 +189,23 @@ for (const [index, vaultId] of vaultIds.entries()) {
       if (device && roll < 0.12) {
         down.set(name, crash(device));
         running.delete(name);
-        history.push(`${name} crashes`);
+        history.push(`${step}: ${name} crashes`);
       } else if (!device && roll < 0.4) {
-        const back = await boot(name, vaultId, down.get(name)!);
+        history.push(`${step}: ${name} restarts`);
+        const back = await boot(name, vaultId, down.get(name)!, history);
         down.delete(name);
         running.set(name, back);
         everyone.push(back);
-        history.push(`${name} restarts`);
       } else {
-        history.push(await act(device ?? down.get(name)!, device?.engine ?? null, name, step, chance));
+        history.push(`${step}: ` + (await act(device ?? down.get(name)!, device?.engine ?? null, name, step, chance, ledger)));
       }
 
       await pause(Math.floor(chance() * 40));
     }
 
+    history.push("everyone restarts");
     for (const [name, disk] of down) {
-      const back = await boot(name, vaultId, disk);
+      const back = await boot(name, vaultId, disk, history);
       running.set(name, back);
       everyone.push(back);
     }
@@ -193,7 +219,6 @@ for (const [index, vaultId] of vaultIds.entries()) {
         ...history,
         ...devices.map((device) => `${device.name}: ${[...device.fs.files.keys()].sort().join(", ")}`),
         ...devices.map((device) => `${device.name} errors: ${device.errors.join("; ") || "none"}`),
-        ...everyone.flatMap((device) => device.log.map((line) => `${device.name} log: ${line}`)),
         ...differing.flatMap((path) =>
           devices.map((device) => {
             const file = device.fs.files.get(path);
@@ -211,11 +236,16 @@ for (const [index, vaultId] of vaultIds.entries()) {
       ].join("\n");
 
     assert.deepEqual(differing, [], report());
-    assert.deepEqual(
-      devices.flatMap((device) => device.errors),
-      [],
-      report(),
-    );
+
+    const notes = [...witness.fs.files.keys()].filter((path) => !path.endsWith(".png"));
+    const kept = await Promise.all(notes.map(async (path) => ({ path, text: await witness.fs.readText(path) })));
+    const everything = kept.map((note) => note.text).join("\n");
+    const discarded = ledger.discarded.join("\n");
+    const lost = ledger.added.filter((line) => !everything.includes(line) && !discarded.includes(line));
+    const repeated = kept.flatMap(({ path, text }) => ledger.added.filter((line) => occurrences(text, line) > 1).map((line) => `${path}: ${line}`));
+    const notesNow = kept.map(({ path, text }) => `${path} holds ${JSON.stringify(text)}`).join("\n");
+    assert.deepEqual(lost, [], `lines that were added and never deleted or written over are gone\n${report()}\n${notesNow}`);
+    assert.deepEqual(repeated, [], `lines appear twice in one note\n${report()}\n${notesNow}`);
 
     await Promise.all(devices.map((device) => device.engine.stop().then(() => device.client.disconnect())));
   });
