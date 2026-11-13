@@ -2,6 +2,7 @@ defmodule BabelSync.JanitorTest do
   use BabelSync.DataCase, async: false
 
   import BabelSync.Fixtures
+  import Ecto.Query
 
   alias BabelSync.{Blobs, Janitor, Repo, Sync, Vaults}
   alias BabelSync.Sync.Store
@@ -9,6 +10,13 @@ defmodule BabelSync.JanitorTest do
   @day 86_400
 
   defp days_from_now(days), do: DateTime.add(DateTime.utc_now(), days * @day, :second)
+
+  defp stored?(key) do
+    _bytes = key |> Blobs.Store.impl().stream(nil) |> Enum.to_list()
+    true
+  rescue
+    _missing -> false
+  end
 
   defp attachment(vault, path, data) do
     {:ok, blob} = Blobs.put(vault.id, data)
@@ -203,12 +211,13 @@ defmodule BabelSync.JanitorTest do
       {:ok, upload, [1]} = Blobs.begin_upload(vault.id, %{hash: hash, size: byte_size(data)})
       :ok = Blobs.put_part(upload, 1, data)
       key = "vaults/#{vault.id}/#{hash}"
-      :ok = Blobs.Store.impl().finish_upload(key, upload.store_ref, [{1, "1"}])
-      assert File.exists?(Blobs.Store.Disk.path(key))
+      [tag] = Repo.all(from p in Blobs.Part, where: p.upload_id == ^upload.id, select: p.tag)
+      :ok = Blobs.Store.impl().finish_upload(key, upload.store_ref, [{1, tag}])
+      assert stored?(key)
 
       assert :ok = Janitor.run(days_from_now(2))
       refute Blobs.get_upload(upload.id)
-      refute File.exists?(Blobs.Store.Disk.path(key))
+      refute stored?(key)
     end
 
     test "bytes a device has just been told it need not upload are kept" do

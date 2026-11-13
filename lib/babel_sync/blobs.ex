@@ -39,7 +39,8 @@ defmodule BabelSync.Blobs do
 
   @spec usage(Ecto.UUID.t()) :: non_neg_integer()
   def usage(vault_id) do
-    Repo.one(from b in Blob, where: b.vault_id == ^vault_id, select: sum(b.size)) || 0
+    Repo.one(from b in Blob, where: b.vault_id == ^vault_id, select: type(sum(b.size), :integer)) ||
+      0
   end
 
   defp room?(vault_id, size) do
