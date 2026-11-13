@@ -60,10 +60,9 @@ defmodule BabelSync.Bases do
           |> Enum.map(&%{note: &1, distance: distance(&1, opts)})
           |> Enum.filter(&(within?(&1, opts) and matches?(&1, filters, context)))
 
-        cond do
-          group -> {:ok, grouped(rows, group, opts[:group_by], context)}
-          true -> {:ok, table(sorted(rows, sort, context), view, opts, context)}
-        end
+        if group,
+          do: {:ok, grouped(rows, group, opts[:group_by], context)},
+          else: {:ok, table(sorted(rows, sort, context), view, opts, context)}
       catch
         {:invalid, message} -> {:error, message}
       end

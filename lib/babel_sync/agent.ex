@@ -117,24 +117,7 @@ defmodule BabelSync.Agent do
       context = opts[:context] || 0
 
       search =
-        Task.async(fn ->
-          for(
-            %Entry{} = entry <- entries(vault),
-            searchable?(entry),
-            Regex.match?(glob, entry.path),
-            do: entry
-          )
-          |> Stream.chunk_every(@search_batch)
-          |> Stream.flat_map(fn batch ->
-            notes = Sync.texts(for %Entry{kind: :doc, id: id} <- batch, do: id)
-
-            for entry <- batch, {:ok, text} <- [searched(entry, notes)] do
-              %{path: entry.path, matches: Text.search(text, pattern, context)}
-            end
-          end)
-          |> Stream.reject(&(&1.matches == []))
-          |> Enum.take(@searched_files)
-        end)
+        Task.async(fn -> search_entries(vault, glob, pattern, context) end)
 
       case Task.yield(search, search_time()) || Task.shutdown(search, :brutal_kill) do
         {:ok, found} -> {:ok, found}
@@ -204,6 +187,25 @@ defmodule BabelSync.Agent do
     end
   end
 
+  defp search_entries(vault, glob, pattern, context) do
+    for(
+      %Entry{} = entry <- entries(vault),
+      searchable?(entry),
+      Regex.match?(glob, entry.path),
+      do: entry
+    )
+    |> Stream.chunk_every(@search_batch)
+    |> Stream.flat_map(fn batch ->
+      notes = Sync.texts(for %Entry{kind: :doc, id: id} <- batch, do: id)
+
+      for entry <- batch, {:ok, text} <- [searched(entry, notes)] do
+        %{path: entry.path, matches: Text.search(text, pattern, context)}
+      end
+    end)
+    |> Stream.reject(&(&1.matches == []))
+    |> Enum.take(@searched_files)
+  end
+
   @spec outline(Scope.t(), vault_reference(), String.t()) :: {:ok, map()} | error()
   def outline(scope, vault, path) do
     with {:ok, vault} <- vault(scope, vault, :read),
@@ -241,16 +243,20 @@ defmodule BabelSync.Agent do
           end
 
         nil ->
-          if Vaults.Path.kind_for(path) == :doc do
-            with {:ok, entry} <- create(vault, path) do
-              written(:created, entry, rewrite(scope, entry, nil, replace))
-            end
-          else
-            with :ok <- may_hold_text(path),
-                 {:ok, entry} <- attach(vault, path, content) do
-              written(:created, entry, {:ok, "", content})
-            end
-          end
+          create_file(scope, vault, path, content, replace)
+      end
+    end
+  end
+
+  defp create_file(scope, vault, path, content, replace) do
+    if Vaults.Path.kind_for(path) == :doc do
+      with {:ok, entry} <- create(vault, path) do
+        written(:created, entry, rewrite(scope, entry, nil, replace))
+      end
+    else
+      with :ok <- may_hold_text(path),
+           {:ok, entry} <- attach(vault, path, content) do
+        written(:created, entry, {:ok, "", content})
       end
     end
   end
