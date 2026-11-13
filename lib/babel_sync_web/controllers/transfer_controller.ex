@@ -181,6 +181,8 @@ defmodule BabelSyncWeb.TransferController do
   defp reason_text(:not_an_attachment), do: "a note or folder already exists there"
   defp reason_text(:off_limits), do: "the .obsidian folder is closed to agents in this vault"
   defp reason_text(:too_large), do: "it is larger than the server accepts"
+  defp reason_text(:too_large_to_store), do: "it is larger than the server accepts"
+  defp reason_text(:over_quota), do: "the vault has no room left for it"
   defp reason_text(:storage_unavailable), do: "storage is unavailable just now; try again later"
   defp reason_text(other), do: to_string(other)
 end

@@ -165,6 +165,10 @@ if max_blob = System.get_env("BABELSYNC_MAX_BLOB_BYTES") do
   config :babel_sync, BabelSync.Blobs, max_size: String.to_integer(max_blob)
 end
 
+if quota = System.get_env("BABELSYNC_VAULT_QUOTA_BYTES") do
+  config :babel_sync, BabelSync.Blobs, vault_quota: String.to_integer(quota)
+end
+
 if System.get_env("PHX_SERVER") do
   config :babel_sync, BabelSyncWeb.Endpoint, server: true
 end

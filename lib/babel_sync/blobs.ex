@@ -34,13 +34,28 @@ defmodule BabelSync.Blobs do
     data |> split() |> Enum.map(&:crypto.hash(:sha256, &1)) |> hash()
   end
 
+  @spec vault_quota() :: pos_integer() | nil
+  def vault_quota, do: Application.fetch_env!(:babel_sync, __MODULE__)[:vault_quota]
+
+  @spec usage(Ecto.UUID.t()) :: non_neg_integer()
+  def usage(vault_id) do
+    Repo.one(from b in Blob, where: b.vault_id == ^vault_id, select: sum(b.size)) || 0
+  end
+
+  defp room?(vault_id, size) do
+    case vault_quota() do
+      nil -> true
+      quota -> usage(vault_id) + size <= quota
+    end
+  end
+
   @spec get(Ecto.UUID.t(), hash()) :: Blob.t() | nil
   def get(vault_id, hash), do: Repo.get_by(Blob, vault_id: vault_id, hash: hash)
 
   @spec begin_upload(Ecto.UUID.t(), %{hash: hash(), size: non_neg_integer()}) ::
           {:exists, Blob.t()}
           | {:ok, Upload.t(), missing :: [pos_integer()]}
-          | {:error, :too_large | :invalid | term()}
+          | {:error, :too_large | :over_quota | :invalid | term()}
   def begin_upload(vault_id, %{hash: hash, size: size}) do
     cond do
       not is_integer(size) or size < 0 or not (is_binary(hash) and hash =~ ~r/\A[0-9a-f]{64}\z/) ->
@@ -54,6 +69,9 @@ defmodule BabelSync.Blobs do
 
       upload = Repo.get_by(Upload, vault_id: vault_id, hash: hash) ->
         resume(upload, size)
+
+      not room?(vault_id, size) ->
+        {:error, :over_quota}
 
       true ->
         start(vault_id, hash, size)

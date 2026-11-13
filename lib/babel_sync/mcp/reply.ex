@@ -68,6 +68,11 @@ defmodule BabelSync.MCP.Reply do
       @unchanged <> " A larger attachment can be sent with upload_file."
   end
 
+  defp message(:over_quota) do
+    "The vault has reached the storage its server allows and has no room for this file." <>
+      @unchanged
+  end
+
   defp message(:too_large_to_store) do
     "That is larger than the #{div(BabelSync.Blobs.max_size(), 1024 * 1024)} MiB this server keeps in one file." <>
       @unchanged

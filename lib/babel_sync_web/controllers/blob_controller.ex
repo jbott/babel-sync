@@ -22,6 +22,9 @@ defmodule BabelSyncWeb.BlobController do
       {:error, :too_large} ->
         fail(conn, :request_entity_too_large, "too_large")
 
+      {:error, :over_quota} ->
+        fail(conn, :insufficient_storage, "over_quota")
+
       {:error, _invalid} ->
         fail(conn, :unprocessable_entity, "invalid")
     end

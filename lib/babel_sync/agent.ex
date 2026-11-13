@@ -56,6 +56,7 @@ defmodule BabelSync.Agent do
           | :search_timeout
           | :too_large_to_read
           | :too_large_to_store
+          | :over_quota
 
   @type error :: {:error, reason()}
   @type vault_reference :: String.t() | nil
@@ -368,6 +369,9 @@ defmodule BabelSync.Agent do
 
       {:error, :too_large} ->
         {:error, :too_large_to_store}
+
+      {:error, :over_quota} ->
+        {:error, :over_quota}
 
       {:error, reason} ->
         Logger.error("could not store an uploaded file: #{inspect(reason)}")
@@ -912,6 +916,9 @@ defmodule BabelSync.Agent do
 
       {:error, :too_large} ->
         {:error, :too_large_to_store}
+
+      {:error, :over_quota} ->
+        {:error, :over_quota}
 
       {:error, reason} ->
         Logger.error("could not store an agent's file: #{inspect(reason)}")

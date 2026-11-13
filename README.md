@@ -66,6 +66,7 @@ Each Mix dependency is its own Nix derivation, listed in `nix/deps.nix`, so a bu
 | `BABELSYNC_DATA_DIR` | required in production | Where local mode keeps its database and attachments |
 | `BABELSYNC_RETENTION_DAYS` | `30` | How long history and trash are kept; `0` keeps them forever |
 | `BABELSYNC_MAX_BLOB_BYTES` | 5 GiB | Largest attachment accepted |
+| `BABELSYNC_VAULT_QUOTA_BYTES` | none | Most attachment bytes one vault may hold; a new attachment that would pass it is refused |
 | `SECRET_KEY_BASE` | required in production | `mix phx.gen.secret` |
 | `PORT` | `4000` | HTTP port |
 

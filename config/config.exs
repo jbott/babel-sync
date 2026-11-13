@@ -43,7 +43,7 @@ config :babel_sync, :rate_limits,
   sign_in_link: {10, 3600},
   token: {120, 60}
 
-config :babel_sync, BabelSync.Blobs, max_size: 5 * 1024 * 1024 * 1024
+config :babel_sync, BabelSync.Blobs, max_size: 5 * 1024 * 1024 * 1024, vault_quota: nil
 
 # Configure the endpoint
 config :babel_sync, BabelSyncWeb.Endpoint,

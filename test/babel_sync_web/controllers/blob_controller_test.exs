@@ -27,6 +27,34 @@ defmodule BabelSyncWeb.BlobControllerTest do
 
   defp digest(data), do: :crypto.hash(:sha256, data)
 
+  test "a vault that has reached its quota takes no new attachment", %{
+    conn: conn,
+    owner: owner,
+    vault: vault
+  } do
+    settings = Application.fetch_env!(:babel_sync, Blobs)
+    on_exit(fn -> Application.put_env(:babel_sync, Blobs, settings) end)
+    Application.put_env(:babel_sync, Blobs, Keyword.put(settings, :vault_quota, 10))
+
+    assert {:ok, kept} = Blobs.put(vault.id, "12345678")
+    assert Blobs.usage(vault.id) == 8
+    assert {:ok, ^kept} = Blobs.put(vault.id, "12345678")
+    assert {:ok, _fits} = Blobs.put(vault.id, "ab")
+    assert {:error, :over_quota} = Blobs.put(vault.id, "c")
+    assert {:ok, _elsewhere} = Blobs.put(vault(owner).id, "c")
+
+    body = %{hash: Blobs.hash([digest("xyz")]), size: 3}
+
+    assert %{"error" => "over_quota"} =
+             conn |> post("/api/vaults/#{vault.id}/uploads", body) |> json_response(507)
+
+    scope = Scope.for_user(owner)
+    encoded = Base.encode64("xyz")
+
+    assert {:error, :over_quota} =
+             BabelSync.Agent.write_binary(scope, vault.id, "pic.png", encoded)
+  end
+
   test "a file is uploaded in parts, resumed, completed and downloaded", %{
     conn: conn,
     vault: vault
