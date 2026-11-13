@@ -136,6 +136,7 @@ config :babel_sync, BabelSync.Repo.SQLite,
   priv: "priv/repo",
   journal_mode: :wal,
   busy_timeout: 5_000,
+  default_transaction_mode: :immediate,
   foreign_keys: :on
 
 config :babel_sync, BabelSync.Repo.Postgres, priv: "priv/repo"
