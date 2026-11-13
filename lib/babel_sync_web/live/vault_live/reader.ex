@@ -156,7 +156,7 @@ defmodule BabelSyncWeb.VaultLive.Reader do
         data-writable={to_string(@writable)}
         data-user-name={display_name(@user)}
         data-user-color={cursor_color(@user.id)}
-        class="h-full"
+        class="relative h-full"
       >
       </div>
     </div>

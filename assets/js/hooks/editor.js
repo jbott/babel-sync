@@ -6,7 +6,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { tags } from "@lezer/highlight";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import * as Y from "yjs";
-import { sharedClient, track } from "./client";
+import { closeNote, openNote, sharedClient } from "./client";
 
 const tint = (token, share) => `color-mix(in oklab, var(${token}) ${share}%, transparent)`;
 
@@ -137,10 +137,9 @@ const frontmatter = {
 export const Editor = {
   mounted() {
     const { entryId, token, writable, userName, userColor } = this.el.dataset;
-    const client = sharedClient(token);
 
-    this.session = client.doc(entryId);
-    this.untrack = track(this.session);
+    this.session = openNote(token, entryId);
+    this.showStatus();
     this.session.awareness.setLocalStateField("user", {
       name: userName,
       color: userColor,
@@ -169,9 +168,56 @@ export const Editor = {
     });
   },
 
+  updated() {
+    sharedClient(this.el.dataset.token);
+  },
+
   destroyed() {
+    this.stopStatus?.();
     this.view?.destroy();
-    this.untrack?.();
-    this.session?.close();
+    if (this.session) closeNote(this.session);
+  },
+
+  showStatus() {
+    const { session } = this;
+    const badge = document.createElement("div");
+    badge.className = "editor-status";
+    badge.setAttribute("role", "status");
+    this.el.append(badge);
+
+    let reached = session.connected;
+    let problem = null;
+    const draw = () => {
+      reached ||= session.connected;
+      const [state, words] = status(session, reached, problem);
+      badge.dataset.state = state;
+      badge.textContent = words;
+    };
+    const stops = [
+      session.on("synced", () => {
+        if (session.connected) problem = null;
+        draw();
+      }),
+      session.on("writable", draw),
+      session.on("error", (reason) => {
+        problem = reason;
+        draw();
+      }),
+    ];
+    session.doc.on("update", draw);
+    this.stopStatus = () => {
+      stops.forEach((stop) => stop());
+      session.doc.off("update", draw);
+    };
+    draw();
   },
 };
+
+function status(session, reached, problem) {
+  if (problem === "not_found") return ["gone", "This note was deleted"];
+  if (!reached) return ["opening", "Opening…"];
+  if (!session.connected) return ["offline", session.pending ? "Offline · changes not sent yet" : "Offline"];
+  if (!session.writable) return ["saved", "Read only"];
+  if (session.pending) return ["saving", "Saving…"];
+  return ["saved", "Saved"];
+}

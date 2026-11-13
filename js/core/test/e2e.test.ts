@@ -87,6 +87,32 @@ if (phase === "write") {
     assert.equal(secondVisit.text.toString(), expected);
   });
 
+  test("a note says when it holds changes the server does not have", async () => {
+    const alice = client();
+    const dana = client();
+    const vault = alice.vault(vaultId);
+    await vault.whenJoined();
+    const entry = await vault.create("pending.md", { text: "saved\n" });
+
+    const danaDoc = dana.doc(entry.id);
+    await danaDoc.whenSynced();
+    assert.equal(danaDoc.connected, true);
+    assert.equal(danaDoc.pending, false);
+
+    await dana.disconnect();
+    await eventually(() => !danaDoc.connected, "dana to notice she is offline");
+    assert.equal(danaDoc.pending, false);
+    danaDoc.text.insert(0, "typed offline\n");
+    assert.equal(danaDoc.pending, true);
+
+    dana.connect();
+    await danaDoc.whenSynced();
+    assert.equal(danaDoc.pending, false);
+    const aliceDoc = alice.doc(entry.id);
+    await aliceDoc.whenSynced();
+    assert.equal(aliceDoc.text.toString(), "typed offline\nsaved\n");
+  });
+
   test("cursors are visible to other clients", async () => {
     const alice = client();
     const bob = client();

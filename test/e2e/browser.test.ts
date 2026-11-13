@@ -150,6 +150,12 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     }
     await agent.close();
 
+    await two.keyboard.type("x");
+    await two.waitForSelector('.editor-status:is([data-state="saving"], [data-state="saved"])');
+    await waitForText(two, ".editor-status", "Saved", true);
+    await two.keyboard.press("Backspace");
+    await waitForText(two, ".editor-status", "Saved", true);
+
     await one.locator('#toolbar button[phx-value-mode="read"]').click();
     await waitForText(one, "#preview h1", "Hello");
     assert.match(await textOf(one, "#preview"), /tab two says hi/);

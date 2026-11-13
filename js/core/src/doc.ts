@@ -24,6 +24,7 @@ export class DocSession extends Emitter<DocEvents> {
   private channel: Channel;
   private joined = false;
   private unacknowledged = 0;
+  private unsent = false;
   private closed = false;
 
   constructor(socket: Socket, entryId: string, doc: Y.Doc = new Y.Doc()) {
@@ -59,6 +60,14 @@ export class DocSession extends Emitter<DocEvents> {
 
   get synced(): boolean {
     return this.joined && this.unacknowledged === 0;
+  }
+
+  get connected(): boolean {
+    return this.joined;
+  }
+
+  get pending(): boolean {
+    return this.unsent || this.unacknowledged > 0;
   }
 
   whenSynced(timeoutMs = 15000): Promise<void> {
@@ -109,6 +118,7 @@ export class DocSession extends Emitter<DocEvents> {
 
     const missingOnServer = Y.encodeStateAsUpdate(this.doc, fromBase64(reply.sv));
     if (reply.writable && !isEmptyUpdate(missingOnServer)) this.send(missingOnServer);
+    this.unsent = false;
 
     if (this.awareness.getLocalState() !== null) {
       this.sendAwareness([this.doc.clientID]);
@@ -126,8 +136,9 @@ export class DocSession extends Emitter<DocEvents> {
   }
 
   private onLocalUpdate = (update: Uint8Array, origin: unknown): void => {
-    if (origin === this || !this.joined || !this.writable) return;
-    this.send(update);
+    if (origin === this || !this.writable) return;
+    if (this.joined) this.send(update);
+    else this.unsent = true;
   };
 
   private onAwarenessUpdate = (changes: { added: number[]; updated: number[]; removed: number[] }, origin: unknown): void => {

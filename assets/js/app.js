@@ -10,7 +10,7 @@ import { Folders } from "./hooks/folders";
 import { Markdown } from "./hooks/markdown";
 import { Canvas } from "./hooks/canvas";
 import { BaseMap } from "./hooks/base_map";
-import { allNotesSaved } from "./hooks/client";
+import { allNotesSaved, anyNoteUnsent } from "./hooks/client";
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
 const liveSocket = new LiveSocket("/live", Socket, {
@@ -46,6 +46,10 @@ window.addEventListener("phx:assets-changed", async () => {
     sessionStorage.setItem(RELOAD_GUARD, String(Date.now()));
   } catch {}
   window.location.reload();
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (anyNoteUnsent()) event.preventDefault();
 });
 
 liveSocket.connect();
