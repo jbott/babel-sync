@@ -2,9 +2,10 @@ defmodule BabelSyncWeb.DocChannel do
   @moduledoc """
   Live editing of one note.
 
-  Whether the person may write is settled when they join: a change of
-  their role disconnects their sockets, and the note being renamed,
-  deleted or restored arrives as it happens, so no frame needs a query.
+  What the person's role allows is settled when they join, since a
+  change of role disconnects their sockets. Whether the note still
+  exists is asked of the database for every edit: an edit accepted into
+  a note deleted a moment before would be acknowledged and then lost.
 
   The client joins with its Yjs state vector and receives what it is
   missing together with the server's state vector, from which it sends
@@ -33,15 +34,14 @@ defmodule BabelSyncWeb.DocChannel do
          :ok = Vaults.subscribe(entry.vault_id),
          {:ok, missing} <- Sync.diff(entry_id, client_vector) do
       may = Map.new([:write, :admin], &{&1, Scope.authorize(scope, entry.vault_id, &1) == :ok})
-      needed = needed(entry)
 
       reply = %{
         update: Base.encode64(missing),
         sv: Base.encode64(Sync.state_vector(entry_id)),
-        writable: may[needed]
+        writable: may[needed(entry)]
       }
 
-      {:ok, reply, assign(socket, entry_id: entry_id, may: may, needed: needed, live: true)}
+      {:ok, reply, assign(socket, entry_id: entry_id, may: may)}
     else
       {:error, :upgrade} -> {:error, BabelSyncWeb.Protocol.refusal()}
       nil -> {:error, %{reason: "not_found"}}
@@ -101,11 +101,7 @@ defmodule BabelSyncWeb.DocChannel do
     {:noreply, socket}
   end
 
-  def handle_info({:entry_changed, %Entry{id: id} = entry}, %{assigns: %{entry_id: id}} = socket) do
-    {:noreply, assign(socket, needed: needed(entry), live: entry.deleted_at == nil)}
-  end
-
-  def handle_info({:entry_changed, _another}, socket), do: {:noreply, socket}
+  def handle_info({:entry_changed, _entry}, socket), do: {:noreply, socket}
   def handle_info(:vault_deleted, socket), do: {:stop, :normal, socket}
 
   def handle_info({:awareness, state}, socket) do
@@ -113,10 +109,14 @@ defmodule BabelSyncWeb.DocChannel do
     {:noreply, socket}
   end
 
-  defp writable(%{assigns: %{live: false}}), do: {:error, :not_found}
+  defp writable(%{assigns: %{may: may, entry_id: entry_id}}) do
+    case Vaults.get_entry(entry_id) do
+      %Entry{deleted_at: nil} = entry ->
+        if may[needed(entry)], do: :ok, else: {:error, :forbidden}
 
-  defp writable(%{assigns: %{may: may, needed: needed}}) do
-    if may[needed], do: :ok, else: {:error, :forbidden}
+      _deleted ->
+        {:error, :not_found}
+    end
   end
 
   defp needed(%Entry{path: path}) do
