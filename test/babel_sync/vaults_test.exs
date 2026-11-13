@@ -111,6 +111,25 @@ defmodule BabelSync.VaultsTest do
                ["new", "new/a.md", "new/deep/b.md", "older.md"]
     end
 
+    test "a folder moved or deleted gives each entry inside its own sequence number" do
+      vault = vault()
+      {:ok, folder} = Vaults.create_entry(vault.id, %{path: "old", kind: :folder})
+      for n <- 1..12, do: {:ok, _} = Vaults.create_entry(vault.id, %{path: "old/#{n}.md"})
+      before = Vaults.get_vault(vault.id).seq
+
+      {:ok, moved} = Vaults.rename_entry(folder, "new")
+
+      assert moved |> Enum.map(& &1.seq) |> Enum.sort() ==
+               Enum.to_list((before + 1)..(before + 13))
+
+      assert Vaults.get_vault(vault.id).seq == before + 13
+
+      {:ok, deleted} = Vaults.delete_entry(Vaults.get_entry(folder.id))
+
+      assert deleted |> Enum.map(& &1.seq) |> Enum.sort() ==
+               Enum.to_list((before + 14)..(before + 26))
+    end
+
     test "deleting hides the entry, reports it as a change and frees the path" do
       vault = vault()
       a = entry(vault, "a.md")

@@ -16,6 +16,7 @@ defmodule BabelSync.Vaults do
   @type access :: :read | :write | :admin
 
   @purged_together 500
+  @asked_together 500
 
   @spec create_vault(User.t(), map()) :: {:ok, Vault.t()} | {:error, Ecto.Changeset.t()}
   def create_vault(%User{} = user, attrs) do
@@ -471,7 +472,8 @@ defmodule BabelSync.Vaults do
         {:error, :not_empty}
       else
         deleted =
-          for {doomed, seq} <- [{current, seq} | with_seqs(inside)] do
+          for {doomed, seq} <-
+                Enum.zip([current | inside], [seq | seqs(current.vault_id, length(inside))]) do
             doomed
             |> Ecto.Changeset.change(deleted_at: now, seq: seq)
             |> Repo.update!()
@@ -494,27 +496,38 @@ defmodule BabelSync.Vaults do
         {entry, Enum.join([new_path | rest], "/")}
       end
 
-    blocked =
-      Enum.find_value(targets, fn {_entry, target} ->
-        occupant(folder.vault_id, target, &MapSet.member?(moving, &1))
-      end)
+    case occupants(folder.vault_id, Enum.map(targets, &elem(&1, 1)), moving) do
+      [blocked | _others] ->
+        {:error, {:exists, blocked}}
 
-    if blocked do
-      {:error, {:exists, blocked}}
-    else
-      targets
-      |> Enum.zip([seq | Enum.map(inside, fn _ -> next_seq(folder.vault_id) end)])
-      |> Enum.reduce_while({:ok, []}, fn {{entry, target}, seq}, {:ok, moved} ->
-        entry
-        |> Entry.changeset(%{path: target})
-        |> Ecto.Changeset.put_change(:seq, seq)
-        |> Repo.update()
-        |> case do
-          {:ok, updated} -> {:cont, {:ok, [updated | moved]}}
-          {:error, changeset} -> {:halt, {:error, changeset}}
-        end
-      end)
+      [] ->
+        targets
+        |> Enum.zip([seq | seqs(folder.vault_id, length(inside))])
+        |> Enum.reduce_while({:ok, []}, fn {{entry, target}, seq}, {:ok, moved} ->
+          entry
+          |> Entry.changeset(%{path: target})
+          |> Ecto.Changeset.put_change(:seq, seq)
+          |> Repo.update()
+          |> case do
+            {:ok, updated} -> {:cont, {:ok, [updated | moved]}}
+            {:error, changeset} -> {:halt, {:error, changeset}}
+          end
+        end)
     end
+  end
+
+  defp occupants(vault_id, paths, moving) do
+    paths
+    |> Enum.map(&BabelSync.Vaults.Path.fold(BabelSync.Vaults.Path.normalize(&1)))
+    |> Enum.chunk_every(@asked_together)
+    |> Enum.flat_map(fn folded ->
+      Repo.all(
+        from e in Entry,
+          where: e.vault_id == ^vault_id and is_nil(e.deleted_at) and e.folded in ^folded,
+          order_by: e.path
+      )
+    end)
+    |> Enum.reject(&MapSet.member?(moving, &1.id))
   end
 
   defp occupant(vault_id, path, except \\ nil) do
@@ -542,7 +555,17 @@ defmodule BabelSync.Vaults do
     end)
   end
 
-  defp with_seqs(entries), do: Enum.map(entries, &{&1, next_seq(&1.vault_id)})
+  defp seqs(_vault_id, 0), do: []
+
+  defp seqs(vault_id, count) do
+    {1, [last]} =
+      Repo.update_all(
+        from(v in Vault, where: v.id == ^vault_id, select: v.seq),
+        inc: [seq: count]
+      )
+
+    Enum.to_list((last - count + 1)..last)
+  end
 
   @spec subscribe(Ecto.UUID.t()) :: :ok | {:error, term()}
   def subscribe(vault_id), do: Phoenix.PubSub.subscribe(BabelSync.PubSub, topic(vault_id))
