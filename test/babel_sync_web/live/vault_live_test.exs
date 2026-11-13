@@ -199,13 +199,19 @@ defmodule BabelSyncWeb.VaultLiveTest do
       {:ok, view, _html} = live(conn, Paths.entry(note))
 
       html = view |> element("button", "Read") |> render_click()
-      assert html =~ "<h1>Heading</h1>"
+      assert has_element?(view, "#preview-body h1", "Heading")
       assert html =~ ~s(href="/v/#{vault.id}/f/Other.md")
       refute html =~ "<script>alert"
 
       :ok = Sync.replace_text(note.id, "# Changed elsewhere")
       send(view.pid, :render_preview)
-      assert render(view) =~ "<h1>Changed elsewhere</h1>"
+      assert has_element?(view, "#preview-body h1", "Changed elsewhere")
+
+      other = Vaults.get_entry_by_path(vault.id, "Other.md")
+      :ok = Sync.replace_text(other.id, "Shown in place")
+      :ok = Sync.replace_text(note.id, "![[Other]]")
+      send(view.pid, :render_preview)
+      assert has_element?(view, "#preview-body .embed-content p", "Shown in place")
     end
 
     test "creates, renames and deletes notes", %{conn: conn, vault: vault} do
@@ -279,7 +285,8 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
       {:ok, view, html} = ctx.anonymous |> sign_in(viewer) |> live(Paths.entry(note))
 
-      assert html =~ "<h1>Read me</h1>"
+      assert html =~ "Read me</h1>"
+      assert has_element?(view, "#preview-body h1", "Read me")
       refute has_element?(view, "#new-note")
       refute has_element?(view, "#delete-button")
       refute has_element?(view, "#vault-settings")

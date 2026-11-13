@@ -339,7 +339,8 @@ defmodule BabelSyncWeb.VaultLive.Show do
     html =
       Markdown.to_html(readable(entry, Sync.text(entry.id)), socket.assigns.entries, %{
         note: &Paths.entry/1,
-        raw: &Paths.raw/1
+        raw: &Paths.raw/1,
+        text: &readable(&1, Sync.text(&1.id))
       })
 
     assign(socket, :preview, html)
@@ -673,7 +674,9 @@ defmodule BabelSyncWeb.VaultLive.Show do
             id="preview"
             class="flex-1 overflow-y-auto px-5 pb-24 pt-7 md:px-10 md:pt-12"
           >
-            <div class="markdown mx-auto max-w-[42rem]">{raw(@preview)}</div>
+            <div id="preview-body" phx-hook="Markdown" class="markdown mx-auto max-w-[42rem]">
+              {raw(@preview)}
+            </div>
           </article>
 
           <div
