@@ -107,6 +107,9 @@ defmodule BabelSyncWeb.VaultLive.Show do
     {:noreply, push_navigate(socket, to: ~p"/account")}
   end
 
+  def handle_event("switch_vault", %{"vault" => id}, %{assigns: %{vault: %{id: id}}} = socket),
+    do: {:noreply, socket}
+
   def handle_event("switch_vault", %{"vault" => id}, socket) do
     case Enum.find(socket.assigns.vaults, &(&1.id == id)) do
       %Vaults.Vault{id: ^id} -> {:noreply, push_navigate(socket, to: Paths.vault(id))}
@@ -742,6 +745,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
             <form
               id="vault-switcher-form"
               phx-change="switch_vault"
+              phx-auto-recover="ignore"
               class="relative mr-1 min-w-0 flex-1"
             >
               <select

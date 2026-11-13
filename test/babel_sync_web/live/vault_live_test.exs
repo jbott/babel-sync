@@ -507,6 +507,20 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
   end
 
+  describe "reconnecting" do
+    test "a reconnect keeps the open note even though the vault switcher is a form", %{
+      conn: conn,
+      vault: vault
+    } do
+      note = entry(vault, "note.md")
+      {:ok, view, _html} = live(conn, Paths.entry(note))
+
+      assert has_element?(view, "#vault-switcher-form[phx-auto-recover=ignore]")
+      view |> form("#vault-switcher-form", vault: vault.id) |> render_change()
+      assert has_element?(view, "#entry-path", "note.md")
+    end
+  end
+
   describe "raw files" do
     test "serves attachments sandboxed with their type, and notes as text", %{
       conn: conn,

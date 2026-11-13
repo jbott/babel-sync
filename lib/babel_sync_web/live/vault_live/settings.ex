@@ -132,7 +132,7 @@ defmodule BabelSyncWeb.VaultLive.Settings do
         </.panel>
 
         <.panel id="agents" title="Agents">
-          <form id="agent-access" phx-change="set_agent_access">
+          <form id="agent-access" phx-change="set_agent_access" phx-auto-recover="ignore">
             <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-surface p-4 transition hover:border-line-strong">
               <input type="hidden" name="agents_see_config" value="false" />
               <input
@@ -165,7 +165,12 @@ defmodule BabelSyncWeb.VaultLive.Settings do
               <span class="min-w-0 flex-1 truncate text-ink">
                 {member.user.email || member.user.name}
               </span>
-              <form id={"role-#{member.user_id}"} phx-change="set_role" class="relative">
+              <form
+                id={"role-#{member.user_id}"}
+                phx-change="set_role"
+                phx-auto-recover="ignore"
+                class="relative"
+              >
                 <input type="hidden" name="user_id" value={member.user_id} />
                 <select
                   name="role"
