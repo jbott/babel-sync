@@ -20,7 +20,7 @@ const theme = EditorView.theme({
   },
   ".cm-content": {
     flexBasis: "0",
-    padding: "2rem clamp(1.125rem, 4vw, 2rem) 40vh",
+    padding: "2rem clamp(1.125rem, 4vw, 2rem) 40vh var(--editor-gutter-gap, 0.625rem)",
     caretColor: "var(--accent)",
     fontVariantLigatures: "none",
   },

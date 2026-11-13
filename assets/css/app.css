@@ -751,6 +751,7 @@ progress.upload-meter::-moz-progress-bar {
   .markdown { font-size: 1.0625rem; line-height: 1.68; }
   .markdown h1 { font-size: 1.75em; }
   .cm-editor .cm-gutters { display: none; }
+  .cm-editor { --editor-gutter-gap: 1.125rem; }
 }
 
 @media (pointer: coarse) {
