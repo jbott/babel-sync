@@ -65,7 +65,7 @@ defmodule BabelSyncWeb.VaultLive.HistoryPanel do
                 {Calendar.strftime(version.saved_at, "%H:%M:%S UTC")}
               </span>
               <span :if={version.author} class="block truncate text-xs text-faint">
-                {version.author}
+                {version.author}<span :if={version.app} id={"version-app-#{version.id}"}> · with {version.app}</span>
               </span>
             </span>
             <span class="shrink-0 text-xs tabular-nums">

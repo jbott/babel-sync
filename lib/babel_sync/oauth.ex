@@ -181,8 +181,14 @@ defmodule BabelSync.OAuth do
   @spec scope_from_access_token(String.t()) :: {:ok, Scope.t()} | :error
   def scope_from_access_token(token) do
     case grant_for_access_token(token) do
-      %Grant{id: id, user: %User{} = user, read_only: read_only, vault_ids: vault_ids} ->
-        {:ok, Scope.for_user(user, read_only: read_only, grant_id: id, vault_ids: vault_ids)}
+      %Grant{id: id, user: %User{} = user, client: client} = grant ->
+        {:ok,
+         Scope.for_user(user,
+           read_only: grant.read_only,
+           grant_id: id,
+           vault_ids: grant.vault_ids,
+           app: client.name
+         )}
 
       nil ->
         :error

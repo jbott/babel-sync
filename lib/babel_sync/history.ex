@@ -20,6 +20,7 @@ defmodule BabelSync.History do
           saved_at: DateTime.t(),
           bytes: non_neg_integer(),
           author: String.t() | nil,
+          app: String.t() | nil,
           added: non_neg_integer() | nil,
           removed: non_neg_integer() | nil,
           earliest: boolean()
@@ -43,6 +44,7 @@ defmodule BabelSync.History do
         saved_at: version.inserted_at,
         bytes: byte_size(version.content),
         author: Map.get(authors, version.author_id),
+        app: version.author_app,
         added: added,
         removed: removed,
         earliest: is_nil(previous)
@@ -87,7 +89,8 @@ defmodule BabelSync.History do
       else: Changes.count(old, version.content)
   end
 
-  defp authors(versions) do
+  @spec authors([Sync.Version.t()]) :: %{Ecto.UUID.t() => String.t()}
+  def authors(versions) do
     ids = versions |> Enum.map(& &1.author_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     Repo.all(from u in User, where: u.id in ^ids, select: {u.id, u.name, u.email})

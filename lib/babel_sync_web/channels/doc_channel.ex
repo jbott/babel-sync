@@ -47,7 +47,7 @@ defmodule BabelSyncWeb.DocChannel do
 
     with :ok <- Scope.authorize(scope, vault_id, :write),
          :ok <- still_a_note(entry_id),
-         :ok <- Sync.apply_update(entry_id, update, origin: self(), author_id: scope.user.id) do
+         :ok <- Sync.apply_update(entry_id, update, [origin: self()] ++ Scope.author(scope)) do
       {:reply, :ok, socket}
     else
       {:error, :forbidden} -> {:reply, {:error, %{reason: "forbidden"}}, socket}

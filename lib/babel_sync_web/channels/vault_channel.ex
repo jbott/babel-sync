@@ -87,7 +87,7 @@ defmodule BabelSyncWeb.VaultChannel do
     with {:ok, attrs} <- content_attrs(kind, params, socket),
          {:ok, entry} <- Vaults.create_entry(socket.assigns.vault_id, Map.put(attrs, :path, path)) do
       if kind == :doc and is_binary(params["text"]) do
-        :ok = Sync.replace_text(entry.id, params["text"], author_id: user_id(socket))
+        :ok = Sync.replace_text(entry.id, params["text"], Scope.author(socket.assigns.scope))
         :ok = Sync.flush(entry.id)
       end
 
@@ -171,8 +171,6 @@ defmodule BabelSyncWeb.VaultChannel do
   defp kind("blob"), do: :blob
   defp kind("folder"), do: :folder
   defp kind(_other), do: nil
-
-  defp user_id(socket), do: socket.assigns.scope.user.id
 
   defp error({:exists, entry}), do: %{reason: "exists", entry: EntryJSON.entry(entry)}
   defp error({:conflict, entry}), do: %{reason: "conflict", entry: EntryJSON.entry(entry)}

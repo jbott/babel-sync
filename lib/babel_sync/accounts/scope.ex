@@ -16,10 +16,11 @@ defmodule BabelSync.Accounts.Scope do
           read_only: boolean(),
           session_id: Ecto.UUID.t() | nil,
           grant_id: Ecto.UUID.t() | nil,
-          vault_ids: [Ecto.UUID.t()] | nil
+          vault_ids: [Ecto.UUID.t()] | nil,
+          app: String.t() | nil
         }
 
-  defstruct [:user, :session_id, :grant_id, :vault_ids, read_only: false]
+  defstruct [:user, :session_id, :grant_id, :vault_ids, :app, read_only: false]
 
   @spec for_user(User.t(), keyword()) :: t()
   def for_user(%User{} = user, opts \\ []) do
@@ -28,9 +29,17 @@ defmodule BabelSync.Accounts.Scope do
       read_only: Keyword.get(opts, :read_only, false),
       session_id: Keyword.get(opts, :session_id),
       grant_id: Keyword.get(opts, :grant_id),
-      vault_ids: Keyword.get(opts, :vault_ids)
+      vault_ids: Keyword.get(opts, :vault_ids),
+      app: Keyword.get(opts, :app)
     }
   end
+
+  @doc """
+  Who a change made with this scope is put down to: the user, and the
+  app or agent that made it for them when it was not their browser.
+  """
+  @spec author(t()) :: [author_id: Ecto.UUID.t(), author_app: String.t() | nil]
+  def author(%__MODULE__{user: user, app: app}), do: [author_id: user.id, author_app: app]
 
   @spec vaults(t()) :: [Vaults.Vault.t()]
   def vaults(%__MODULE__{user: user} = scope) do

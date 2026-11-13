@@ -64,13 +64,15 @@ defmodule BabelSync.Sync.Store do
     :ok
   end
 
-  @spec put_version(Ecto.UUID.t(), String.t(), Ecto.UUID.t() | nil) :: Version.t()
-  def put_version(entry_id, content, author_id) do
+  @spec put_version(Ecto.UUID.t(), String.t(), {Ecto.UUID.t() | nil, String.t() | nil}) ::
+          Version.t()
+  def put_version(entry_id, content, {author_id, author_app}) do
     Repo.insert!(%Version{
       entry_id: entry_id,
       content: content,
       content_hash: hash(content),
       author_id: author_id,
+      author_app: author_app,
       inserted_at: DateTime.utc_now()
     })
   end

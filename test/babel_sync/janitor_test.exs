@@ -125,8 +125,8 @@ defmodule BabelSync.JanitorTest do
       vault = vault()
       busy = entry(vault, "busy.md")
       quiet = entry(vault, "quiet.md")
-      for text <- ["a", "b"], do: Store.put_version(busy.id, text, nil)
-      Store.put_version(quiet.id, "only", nil)
+      for text <- ["a", "b"], do: Store.put_version(busy.id, text, {nil, nil})
+      Store.put_version(quiet.id, "only", {nil, nil})
 
       assert :ok = Janitor.run(days_from_now(29))
       assert length(Store.list_versions(busy.id)) == 2
@@ -229,7 +229,7 @@ defmodule BabelSync.JanitorTest do
       Application.put_env(:babel_sync, Janitor, retention_days: 0)
       vault = vault()
       note = entry(vault, "note.md")
-      for text <- ["a", "b"], do: Store.put_version(note.id, text, nil)
+      for text <- ["a", "b"], do: Store.put_version(note.id, text, {nil, nil})
       {:ok, _deleted} = vault |> entry("gone.md") |> Vaults.delete_entry()
 
       assert :ok = Janitor.run(days_from_now(4000))

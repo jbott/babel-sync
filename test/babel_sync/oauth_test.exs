@@ -408,6 +408,33 @@ defmodule BabelSync.OAuthTest do
       assert {:error, "invalid_grant"} = refresh.(second.refresh_token, client.id)
     end
 
+    test "a change made with a grant is put down to its user and the app's name" do
+      user = user()
+      vault = vault(user)
+      client = client()
+
+      {:ok, _renamed} =
+        OAuth.Client.changeset(client, %{name: "Research agent"}) |> BabelSync.Repo.update()
+
+      {:ok, tokens} = exchange(client, code_for(client, user))
+      {:ok, scope} = OAuth.scope_from_access_token(tokens.access_token)
+      assert scope.app == "Research agent"
+
+      {:ok, _written} = BabelSync.Agent.write_file(scope, vault.id, "plan.md", "by the agent\n")
+      note = BabelSync.Vaults.get_entry_by_path(vault.id, "plan.md")
+      :ok = BabelSync.Sync.replace_text(note.id, "by hand\n", author_id: user.id)
+
+      assert [by_hand, by_agent] = BabelSync.History.versions(note.id)
+      assert by_agent.app == "Research agent"
+      assert by_agent.author == by_hand.author
+      assert by_hand.app == nil
+
+      assert {:ok, [%{with: nil}, %{with: "Research agent", by: name}]} =
+               BabelSync.Agent.history(scope, vault.id, "plan.md")
+
+      assert name == by_agent.author
+    end
+
     test "a grant is ended when nothing has used it for months, and using it keeps it" do
       user = user()
       client = client()

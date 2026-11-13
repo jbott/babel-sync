@@ -42,7 +42,7 @@ defmodule BabelSyncWeb.HistoryController do
   def restore(conn, %{"vault_id" => vault_id, "entry_id" => entry_id, "id" => id}) do
     with {:ok, entry} <- note(conn, vault_id, entry_id, :write),
          {id, ""} <- Integer.parse(id),
-         :ok <- Sync.restore_version(entry.id, id, author_id: conn.assigns.current_scope.user.id) do
+         :ok <- Sync.restore_version(entry.id, id, Scope.author(conn.assigns.current_scope)) do
       json(conn, %{restored: id})
     end
     |> respond(conn)

@@ -29,7 +29,7 @@ defmodule BabelSync.Sync do
 
   @spec apply_update(Ecto.UUID.t(), binary(), keyword()) :: :ok | {:error, term()}
   def apply_update(entry_id, update, opts \\ []) do
-    call(entry_id, {:apply_update, update, opts[:origin], opts[:author_id]})
+    call(entry_id, {:apply_update, update, opts[:origin], author(opts)})
   end
 
   @spec text(Ecto.UUID.t()) :: String.t()
@@ -49,7 +49,7 @@ defmodule BabelSync.Sync do
         ) :: {:ok, String.t(), String.t()} | {:error, reason}
         when reason: term()
   def rewrite_text(entry_id, rewrite, opts \\ []) do
-    call(entry_id, {:rewrite_text, rewrite, opts[:origin], opts[:author_id]})
+    call(entry_id, {:rewrite_text, rewrite, opts[:origin], author(opts)})
   end
 
   @spec flush(Ecto.UUID.t()) :: :ok
@@ -84,6 +84,8 @@ defmodule BabelSync.Sync do
 
   @spec normalize(String.t()) :: String.t()
   def normalize(text), do: String.replace(text, "\r\n", "\n")
+
+  defp author(opts), do: {opts[:author_id], opts[:author_app]}
 
   defp call(entry_id, message) do
     GenServer.call(server(entry_id), message)

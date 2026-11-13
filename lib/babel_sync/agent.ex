@@ -533,9 +533,18 @@ defmodule BabelSync.Agent do
          {:ok, entry} <- note(vault, path) do
       :ok = Sync.flush(entry.id)
 
+      versions = Sync.list_versions(entry.id)
+      names = BabelSync.History.authors(versions)
+
       {:ok,
-       for version <- Sync.list_versions(entry.id) do
-         %{version: version.id, saved_at: version.inserted_at, bytes: byte_size(version.content)}
+       for version <- versions do
+         %{
+           version: version.id,
+           saved_at: version.inserted_at,
+           bytes: byte_size(version.content),
+           by: names[version.author_id],
+           with: version.author_app
+         }
        end}
     end
   end
@@ -913,10 +922,11 @@ defmodule BabelSync.Agent do
     end
   end
 
-  defp rewrite(%Scope{user: user}, %Entry{id: id}, if_rev, change) do
+  defp rewrite(%Scope{} = scope, %Entry{id: id}, if_rev, change) do
     guarded = guarded(if_rev, change)
+    by = Keyword.put(Scope.author(scope), :origin, :agent)
 
-    with {:ok, old, new} <- Sync.rewrite_text(id, guarded, author_id: user.id, origin: :agent),
+    with {:ok, old, new} <- Sync.rewrite_text(id, guarded, by),
          :ok <- Sync.flush(id) do
       {:ok, old, new}
     end

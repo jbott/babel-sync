@@ -8,6 +8,7 @@ defmodule BabelSync.Sync.Version do
     field :content, :string
     field :content_hash, :string
     field :author_id, :binary_id
+    field :author_app, :string
     field :inserted_at, :utc_datetime_usec
   end
 end

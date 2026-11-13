@@ -22,7 +22,7 @@ defmodule BabelSync.Sync.DocServer do
     :settle_timer,
     :unsettled_since,
     applied: [],
-    last_author: nil,
+    last_author: {nil, nil},
     versioned_hash: nil
   ]
 
@@ -83,18 +83,18 @@ defmodule BabelSync.Sync.DocServer do
     {:reply, Yex.Text.to_string(server.text), server, idle_timeout()}
   end
 
-  def handle_call({:apply_update, @empty_update, _origin, _author_id}, _from, server) do
+  def handle_call({:apply_update, @empty_update, _origin, _author}, _from, server) do
     {:reply, :ok, server, idle_timeout()}
   end
 
-  def handle_call({:apply_update, update, origin, author_id}, _from, server) do
+  def handle_call({:apply_update, update, origin, author}, _from, server) do
     case Yex.apply_update(server.doc, update) do
-      :ok -> {:reply, :ok, record(server, update, origin, author_id), idle_timeout()}
+      :ok -> {:reply, :ok, record(server, update, origin, author), idle_timeout()}
       {:error, reason} -> {:reply, {:error, reason}, server, idle_timeout()}
     end
   end
 
-  def handle_call({:rewrite_text, rewrite, origin, author_id}, _from, server) do
+  def handle_call({:rewrite_text, rewrite, origin, author}, _from, server) do
     old_text = Yex.Text.to_string(server.text)
 
     case rewrite.(old_text) do
@@ -110,7 +110,7 @@ defmodule BabelSync.Sync.DocServer do
 
         {:ok, update} = Yex.encode_state_as_update(server.doc, before)
 
-        {:reply, {:ok, old_text, new_text}, record(server, update, origin, author_id),
+        {:reply, {:ok, old_text, new_text}, record(server, update, origin, author),
          idle_timeout()}
 
       {:error, _reason} = refused ->
@@ -135,7 +135,7 @@ defmodule BabelSync.Sync.DocServer do
 
   def handle_info({:EXIT, _from, reason}, server), do: {:stop, reason, server}
 
-  defp record(server, update, origin, author_id) do
+  defp record(server, update, origin, author) do
     id = Store.append(server.entry_id, update)
 
     Phoenix.PubSub.broadcast(
@@ -144,7 +144,7 @@ defmodule BabelSync.Sync.DocServer do
       {:doc_update, server.entry_id, update, origin}
     )
 
-    server = %{server | applied: [id | server.applied], last_author: author_id}
+    server = %{server | applied: [id | server.applied], last_author: author}
     server = if length(server.applied) >= compact_after(), do: compact(server), else: server
     schedule_settle(server)
   end
