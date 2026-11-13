@@ -5,6 +5,8 @@ defmodule BabelSync.BackupTest do
 
   alias BabelSync.Backup
 
+  @moduletag :local_storage
+
   @tag :tmp_dir
   test "a snapshot of the database and the attachment files are written", %{tmp_dir: dir} do
     stored = Path.join([BabelSync.data_dir(), "blobs", "vaults", "backup-test", "hash"])
