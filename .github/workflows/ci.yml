@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types and tests on SQLite
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+            priv/plts
+            node_modules
+          key: mix-${{ runner.os }}-${{ hashFiles('flake.lock', 'mix.lock', 'package-lock.json') }}
+          restore-keys: mix-${{ runner.os }}-
+      - name: Fetch dependencies
+        run: nix develop --command sh -c 'mix deps.get && npm ci'
+      - name: Build assets and the plugin
+        run: nix develop --command sh -c 'MIX_ENV=test mix do assets.setup + assets.build'
+      - name: Compile, format, lint and test
+        run: nix develop --command mix precommit
+      - name: Nothing was left unformatted
+        run: git diff --exit-code
+      - name: Types
+        run: nix develop --command mix dialyzer
+      - name: Security review is current
+        run: nix develop --command mix sobelow --config
+
+  remote:
+    name: Tests on PostgreSQL and S3
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+            node_modules
+          key: remote-${{ runner.os }}-${{ hashFiles('flake.lock', 'mix.lock', 'package-lock.json') }}
+          restore-keys: remote-${{ runner.os }}-
+      - name: Fetch dependencies
+        run: nix develop --command sh -c 'mix deps.get && npm ci'
+      - name: Build assets and the plugin
+        run: nix develop --command sh -c 'MIX_ENV=test mix do assets.setup + assets.build'
+      - name: Start PostgreSQL and the S3 server
+        run: nix develop --command bin/dev-services up
+      - name: Test
+        run: nix develop --command sh -c 'BABELSYNC_STORAGE=remote mix test'
+
+  package:
+    name: Nix package
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - name: Build the release
+        run: nix build --print-build-logs
