@@ -19,24 +19,44 @@ export const Folders = {
     this.vaultId = this.el.dataset.vaultId;
     this.open = load(this.vaultId);
 
+    this.expected = new Map();
     this.onToggle = (event) => {
       const folder = event.target;
       if (!(folder instanceof HTMLDetailsElement) || !folder.dataset.path) return;
-      if (folder.open) this.open.add(folder.dataset.path);
-      else this.open.delete(folder.dataset.path);
+      const path = folder.dataset.path;
+      if (this.expected.get(path) === folder.open) return void this.expected.delete(path);
+      if (folder.open) this.open.add(path);
+      else this.open.delete(path);
       save(this.vaultId, this.open);
+      this.pushEvent("toggle_folder", { path, open: folder.open });
     };
     this.el.addEventListener("toggle", this.onToggle, true);
 
     this.onAll = (event) => {
-      const wanted = event.detail.open;
-      for (const folder of this.folders()) folder.open = wanted;
-      this.open = wanted ? new Set(this.folders().map((folder) => folder.dataset.path)) : new Set();
-      save(this.vaultId, this.open);
+      this.pushEvent("all_folders", { open: event.detail.open }, ({ open }) => {
+        this.open = new Set(open);
+        save(this.vaultId, this.open);
+        for (const folder of this.folders()) this.set(folder, this.open.has(folder.dataset.path));
+      });
     };
     this.el.addEventListener("babelsync:folders", this.onAll);
 
+    this.announce();
     this.apply();
+  },
+
+  reconnected() {
+    this.announce();
+  },
+
+  announce() {
+    this.pushEvent("open_folders", { paths: [...this.open] });
+  },
+
+  set(folder, open) {
+    if (folder.open === open) return;
+    this.expected.set(folder.dataset.path, open);
+    folder.open = open;
   },
 
   updated() {
@@ -54,10 +74,20 @@ export const Folders = {
 
   apply() {
     const current = this.el.querySelector("[aria-current=page]");
+    let found = false;
     for (const folder of this.folders()) {
-      const wanted = this.open.has(folder.dataset.path) || (current !== null && folder.contains(current));
-      if (folder.open !== wanted && (wanted || !folder.dataset.seen)) folder.open = wanted;
+      const path = folder.dataset.path;
+      const holdsCurrent = current !== null && folder.contains(current);
+      if (holdsCurrent && !this.open.has(path)) {
+        this.open.add(path);
+        found = true;
+      }
+      const wanted = this.open.has(path);
+      if (folder.open !== wanted && (wanted || !folder.dataset.seen)) this.set(folder, wanted);
       folder.dataset.seen = "true";
     }
+    if (!found) return;
+    save(this.vaultId, this.open);
+    this.announce();
   },
 };

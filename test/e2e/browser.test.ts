@@ -244,6 +244,16 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     await one.waitForSelector("#trash-empty");
     await two.waitForSelector('#tree a[href$="/f/Notes/renamed.md"]');
 
+    await two.locator('#tree details[data-path="Notes"] > summary').click();
+    await two.waitForSelector('#tree a[href$="/f/Notes/renamed.md"]', { hidden: true });
+    await two.waitForFunction(() => document.querySelector('#tree a[href$="/f/Notes/renamed.md"]') === null);
+    await two.locator("#open-all-folders").click();
+    await two.waitForSelector('#tree a[href$="/f/Notes/renamed.md"]', { visible: true });
+    await two.reload();
+    await two.waitForSelector('#tree a[href$="/f/Notes/renamed.md"]', { visible: true });
+    await two.locator("#close-all-folders").click();
+    await two.waitForFunction(() => document.querySelector("#tree a") === null);
+
     assert.deepEqual(problems, []);
   }),
 );

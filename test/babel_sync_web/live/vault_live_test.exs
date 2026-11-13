@@ -80,6 +80,52 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert has_element?(view, ~s(#tree details[open][data-path="Trips/Lisbon"]))
       refute has_element?(view, ~s(#tree details[open][data-path="Recipes"]))
     end
+
+    test "only send what is inside them once they are opened", %{conn: conn, vault: vault} do
+      entry(vault, "Trips/Lisbon/plan.md")
+      entry(vault, "Recipes/soup.md")
+
+      {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}")
+      refute has_element?(view, "#tree a", "soup.md")
+      refute has_element?(view, ~s(#tree details[data-path="Trips/Lisbon"]))
+
+      render_hook(element(view, "#tree"), "toggle_folder", %{"path" => "Recipes", "open" => true})
+      assert has_element?(view, "#tree a", "soup.md")
+      refute has_element?(view, "#tree a", "plan.md")
+
+      render_hook(element(view, "#tree"), "toggle_folder", %{"path" => "Recipes", "open" => false})
+
+      refute has_element?(view, "#tree a", "soup.md")
+
+      render_hook(element(view, "#tree"), "open_folders", %{"paths" => ["Trips", "Trips/Lisbon"]})
+      assert has_element?(view, "#tree a", "plan.md")
+
+      render_hook(element(view, "#tree"), "all_folders", %{"open" => true})
+      assert_reply view, %{open: ["Recipes", "Trips", "Trips/Lisbon"]}
+      assert has_element?(view, "#tree a", "soup.md")
+      assert has_element?(view, "#tree a", "plan.md")
+
+      render_hook(element(view, "#tree"), "all_folders", %{"open" => false})
+      assert_reply view, %{open: []}
+      refute has_element?(view, "#tree a", "soup.md")
+    end
+
+    test "a burst of changes redraws the tree once more, not once each", %{
+      conn: conn,
+      vault: vault
+    } do
+      {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}")
+
+      entry(vault, "first.md")
+      assert has_element?(view, "#tree a", "first.md")
+
+      for n <- 1..20, do: entry(vault, "burst-#{n}.md")
+      refute has_element?(view, "#tree a", "burst-20.md")
+
+      send(view.pid, :list_entries)
+      assert has_element?(view, "#tree a", "burst-20.md")
+      assert has_element?(view, "#tree a", "burst-1.md")
+    end
   end
 
   describe "vault list" do
@@ -445,6 +491,7 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert has_element?(view, "#tree a", "from-obsidian.md")
 
       {:ok, _} = Vaults.delete_entry(note)
+      send(view.pid, :list_entries)
       refute has_element?(view, "#tree a", "from-obsidian.md")
     end
 

@@ -101,7 +101,9 @@ defmodule BabelSync.Markdown do
           optional(:text) => (Entry.t() -> String.t())
         }
 
-  @spec to_html(String.t(), [Entry.t()], links()) :: String.t()
+  @type index :: %{paths: %{String.t() => Entry.t()}, names: %{String.t() => Entry.t()}}
+
+  @spec to_html(String.t(), [Entry.t()] | index(), links()) :: String.t()
   def to_html(text, entries, links) do
     context = %{index: index(entries), links: links, depth: 0, seen: [], in_link: false}
 
@@ -116,10 +118,10 @@ defmodule BabelSync.Markdown do
     |> local_anchors()
   end
 
-  @spec resolve_target(String.t(), [Entry.t()]) :: Entry.t() | nil
+  @spec resolve_target(String.t(), [Entry.t()] | index()) :: Entry.t() | nil
   def resolve_target(target, entries), do: lookup(target, index(entries))
 
-  @spec resolver([Entry.t()]) :: (String.t() -> Entry.t() | nil)
+  @spec resolver([Entry.t()] | index()) :: (String.t() -> Entry.t() | nil)
   def resolver(entries) do
     index = index(entries)
     &lookup(&1, index)
@@ -489,7 +491,10 @@ defmodule BabelSync.Markdown do
 
   defp local_anchors(html), do: Regex.replace(~r/href="#(?!md-|")/, html, ~s(href="#md-))
 
-  defp index(entries) do
+  @spec index([Entry.t()] | index()) :: index()
+  def index(%{paths: _paths, names: _names} = index), do: index
+
+  def index(entries) do
     live = Enum.filter(entries, &(&1.kind != :folder and is_nil(&1.deleted_at)))
 
     %{

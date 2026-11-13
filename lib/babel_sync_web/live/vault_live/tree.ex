@@ -1,5 +1,8 @@
 defmodule BabelSyncWeb.VaultLive.Tree do
-  @moduledoc false
+  @moduledoc """
+  The entries of a vault as the nested folders and files the sidebar
+  shows, folders first and names in natural order.
+  """
 
   alias BabelSync.Vaults.Entry
 
@@ -47,6 +50,12 @@ defmodule BabelSyncWeb.VaultLive.Tree do
     |> Regex.split(String.downcase(name), include_captures: true, trim: true)
     |> Enum.map(fn part ->
       if part =~ ~r/\A\d+\z/, do: {0, String.to_integer(part)}, else: {1, part}
+    end)
+  end
+
+  def folders(nodes) do
+    Enum.flat_map(nodes, fn node ->
+      if folder?(node), do: [node.path | folders(node.children)], else: []
     end)
   end
 

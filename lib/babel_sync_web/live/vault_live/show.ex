@@ -8,6 +8,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   alias BabelSyncWeb.VaultLive.{BaseView, HistoryPanel, Reader, Sidebar, Tree}
 
   @preview_delay 250
+  @tree_delay 150
 
   @fence String.duplicate("`", 12)
 
@@ -40,6 +41,9 @@ defmodule BabelSyncWeb.VaultLive.Show do
        |> assign(:against, :previous)
        |> assign(:blob_versions, nil)
        |> assign(:preview_timer, nil)
+       |> assign(:tree_timer, nil)
+       |> assign(:tree_stale, false)
+       |> assign(:open_folders, MapSet.new())
        |> assign(:new_form, to_form(%{"path" => ""}, as: :note))
        |> assign(:notes_created, 0)
        |> assign(:rename_form, nil)
@@ -78,7 +82,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         socket
 
       fresh ->
-        put_entries(socket, [fresh | Enum.reject(socket.assigns.entries, &(&1.id == fresh.id))])
+        socket |> assign(:known, Map.put(socket.assigns.known, fresh.id, fresh)) |> list_entries()
     end
   end
 
@@ -111,6 +115,21 @@ defmodule BabelSyncWeb.VaultLive.Show do
       %Vaults.Vault{id: ^id} -> {:noreply, push_navigate(socket, to: Paths.vault(id))}
       nil -> {:noreply, socket}
     end
+  end
+
+  def handle_event("open_folders", %{"paths" => paths}, socket) when is_list(paths) do
+    {:noreply, assign(socket, :open_folders, MapSet.new(Enum.filter(paths, &is_binary/1)))}
+  end
+
+  def handle_event("toggle_folder", %{"path" => path, "open" => open?}, socket)
+      when is_binary(path) do
+    change = if open? == true, do: &MapSet.put/2, else: &MapSet.delete/2
+    {:noreply, update(socket, :open_folders, &change.(&1, path))}
+  end
+
+  def handle_event("all_folders", %{"open" => open?}, socket) do
+    paths = if open? == true, do: Tree.folders(socket.assigns.tree), else: []
+    {:reply, %{open: paths}, assign(socket, :open_folders, MapSet.new(paths))}
   end
 
   def handle_event("attach", %{"name" => name, "hash" => hash}, socket) do
@@ -278,13 +297,25 @@ defmodule BabelSyncWeb.VaultLive.Show do
     {:noreply, socket |> assign(:preview_timer, nil) |> render_preview()}
   end
 
+  def handle_info(:list_entries, socket) do
+    socket = assign(socket, :tree_timer, nil)
+    {:noreply, if(socket.assigns.tree_stale, do: entries_changed(socket), else: socket)}
+  end
+
   def handle_info({:awareness, _state}, socket), do: {:noreply, socket}
 
   defp entry_changed(changed, socket) do
-    socket = assign(socket, :latest, Map.put(socket.assigns.latest, changed.id, changed.seq))
-    entries = Enum.reject(socket.assigns.entries, &(&1.id == changed.id))
-    entries = if changed.deleted_at, do: entries, else: [changed | entries]
-    socket = socket |> put_entries(entries) |> rerun_base()
+    known =
+      if changed.deleted_at,
+        do: Map.delete(socket.assigns.known, changed.id),
+        else: Map.put(socket.assigns.known, changed.id, changed)
+
+    socket =
+      socket
+      |> assign(:latest, Map.put(socket.assigns.latest, changed.id, changed.seq))
+      |> assign(:known, known)
+      |> entries_changed()
+      |> rerun_base()
 
     case socket.assigns.entry do
       %Entry{id: id} when id == changed.id and not is_nil(changed.deleted_at) ->
@@ -338,12 +369,28 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   defp track(socket, entries) do
-    socket |> assign(:latest, Map.new(entries, &{&1.id, &1.seq})) |> put_entries(entries)
+    socket
+    |> assign(:latest, Map.new(entries, &{&1.id, &1.seq}))
+    |> assign(:known, Map.new(entries, &{&1.id, &1}))
+    |> list_entries()
   end
 
-  defp put_entries(socket, entries) do
-    entries = Enum.sort_by(entries, & &1.path)
-    socket |> assign(:entries, entries) |> assign(:tree, Tree.build(entries))
+  defp entries_changed(%{assigns: %{tree_timer: nil}} = socket) do
+    socket
+    |> assign(:tree_timer, Process.send_after(self(), :list_entries, @tree_delay))
+    |> list_entries()
+  end
+
+  defp entries_changed(socket), do: assign(socket, :tree_stale, true)
+
+  defp list_entries(socket) do
+    entries = socket.assigns.known |> Map.values() |> Enum.sort_by(& &1.path)
+
+    socket
+    |> assign(:tree_stale, false)
+    |> assign(:entries, entries)
+    |> assign(:link_index, Markdown.index(entries))
+    |> assign(:tree, Tree.build(entries))
   end
 
   defp select(socket, entry) do
@@ -395,12 +442,12 @@ defmodule BabelSyncWeb.VaultLive.Show do
   defp render_preview(socket), do: socket |> assign(:preview, nil) |> assign(:base, nil)
 
   defp show_markdown(socket, entry, text, notice \\ "") do
-    html = Markdown.to_html(notice <> readable(entry, text), socket.assigns.entries, links())
+    html = Markdown.to_html(notice <> readable(entry, text), socket.assigns.link_index, links())
     socket |> assign(:shown_as, :markdown) |> assign(:base, nil) |> assign(:preview, html)
   end
 
   defp show_canvas(socket, entry, text) do
-    case Canvas.to_html(text, socket.assigns.entries, links()) do
+    case Canvas.to_html(text, socket.assigns.link_index, links()) do
       {:ok, html} ->
         socket |> assign(:shown_as, :canvas) |> assign(:base, nil) |> assign(:preview, html)
 
@@ -477,6 +524,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
           vaults={@vaults}
           socket_token={@socket_token}
           tree={@tree}
+          open_folders={@open_folders}
           current_scope={@current_scope}
         />
 

@@ -19,6 +19,7 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
   attr :vaults, :list, required: true
   attr :socket_token, :string, required: true
   attr :tree, :list, required: true
+  attr :open_folders, :any, required: true
   attr :current_scope, :any, required: true
 
   def sidebar(assigns) do
@@ -126,7 +127,12 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
             Connect Obsidian <.icon name="hero-arrow-right-mini" class="size-4" />
           </.link>
         </div>
-        <.tree nodes={@tree} selected={@entry && @entry.path} vault_id={@vault.id} />
+        <.tree
+          nodes={@tree}
+          selected={@entry && @entry.path}
+          open={@open_folders}
+          vault_id={@vault.id}
+        />
       </nav>
 
       <div class="flex items-center gap-0.5 border-t border-line px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
@@ -184,8 +190,13 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
     is_binary(selected) and String.starts_with?(selected, node.path <> "/")
   end
 
+  defp shown?(node, selected, open) do
+    unfolded?(node, selected) or MapSet.member?(open, node.path)
+  end
+
   attr :nodes, :list, required: true
   attr :selected, :string, default: nil
+  attr :open, :any, required: true
   attr :vault_id, :string, required: true
 
   defp tree(assigns) do
@@ -203,7 +214,13 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
             <span class="truncate">{node.name}</span>
           </summary>
           <div class="ml-[0.9375rem] border-l border-line pl-1.5">
-            <.tree nodes={node.children} selected={@selected} vault_id={@vault_id} />
+            <.tree
+              :if={shown?(node, @selected, @open)}
+              nodes={node.children}
+              selected={@selected}
+              open={@open}
+              vault_id={@vault_id}
+            />
           </div>
         </details>
         <.link

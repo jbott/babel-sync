@@ -26,10 +26,11 @@ defmodule BabelSync.Canvas do
   @type point :: {number(), number()}
   @type box :: %{x: number(), y: number(), width: number(), height: number()}
 
-  @spec to_html(String.t(), [Entry.t()], Markdown.links()) :: {:ok, String.t()} | :error
+  @spec to_html(String.t(), [Entry.t()] | Markdown.index(), Markdown.links()) ::
+          {:ok, String.t()} | :error
   def to_html(text, entries, links) do
     case decode(text) do
-      {:ok, %{} = canvas} -> {:ok, board(canvas, entries, links)}
+      {:ok, %{} = canvas} -> {:ok, board(canvas, Markdown.index(entries), links)}
       _not_a_canvas -> :error
     end
   end
@@ -214,8 +215,7 @@ defmodule BabelSync.Canvas do
        when is_binary(path) do
     subpath = if is_binary(node["subpath"]), do: String.trim_leading(node["subpath"], "#")
 
-    case Enum.find(entries, &(&1.path == path and is_nil(&1.deleted_at))) ||
-           Markdown.resolve_target(path, entries) do
+    case Markdown.resolve_target(path, entries) do
       %Entry{kind: :doc} = entry -> note(entry, subpath, entries, links)
       %Entry{kind: :blob} = entry -> attachment(entry, links)
       _missing -> ~s(<span class="unresolved">#{escape(path)}</span>)
