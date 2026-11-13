@@ -30,5 +30,6 @@ XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/o
 XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/transfer_controller.ex:146,44B9F6E
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:676,E545E1
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:677,7771DE0
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:688,3CBA028
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/obsidian_controller.ex:28,3242BD8
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/transfer_controller.ex:147,1F70068

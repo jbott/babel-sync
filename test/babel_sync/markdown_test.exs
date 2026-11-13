@@ -181,6 +181,24 @@ defmodule BabelSync.MarkdownTest do
     assert texts("```mermaid\ngraph TD; A-->B\n```", "pre.mermaid") == ["graph TD; A-->B"]
   end
 
+  test "code blocks are highlighted with token classes the stylesheet colours" do
+    code = "```elixir\ndef hi, do: \"hello\" # greet\n```"
+
+    assert find(code, "pre.syntax-highlighting code") |> Enum.count() == 1
+    assert texts(code, "span.keyword") |> Enum.member?("def")
+    assert texts(code, "span.string") |> Enum.any?(&(&1 =~ "hello"))
+    assert texts(code, "span.comment") |> Enum.any?(&(&1 =~ "greet"))
+    assert html("```\nplain text\n```") =~ "plain text"
+  end
+
+  test "classes of the page's own layout never reach a note's code" do
+    rendered =
+      html(~s(<code class="fixed inset-0 language-x">x</code> <pre class="fixed">y</pre>))
+
+    refute rendered =~ "fixed"
+    refute rendered =~ "inset-0"
+  end
+
   test "footnotes link within the page" do
     rendered = html("Note[^1].\n\n[^1]: The note.")
     assert rendered =~ ~s(href="#md-fn-1")

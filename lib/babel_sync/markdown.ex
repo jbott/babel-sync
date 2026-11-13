@@ -47,6 +47,13 @@ defmodule BabelSync.Markdown do
   @classes ~w(callout callout-title callout-content tag embed embed-title embed-content embed-file
               mermaid properties property property-item unresolved)
 
+  @tokens ~w(comment string regexp constant numeric character language other keyword operator storage
+             type entity name function class tag attribute-name support variable parameter markup
+             heading bold italic inserted deleted changed invalid punctuation definition section
+             embedded interpolation escape)
+
+  @highlight [engine: :syntect, opts: []]
+
   @sanitize [
     add_tags: ~w(audio video input section),
     tag_attributes: %{
@@ -58,7 +65,6 @@ defmodule BabelSync.Markdown do
       "details" => ~w(open data-callout data-callout-metadata),
       "div" => ~w(id data-callout data-callout-metadata),
       "span" => ~w(id data-math-style),
-      "code" => ~w(class),
       "ol" => ~w(start),
       "li" => ~w(id),
       "sup" => ~w(id),
@@ -72,13 +78,13 @@ defmodule BabelSync.Markdown do
     },
     allowed_classes: %{
       "div" => @classes,
-      "span" => @classes,
+      "span" => @classes ++ @tokens,
       "details" => @classes,
       "summary" => @classes,
       "dl" => @classes,
       "a" => ~w(footnote-backref embed-file),
       "sup" => ["footnote-ref"],
-      "pre" => ["mermaid"],
+      "pre" => ~w(mermaid syntax-highlighting),
       "section" => ["footnotes"]
     },
     id_prefix: "md-"
@@ -100,6 +106,7 @@ defmodule BabelSync.Markdown do
     |> MDEx.to_html!(
       extension: @extension,
       render: [hardbreaks: true, unsafe: true],
+      syntax_highlight: @highlight,
       sanitize: @sanitize
     )
     |> local_anchors()
@@ -280,7 +287,11 @@ defmodule BabelSync.Markdown do
         %{context | depth: context.depth + 1, seen: [entry.id | context.seen]},
         false
       )
-      |> MDEx.to_html!(extension: @extension, render: [hardbreaks: true, unsafe: true])
+      |> MDEx.to_html!(
+        extension: @extension,
+        render: [hardbreaks: true, unsafe: true],
+        syntax_highlight: @highlight
+      )
 
     title =
       Path.rootname(Path.basename(entry.path)) <> if(fragment, do: " › " <> fragment, else: "")

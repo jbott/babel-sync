@@ -349,7 +349,17 @@ defmodule BabelSyncWeb.VaultLive.Show do
   defp render_preview(socket), do: assign(socket, :preview, nil)
 
   defp readable(%Entry{path: path}, text) do
-    if Vaults.Path.markdown?(path), do: text, else: Enum.join([@fence, text, @fence], "\n")
+    if Vaults.Path.markdown?(path),
+      do: text,
+      else: Enum.join([@fence <> language(path), text, @fence], "\n")
+  end
+
+  defp language(path) do
+    case String.downcase(Path.extname(path)) do
+      ".base" -> "yaml"
+      ".canvas" -> "json"
+      _plain -> ""
+    end
   end
 
   defp current_folder(%{assigns: %{entry: %Entry{kind: :folder, path: path}}}), do: path

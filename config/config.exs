@@ -63,6 +63,8 @@ config :phoenix_live_view,
 # at the `config/runtime.exs`.
 config :babel_sync, BabelSync.Mailer, adapter: Swoosh.Adapters.Local
 
+config :mdex_native, syntax_highlighter: :syntect
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
