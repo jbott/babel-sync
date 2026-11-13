@@ -50,7 +50,8 @@ export const Passkey = {
           const nameField = document.getElementById(this.el.dataset.nameFrom);
           this.pushEvent("passkey_result", { ...result, name: nameField ? nameField.value : "" });
           if (nameField) nameField.value = "";
-        } catch {
+        } catch (error) {
+          console.error("The passkey request failed:", error);
           this.pushEvent("passkey_failed", {});
         } finally {
           this.el.disabled = false;

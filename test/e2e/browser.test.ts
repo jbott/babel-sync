@@ -145,7 +145,7 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     }
     await agent.close();
 
-    await one.click('#toolbar button[phx-value-mode="read"]');
+    await one.locator('#toolbar button[phx-value-mode="read"]').click();
     await waitForText(one, "#preview h1", "Hello");
     assert.match(await textOf(one, "#preview"), /tab two says hi/);
 
@@ -154,15 +154,15 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     const uploader = (await one.$("#uploader"))!;
     await uploader.uploadFile(picture);
     await two.waitForSelector('#tree a[href$="/f/Notes/pixel.png"]');
-    await one.click('#tree a[href$="/f/Notes/pixel.png"]');
+    await one.locator('#tree a[href$="/f/Notes/pixel.png"]').click();
     await one.waitForFunction(() => {
       const image = document.querySelector("#attachment img") as HTMLImageElement | null;
       return image?.complete && image.naturalWidth === 1;
     });
 
-    await one.click('#tree a[href$="/f/Notes/browser.md"]');
+    await one.locator('#tree a[href$="/f/Notes/browser.md"]').click();
     await waitForText(one, "#entry-path", "Notes/browser.md");
-    await one.click("#rename-button");
+    await one.locator("#rename-button").click();
     await one.waitForSelector("#rename-form input[type=text]");
     await fill(one, "#rename-form input[type=text]", "Notes/renamed.md");
     await one.keyboard.press("Enter");
@@ -171,25 +171,25 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
 
     await two.focus(".cm-content");
     await two.keyboard.type("after the move\n");
-    await one.click('#toolbar button[phx-value-mode="edit"]');
+    await one.locator('#toolbar button[phx-value-mode="edit"]').click();
     await one.waitForSelector(".cm-content");
     await waitForText(one, ".cm-content", "after the move");
 
-    await one.click("#history-button");
+    await one.locator("#history-button").click();
     await one.waitForSelector("#history [phx-click=show_version]");
-    await one.click("#history [phx-click=show_version]");
+    await one.locator("#history [phx-click=show_version]").click();
     await one.waitForSelector("#version-changes");
-    await one.click("#compare-text");
+    await one.locator("#compare-text").click();
     await one.waitForSelector("#version-content");
-    await one.click("#history [phx-click=close_history]");
+    await one.locator("#history [phx-click=close_history]").click();
 
-    await one.click("#delete-button");
+    await one.locator("#delete-button").click();
     await one.waitForSelector("#empty");
     await two.waitForSelector("#empty");
 
-    await one.click("#vault-trash");
+    await one.locator("#vault-trash").click();
     await one.waitForSelector("#trash [phx-click=restore]");
-    await one.click("#trash [phx-click=restore]");
+    await one.locator("#trash [phx-click=restore]").click();
     await one.waitForSelector("#trash-empty");
     await two.waitForSelector('#tree a[href$="/f/Notes/renamed.md"]');
 
@@ -220,7 +220,7 @@ test("a passkey is registered, used to sign in, and refused when unknown", { ski
     await page.waitForSelector("#setup-locked");
     await page.goto(setupUrl, { waitUntil: "networkidle0" });
     await page.waitForSelector(".phx-connected");
-    await page.click("#passkey-setup");
+    await page.locator("#passkey-setup").click();
     await page.waitForFunction(() => location.pathname === "/account");
 
     await page.goto(baseUrl + "/account", { waitUntil: "networkidle0" });
@@ -229,23 +229,23 @@ test("a passkey is registered, used to sign in, and refused when unknown", { ski
     await devtools.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId: firstDevice });
     const authenticatorId = await authenticator();
     await page.type("#passkey-name", "Second key");
-    await page.click("#passkey-add");
+    await page.locator("#passkey-add").click();
     await waitForText(page, "#passkeys", "Second key");
 
-    await page.click("#sign-out");
+    await page.locator("#sign-out").click();
     await page.waitForFunction(() => location.pathname === "/login");
     await page.waitForSelector(".phx-connected #passkey-sign-in");
-    await page.click("#passkey-sign-in");
+    await page.locator("#passkey-sign-in").click();
     await page.waitForFunction(() => location.pathname === "/account");
 
     await page.goto(baseUrl + "/account", { waitUntil: "networkidle0" });
     await page.waitForSelector(".phx-connected");
-    await page.click("#sign-out");
+    await page.locator("#sign-out").click();
     await page.waitForFunction(() => location.pathname === "/login");
     await devtools.send("WebAuthn.clearCredentials", { authenticatorId });
     await devtools.send("WebAuthn.setAutomaticPresenceSimulation", { authenticatorId, enabled: false });
     await page.waitForSelector(".phx-connected #passkey-sign-in");
-    await page.click("#passkey-sign-in");
+    await page.locator("#passkey-sign-in").click();
     await devtools.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
     await page.goto(baseUrl + "/", { waitUntil: "networkidle0" });
     assert.equal(new URL(page.url()).pathname, "/");
