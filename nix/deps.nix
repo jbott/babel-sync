@@ -330,23 +330,6 @@ let
         in
         drv;
 
-      dns_cluster =
-        let
-          version = "0.2.0";
-          drv = buildMix {
-            inherit version;
-            name = "dns_cluster";
-            appConfigPath = ../config;
-
-            src = fetchHex {
-              inherit version;
-              pkg = "dns_cluster";
-              sha256 = "ba6f1893411c69c01b9e8e8f772062535a4cf70f3f35bcc964a324078d8c8240";
-            };
-          };
-        in
-        drv;
-
       ecto =
         let
           version = "3.14.3";

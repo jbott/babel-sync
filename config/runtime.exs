@@ -226,8 +226,6 @@ if config_env() == :prod do
     raise "BABELSYNC_URL must be the address people use, for example https://notes.example.com"
   end
 
-  config :babel_sync, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
-
   bind =
     case System.get_env("BABELSYNC_BIND", if(auth == [], do: "local", else: "all")) do
       "local" -> {127, 0, 0, 1}

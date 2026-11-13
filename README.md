@@ -42,7 +42,7 @@ docker run -p 127.0.0.1:4000:4000 -v babelsync:/data babelsync:0.1.0
 
 On macOS the image is built by a Linux builder (`nix.linux-builder` or any remote builder). The image runs as an unprivileged user, keeps everything under `/data`, and listens on all of the container's interfaces, so who can reach it is decided by how the port is published. Sign-in is by passkey: the first start prints a one-time setup address to the log (`docker logs`). `SECRET_KEY_BASE` is generated on first start and kept in `/data` unless you set it. All the settings below are passed with `-e`.
 
-Run one copy of the server per database. Each open note is kept by one process on the server it was opened on, and two copies sharing a database would each keep their own, so typing on one would not reach people on the other.
+Run one copy of the server per database. Each open note is kept by one process on the server it was opened on, and two copies sharing a database would each keep their own, so typing on one would not reach people on the other, and each would save over what the other had saved.
 
 Each Mix dependency is its own Nix derivation, listed in `nix/deps.nix`, so a build only compiles what changed. When `mix.lock` changes, regenerate that file with `mix deps.nix --output nix/deps.nix`. The npm dependencies and the crates of the two Rust extensions are still pinned by hash in `nix/package.nix`: clear the stale one to `""`, build, and paste the hash Nix prints.
 
