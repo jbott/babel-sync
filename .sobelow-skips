@@ -1,6 +1,7 @@
 Config.CSWH: Cross-Site Websocket Hijacking,lib/babel_sync_web/endpoint.ex:17,6731413
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:757,59F2C97
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:759,5B9D488
+DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:761,7F46EAC
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:774,5DB85FF
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent/glob.ex:15,186480B
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/auth/passkeys.ex:91,E3BA49
