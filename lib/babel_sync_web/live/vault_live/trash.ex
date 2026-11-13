@@ -54,11 +54,18 @@ defmodule BabelSyncWeb.VaultLive.Trash do
   end
 
   defp change(socket, id, action) do
-    case Vaults.get_trashed(socket.assigns.vault.id, id) do
-      %Entry{} = entry -> {:noreply, entry |> action.() |> load()}
+    scope = socket.assigns.current_scope
+
+    with %Entry{} = entry <- Vaults.get_trashed(socket.assigns.vault.id, id),
+         :ok <- Scope.authorize_write(scope, entry.vault_id, entry.path) do
+      {:noreply, entry |> action.() |> load()}
+    else
       nil -> {:noreply, load(socket)}
+      {:error, :forbidden} -> {:noreply, put_flash(socket, :error, plugins_are_the_owners())}
     end
   end
+
+  defp plugins_are_the_owners, do: "Only an owner can change the vault's Obsidian plugins."
 
   @impl true
   def handle_info({:entry_changed, %Entry{}}, socket), do: {:noreply, load(socket)}

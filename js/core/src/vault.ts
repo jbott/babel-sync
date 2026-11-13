@@ -15,7 +15,7 @@ export type Entry = {
   updated_at: string;
 };
 
-type JoinReply = { seq: number; digest?: string; name: string; user?: string | null; writable: boolean; complete: boolean; entries: Entry[] };
+type JoinReply = { seq: number; digest?: string; name: string; user?: string | null; writable: boolean; admin?: boolean; complete: boolean; entries: Entry[] };
 
 type VaultEvents = {
   entry: Entry;
@@ -42,6 +42,7 @@ export class VaultSession extends Emitter<VaultEvents> {
   name = "";
   user = "";
   writable = false;
+  admin = true;
   seq: number;
   joined = false;
 
@@ -63,6 +64,7 @@ export class VaultSession extends Emitter<VaultEvents> {
         this.name = reply.name;
         this.user = reply.user ?? "";
         this.writable = reply.writable;
+        this.admin = reply.admin ?? true;
         this.joined = true;
         if (reply.complete) this.entries.clear();
         for (const entry of reply.entries) this.apply(entry, false);

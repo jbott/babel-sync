@@ -21,6 +21,24 @@ defmodule BabelSyncWeb.DocChannelTest do
     update
   end
 
+  test "an editor reads but cannot change a text file among the plugins", %{vault: vault} do
+    editor = user()
+    {:ok, _} = Vaults.put_member(vault, editor, :editor)
+    readme = entry(vault, ".obsidian/plugins/calendar/README.md")
+    :ok = Sync.replace_text(readme.id, "as shipped")
+    {doc, text} = client_doc(7)
+
+    assert {:ok, %{writable: false} = reply, socket} = join_doc(editor, readme, doc)
+    :ok = Yex.apply_update(doc, Base.decode64!(reply.update))
+    Yex.Text.insert(text, 0, "changed ")
+
+    assert_reply push(socket, "update", {:binary, local_update(doc, reply)}), :error, %{
+      reason: "forbidden"
+    }
+
+    assert Sync.text(readme.id) == "as shipped"
+  end
+
   test "joining brings the client up to date", %{owner: owner, note: note} do
     {doc, text} = client_doc(1)
 

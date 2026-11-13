@@ -41,6 +41,7 @@ type Live = {
 };
 
 const DISK = Symbol("disk");
+const PLUGIN_CODE = /^\.obsidian\/plugins(\/|$)/i;
 const FETCHED = Symbol("fetched");
 const PREFETCH_BATCH = 100;
 const MAX_RESTING_SESSIONS = 16;
@@ -1191,6 +1192,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; progres
   }
 
   private ignored(path: string): boolean {
+    if (this.vault && !this.vault.admin && PLUGIN_CODE.test(path)) return true;
     return this.options.ignore?.(path) ?? false;
   }
 

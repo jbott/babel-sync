@@ -41,6 +41,7 @@ defmodule BabelSyncWeb.VaultChannel do
         name: vault.name,
         user: scope.user.name || scope.user.email,
         writable: Scope.authorize(scope, vault_id, :write) == :ok,
+        admin: Scope.authorize(scope, vault_id, :admin) == :ok,
         entries: Enum.map(entries, &EntryJSON.entry/1)
       }
 
@@ -84,7 +85,8 @@ defmodule BabelSyncWeb.VaultChannel do
   defp handle("create", %{"path" => path} = params, socket) when is_binary(path) do
     kind = kind(params["kind"]) || Vaults.Path.kind_for(path)
 
-    with {:ok, attrs} <- content_attrs(kind, params, socket),
+    with :ok <- may_write(socket, path),
+         {:ok, attrs} <- content_attrs(kind, params, socket),
          {:ok, entry} <- Vaults.create_entry(socket.assigns.vault_id, Map.put(attrs, :path, path)) do
       if kind == :doc and is_binary(params["text"]) do
         :ok = Sync.replace_text(entry.id, params["text"], Scope.author(socket.assigns.scope))
@@ -97,6 +99,8 @@ defmodule BabelSyncWeb.VaultChannel do
 
   defp handle("rename", %{"id" => id, "path" => path}, socket) when is_binary(path) do
     with {:ok, entry} <- fetch(id, socket),
+         :ok <- may_write(socket, entry.path),
+         :ok <- may_write(socket, path),
          {:ok, moved} <- Vaults.rename_entry(entry, path) do
       {:ok, %{entries: Enum.map(moved, &EntryJSON.entry/1)}}
     end
@@ -112,6 +116,7 @@ defmodule BabelSyncWeb.VaultChannel do
 
   defp handle("set_blob", %{"id" => id, "blob_hash" => hash} = params, socket) do
     with {:ok, %Entry{kind: :blob} = entry} <- fetch(id, socket),
+         :ok <- may_write(socket, entry.path),
          :ok <- expect_base(entry, params),
          {:ok, attrs} <- content_attrs(:blob, %{"blob_hash" => hash}, socket),
          {:ok, entry} <- Vaults.update_entry(entry, attrs) do
@@ -156,6 +161,10 @@ defmodule BabelSyncWeb.VaultChannel do
   end
 
   defp expect_unchanged(_entry, _params), do: :ok
+
+  defp may_write(socket, path) do
+    Scope.authorize_write(socket.assigns.scope, socket.assigns.vault_id, path)
+  end
 
   defp fetch(id, socket) do
     with {:ok, id} <- Ecto.UUID.cast(id),

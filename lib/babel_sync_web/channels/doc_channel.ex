@@ -29,10 +29,15 @@ defmodule BabelSyncWeb.DocChannel do
       reply = %{
         update: Base.encode64(missing),
         sv: Base.encode64(Sync.state_vector(entry_id)),
-        writable: Scope.authorize(scope, entry.vault_id, :write) == :ok
+        writable: Scope.authorize_write(scope, entry.vault_id, entry.path) == :ok
       }
 
-      {:ok, reply, assign(socket, entry_id: entry_id, vault_id: entry.vault_id)}
+      {:ok, reply,
+       assign(socket,
+         entry_id: entry_id,
+         vault_id: entry.vault_id,
+         needed: if(Vaults.Path.holds_code?(entry.path), do: :admin, else: :write)
+       )}
     else
       nil -> {:error, %{reason: "not_found"}}
       %Entry{deleted_at: nil} -> {:error, %{reason: "not_a_note"}}
@@ -43,9 +48,9 @@ defmodule BabelSyncWeb.DocChannel do
 
   @impl true
   def handle_in("update", {:binary, update}, socket) do
-    %{scope: scope, entry_id: entry_id, vault_id: vault_id} = socket.assigns
+    %{scope: scope, entry_id: entry_id, vault_id: vault_id, needed: needed} = socket.assigns
 
-    with :ok <- Scope.authorize(scope, vault_id, :write),
+    with :ok <- Scope.authorize(scope, vault_id, needed),
          :ok <- still_a_note(entry_id),
          :ok <- Sync.apply_update(entry_id, update, [origin: self()] ++ Scope.author(scope)) do
       {:reply, :ok, socket}
@@ -57,9 +62,9 @@ defmodule BabelSyncWeb.DocChannel do
   end
 
   def handle_in("flush", _payload, socket) do
-    %{scope: scope, entry_id: entry_id, vault_id: vault_id} = socket.assigns
+    %{scope: scope, entry_id: entry_id, vault_id: vault_id, needed: needed} = socket.assigns
 
-    with :ok <- Scope.authorize(scope, vault_id, :write),
+    with :ok <- Scope.authorize(scope, vault_id, needed),
          :ok <- still_a_note(entry_id) do
       :ok = Sync.flush(entry_id)
       {:reply, :ok, socket}

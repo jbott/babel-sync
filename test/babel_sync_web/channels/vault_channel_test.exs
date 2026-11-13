@@ -267,6 +267,40 @@ defmodule BabelSyncWeb.VaultChannelTest do
     assert Vaults.get_entry(foreign.id).deleted_at == nil
   end
 
+  test "only an owner may change the plugins Obsidian runs", %{owner: owner, vault: vault} do
+    editor = user()
+    {:ok, _} = Vaults.put_member(vault, editor, :editor)
+    code = entry(vault, ".obsidian/plugins/calendar/main.js", %{kind: :blob})
+    prepared = entry(vault, "Scratch/main.js", %{kind: :blob})
+    settings = entry(vault, ".obsidian/app.json", %{kind: :blob})
+    {:ok, blob} = Blobs.put(vault.id, "evil()")
+
+    {:ok, %{writable: true, admin: false}, socket} = join_vault(editor, vault)
+
+    refused = fn event, params ->
+      assert_reply push(socket, event, params), :error, %{reason: "forbidden"}
+    end
+
+    refused.("create", %{"path" => ".obsidian/plugins/evil/main.js", "blob_hash" => blob.hash})
+    refused.("create", %{"path" => ".Obsidian/Plugins/evil/notes.md", "text" => "x"})
+    refused.("set_blob", %{"id" => code.id, "blob_hash" => blob.hash})
+    refused.("rename", %{"id" => prepared.id, "path" => ".obsidian/plugins/calendar/main.js"})
+    refused.("rename", %{"id" => code.id, "path" => "elsewhere.js"})
+
+    folder = entry(vault, "Prepared", %{kind: :folder})
+    refused.("rename", %{"id" => folder.id, "path" => ".obsidian/plugins/prepared"})
+    refused.("rename", %{"id" => folder.id, "path" => ".obsidian"})
+
+    assert_reply push(socket, "set_blob", %{"id" => settings.id, "blob_hash" => blob.hash}),
+                 :ok,
+                 _
+
+    assert Vaults.get_entry(code.id).blob_hash == code.blob_hash
+
+    {:ok, %{admin: true}, owners} = join_vault(owner, vault)
+    assert_reply push(owners, "set_blob", %{"id" => code.id, "blob_hash" => blob.hash}), :ok, _
+  end
+
   test "a viewer's requests to change the tree are refused", %{vault: vault} do
     viewer = user()
     {:ok, _} = Vaults.put_member(vault, viewer, :viewer)

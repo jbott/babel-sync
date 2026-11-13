@@ -40,7 +40,10 @@ defmodule BabelSync.MCP.Reply do
     {:reply, Response.error(Response.tool(), message(reason)), frame}
   end
 
-  defp message(:forbidden), do: "This credential may not do that in this vault."
+  defp message(:forbidden) do
+    "This credential may not do that in this vault. Reading may be all it allows, " <>
+      "or the path is among the Obsidian plugins, which only an owner may change."
+  end
 
   defp message(:vault_not_found),
     do: "No such vault. Call list_vaults to see the vaults available."

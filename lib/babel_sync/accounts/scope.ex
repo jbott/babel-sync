@@ -41,6 +41,16 @@ defmodule BabelSync.Accounts.Scope do
   @spec author(t()) :: [author_id: Ecto.UUID.t(), author_app: String.t() | nil]
   def author(%__MODULE__{user: user, app: app}), do: [author_id: user.id, author_app: app]
 
+  @doc """
+  Whether the scope may write at a path. Anyone who may write to a vault
+  may write its notes; the plugins Obsidian runs on every member's
+  devices may only be changed by an owner.
+  """
+  @spec authorize_write(t(), Ecto.UUID.t(), String.t()) :: :ok | {:error, :forbidden}
+  def authorize_write(%__MODULE__{} = scope, vault_id, path) do
+    authorize(scope, vault_id, if(Vaults.Path.holds_code?(path), do: :admin, else: :write))
+  end
+
   @spec vaults(t()) :: [Vaults.Vault.t()]
   def vaults(%__MODULE__{user: user} = scope) do
     Enum.filter(Vaults.list_vaults(user), &reaches?(scope, &1.id))

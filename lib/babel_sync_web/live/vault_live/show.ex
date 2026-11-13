@@ -101,7 +101,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   def handle_event("create_note", %{"note" => %{"path" => path}}, socket) when is_binary(path) do
     path = if Path.extname(path) == "", do: path <> ".md", else: path
 
-    write(socket, fn ->
+    write(socket, [path], fn ->
       case Vaults.create_entry(socket.assigns.vault.id, %{path: path}) do
         {:ok, entry} -> {:noreply, open_created(socket, entry)}
         {:error, {:exists, entry}} -> {:noreply, open_created(socket, entry)}
@@ -168,9 +168,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   def handle_event("attach", %{"name" => name, "hash" => hash}, socket)
       when is_binary(name) and is_binary(hash) do
-    write(socket, fn ->
+    path = Path.join(current_folder(socket), Path.basename(name))
+
+    write(socket, [path], fn ->
       vault_id = socket.assigns.vault.id
-      path = Path.join(current_folder(socket), Path.basename(name))
 
       with %Blobs.Blob{size: size} <- Blobs.get(vault_id, hash),
            {:ok, entry} <- put_blob(vault_id, path, hash, size) do
@@ -208,7 +209,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         %{assigns: %{entry: %Entry{} = entry}} = socket
       )
       when is_binary(path) do
-    write(socket, fn ->
+    write(socket, [entry.path, path], fn ->
       case Vaults.rename_entry(entry, path) do
         {:ok, moved} ->
           renamed = Enum.find(moved, &(&1.id == entry.id))
@@ -285,7 +286,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         %{"id" => id},
         %{assigns: %{entry: %Entry{kind: :blob} = entry}} = socket
       ) do
-    write(socket, fn ->
+    write(socket, [entry.path], fn ->
       case Vaults.restore_blob_version(entry, version_id(id)) do
         {:ok, restored} ->
           {:noreply,
@@ -311,7 +312,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   def handle_event("restore", %{"id" => id}, %{assigns: %{entry: %Entry{} = entry}} = socket) do
-    write(socket, fn ->
+    write(socket, [entry.path], fn ->
       author = socket.assigns.current_scope.user.id
 
       case Sync.restore_version(entry.id, version_id(id), author_id: author) do
@@ -496,10 +497,20 @@ defmodule BabelSyncWeb.VaultLive.Show do
   defp version_id(sent) when is_integer(sent), do: sent
   defp version_id(_sent), do: 0
 
-  defp write(socket, fun) do
-    if socket.assigns.writable,
-      do: fun.(),
-      else: {:noreply, put_flash(socket, :error, "You can only read this vault.")}
+  defp write(socket, paths \\ [], fun) do
+    %{current_scope: scope, vault: vault, writable: writable} = socket.assigns
+
+    cond do
+      not writable ->
+        {:noreply, put_flash(socket, :error, "You can only read this vault.")}
+
+      Enum.all?(paths, &(Scope.authorize_write(scope, vault.id, &1) == :ok)) ->
+        fun.()
+
+      true ->
+        {:noreply,
+         put_flash(socket, :error, "Only an owner can change the vault's Obsidian plugins.")}
+    end
   end
 
   defp put_blob(vault_id, path, hash, size) do

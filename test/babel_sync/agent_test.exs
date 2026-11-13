@@ -83,6 +83,29 @@ defmodule BabelSync.AgentTest do
       assert {:ok, %{outcome: :created}} = Agent.write_file(scope, nil, ".obsidian/x.md", "x")
       assert {:ok, [".obsidian/x.md"]} = Agent.delete_file(scope, nil, ".obsidian/x.md")
     end
+
+    test "keeps its plugins for the owner even when it is open", %{scope: scope, vault: vault} do
+      {:ok, _vault} = Vaults.update_vault(vault, %{agents_see_config: true})
+      editor = user()
+      {:ok, _} = Vaults.put_member(vault, editor, :editor)
+      as_editor = BabelSync.Accounts.Scope.for_user(editor)
+      code = ".obsidian/plugins/calendar/notes.md"
+
+      assert {:ok, %{outcome: :created}} = Agent.write_file(scope, vault.id, code, "as shipped")
+      assert {:ok, _read} = Agent.read_file(as_editor, vault.id, code)
+
+      assert {:error, :forbidden} =
+               Agent.write_file(as_editor, vault.id, code, "changed", overwrite: true)
+
+      assert {:error, :forbidden} = Agent.append_file(as_editor, vault.id, code, "more")
+      assert {:error, :forbidden} = Agent.move_file(as_editor, vault.id, "note.md", code <> "x")
+      assert {:error, :forbidden} = Agent.move_file(as_editor, vault.id, ".obsidian", "moved")
+
+      assert {:ok, %{outcome: :created}} =
+               Agent.write_file(as_editor, vault.id, ".obsidian/y.md", "y")
+
+      assert Sync.text(Vaults.get_entry_by_path(vault.id, code).id) == "as shipped"
+    end
   end
 
   describe "looking around" do

@@ -34,6 +34,21 @@ defmodule BabelSync.Vaults.Path do
       Enum.all?(segments, &(&1 not in ["", ".", ".."]))
   end
 
+  @doc """
+  Whether writing at the path could change the code Obsidian runs:
+  the plugins folder, anything in it, or a folder above it, which a
+  rename would carry the plugins along with.
+  """
+  @spec holds_code?(String.t()) :: boolean()
+  def holds_code?(path) do
+    case fold(path) do
+      ".obsidian" -> true
+      ".obsidian/plugins" -> true
+      ".obsidian/plugins/" <> _inside -> true
+      _elsewhere -> false
+    end
+  end
+
   @spec markdown?(String.t()) :: boolean()
   def markdown?(path), do: String.downcase(Path.extname(path)) in @markdown_extensions
 

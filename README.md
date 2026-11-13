@@ -104,7 +104,7 @@ The same can be done by hand in Settings › Babel Sync, which shows the next st
 
 A release built with Nix or `mix assets.deploy` includes the plugin. In development, `mix plugin.build` (part of `mix assets.build`) builds it into `priv/plugin`.
 
-Notes sync as you type. Themes, snippets, hotkeys and plugins under `.obsidian` sync too (this can be turned off); window layout stays per device. On mobile, attachments over 50 MiB are left on the server by default.
+Notes sync as you type. Themes, snippets, hotkeys and plugins under `.obsidian` sync too (this can be turned off); window layout stays per device. In a shared vault only an owner can change `.obsidian/plugins`, since a plugin is code that would run on every member's devices: an owner's plugins sync between the owner's own devices, and other members install their own. On mobile, attachments over 50 MiB are left on the server by default.
 
 ## Agents (MCP)
 
@@ -112,7 +112,7 @@ Add `$BABELSYNC_URL/mcp` to an MCP client as a Streamable HTTP server. The clien
 
 Apps register themselves without signing in, so registration is bounded: a redirect address is at most 2000 bytes and must be `https`, loopback `http` or an app scheme such as `obsidian://`; one address may register 30 apps an hour; and a registration nobody approves is forgotten after a day.
 
-Agents cannot see or change the `.obsidian` folder, which holds the plugins Obsidian runs. An owner can open it to agents per vault, in the vault's settings.
+Agents cannot see or change the `.obsidian` folder, which holds the plugins Obsidian runs. An owner can open it to agents per vault, in the vault's settings. Even then, the plugins themselves can only be changed by an agent acting for an owner.
 
 Any file that holds text can be read, searched, edited and written by an agent, whatever its extension. Markdown, `.txt`, `.base` and `.canvas` files are notes, merged character by character with what people type; other text files such as `.csv` or `.json` are edited by an agent in the same way, passage by passage, but are stored as attachments, so a change made by a person at the same moment is not merged with the agent's. Images are shown to the agent. An agent without a shell can still move any file of up to 8 MiB: `write_file` takes its bytes as base64, and `read_file` with `encoding: "base64"` returns them.
 

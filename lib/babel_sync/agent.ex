@@ -229,7 +229,7 @@ defmodule BabelSync.Agent do
     replace = fn _current -> {:ok, content} end
 
     with {:ok, vault} <- vault(scope, vault, :write),
-         :ok <- reachable(vault, path) do
+         :ok <- writable(scope, vault, path) do
       case Vaults.get_entry_by_path(vault.id, path) do
         %Entry{kind: :folder} ->
           {:error, :not_a_note}
@@ -273,7 +273,7 @@ defmodule BabelSync.Agent do
     note? = Vaults.Path.kind_for(path) == :doc
 
     with {:ok, vault} <- vault(scope, vault, :write),
-         :ok <- reachable(vault, path),
+         :ok <- writable(scope, vault, path),
          true <- Vaults.Path.valid?(path) || {:error, :invalid_path},
          true <- (is_integer(size) and size >= 0) || {:error, :invalid_size},
          :ok <- storable(size, note?),
@@ -385,7 +385,7 @@ defmodule BabelSync.Agent do
           {:ok, map()} | error()
   def write_binary(scope, vault, path, encoded, opts \\ []) do
     with {:ok, vault} <- vault(scope, vault, :write),
-         :ok <- reachable(vault, path),
+         :ok <- writable(scope, vault, path),
          :ok <- attachment_path(path),
          {:ok, bytes} <- decoded(encoded) do
       overwrite? = opts[:overwrite] == true
@@ -432,7 +432,7 @@ defmodule BabelSync.Agent do
     heading = opts[:heading]
 
     with {:ok, vault} <- vault(scope, vault, :write),
-         :ok <- reachable(vault, path) do
+         :ok <- writable(scope, vault, path) do
       case Vaults.get_entry_by_path(vault.id, path) do
         %Entry{kind: :folder} ->
           {:error, :not_a_note}
@@ -452,7 +452,7 @@ defmodule BabelSync.Agent do
   @spec create_directory(Scope.t(), vault_reference(), String.t()) :: {:ok, String.t()} | error()
   def create_directory(scope, vault, path) do
     with {:ok, vault} <- vault(scope, vault, :write),
-         :ok <- reachable(vault, path) do
+         :ok <- writable(scope, vault, path) do
       case Vaults.create_entry(vault.id, %{path: path, kind: :folder}) do
         {:ok, folder} -> {:ok, folder.path}
         {:error, {:exists, %Entry{kind: :folder} = folder}} -> {:ok, folder.path}
@@ -469,8 +469,8 @@ defmodule BabelSync.Agent do
     to = Vaults.Path.normalize(to)
 
     with {:ok, vault} <- vault(scope, vault, :write),
-         :ok <- reachable(vault, from),
-         :ok <- reachable(vault, to),
+         :ok <- writable(scope, vault, from),
+         :ok <- writable(scope, vault, to),
          {:ok, moving} <- named(vault, from),
          :ok <- move_each(moving, from, to) do
       {:ok, to}
@@ -508,7 +508,7 @@ defmodule BabelSync.Agent do
     path = Vaults.Path.normalize(path)
 
     with {:ok, vault} <- vault(scope, vault, :write),
-         :ok <- reachable(vault, path),
+         :ok <- writable(scope, vault, path),
          %Entry{} = trashed <- Enum.find(Vaults.list_trash(vault.id), &(&1.path == path)),
          {:ok, restored} <- Vaults.restore_entry(trashed) do
       {:ok, restored.path}
@@ -620,6 +620,10 @@ defmodule BabelSync.Agent do
 
   defp reachable(vault, path),
     do: if(hidden?(vault, path), do: {:error, :off_limits}, else: :ok)
+
+  defp writable(scope, vault, path) do
+    with :ok <- reachable(vault, path), do: Scope.authorize_write(scope, vault.id, path)
+  end
 
   defp hidden?(%Vault{agents_see_config: true}, _path), do: false
 
@@ -926,19 +930,21 @@ defmodule BabelSync.Agent do
     end
   end
 
-  defp rewrite(%Scope{}, %Entry{kind: :blob} = entry, if_rev, change) do
-    with {:ok, old} <- content(entry),
+  defp rewrite(%Scope{} = scope, %Entry{kind: :blob} = entry, if_rev, change) do
+    with :ok <- Scope.authorize_write(scope, entry.vault_id, entry.path),
+         {:ok, old} <- content(entry),
          {:ok, new} <- guarded(if_rev, change).(old),
          :ok <- store(entry, new) do
       {:ok, old, new}
     end
   end
 
-  defp rewrite(%Scope{} = scope, %Entry{id: id}, if_rev, change) do
+  defp rewrite(%Scope{} = scope, %Entry{id: id} = entry, if_rev, change) do
     guarded = guarded(if_rev, change)
     by = Keyword.put(Scope.author(scope), :origin, :agent)
 
-    with {:ok, old, new} <- Sync.rewrite_text(id, guarded, by),
+    with :ok <- Scope.authorize_write(scope, entry.vault_id, entry.path),
+         {:ok, old, new} <- Sync.rewrite_text(id, guarded, by),
          :ok <- Sync.flush(id) do
       {:ok, old, new}
     end
