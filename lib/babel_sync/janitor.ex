@@ -8,6 +8,9 @@ defmodule BabelSync.Janitor do
   one or a kept version. Uploads that were never finished and expired
   sign-in artifacts go regardless of the retention setting. Attachments
   that have since been recognised as text become notes.
+
+  Each kind of cleanup runs on its own, so one that fails is logged and
+  tried again next time without holding up the rest.
   """
 
   use GenServer
@@ -24,31 +27,47 @@ defmodule BabelSync.Janitor do
 
   @spec run(DateTime.t()) :: :ok
   def run(now \\ DateTime.utc_now()) do
+    recent = DateTime.add(now, -@grace, :second)
+    signed_in = DateTime.add(now, -BabelSync.Auth.session_lifetime(), :second)
+
+    Enum.each(
+      expiry(now) ++
+        [
+          text_files: &Vaults.TextFiles.promote/0,
+          attachments: fn -> Blobs.collect_garbage(recent) end,
+          uploads: fn -> Blobs.abandon_stale_uploads(recent) end,
+          grants: fn -> OAuth.prune(now) end,
+          sessions: fn -> BabelSync.Accounts.Sessions.prune(signed_in) end,
+          sign_in_links: fn -> MagicLink.prune(now) end,
+          transfers: fn -> BabelSync.Transfers.prune(now) end
+        ],
+      &attempt/1
+    )
+  end
+
+  defp expiry(now) do
     case config(:retention_days) do
       days when is_integer(days) and days > 0 ->
         cutoff = DateTime.add(now, -days * @day, :second)
-        _pruned = Sync.Store.prune_versions(cutoff)
-        :ok = Vaults.prune_blob_versions(cutoff)
-        :ok = Vaults.purge_trash(cutoff)
+
+        [
+          note_versions: fn -> Sync.Store.prune_versions(cutoff) end,
+          attachment_versions: fn -> Vaults.prune_blob_versions(cutoff) end,
+          trash: fn -> Vaults.purge_trash(cutoff) end
+        ]
 
       _keep_forever ->
-        :ok
+        []
     end
+  end
 
-    _promoted = Vaults.TextFiles.promote()
-
-    recent = DateTime.add(now, -@grace, :second)
-    _collected = Blobs.collect_garbage(recent)
-    _abandoned = Blobs.abandon_stale_uploads(recent)
-    :ok = OAuth.prune(now)
-
-    :ok =
-      BabelSync.Accounts.Sessions.prune(
-        DateTime.add(now, -BabelSync.Auth.session_lifetime(), :second)
+  defp attempt({step, clean}) do
+    clean.()
+  rescue
+    error ->
+      Logger.error(
+        "cleanup of #{step} failed: " <> Exception.format(:error, error, __STACKTRACE__)
       )
-
-    :ok = MagicLink.prune(now)
-    :ok = BabelSync.Transfers.prune(now)
   end
 
   @impl true
@@ -59,12 +78,7 @@ defmodule BabelSync.Janitor do
 
   @impl true
   def handle_info(:run, state) do
-    try do
-      run()
-    rescue
-      error -> Logger.error("cleanup failed: " <> Exception.format(:error, error, __STACKTRACE__))
-    end
-
+    run()
     schedule(config(:interval))
     {:noreply, state}
   end

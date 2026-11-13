@@ -15,6 +15,8 @@ defmodule BabelSync.Vaults do
 
   @type access :: :read | :write | :admin
 
+  @purged_together 500
+
   @spec create_vault(User.t(), map()) :: {:ok, Vault.t()} | {:error, Ecto.Changeset.t()}
   def create_vault(%User{} = user, attrs) do
     Repo.transact(fn ->
@@ -331,8 +333,11 @@ defmodule BabelSync.Vaults do
         )
       end
 
-      ids = Enum.map(doomed, &elem(&1, 0))
-      Repo.delete_all(from e in Entry, where: e.id in ^ids)
+      doomed
+      |> Enum.map(&elem(&1, 0))
+      |> Enum.chunk_every(@purged_together)
+      |> Enum.each(&Repo.delete_all(from e in Entry, where: e.id in ^&1))
+
       {:ok, :purged}
     end)
 
