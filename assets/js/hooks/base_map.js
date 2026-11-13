@@ -4,6 +4,7 @@ const WORKER_URL = "/assets/js/maplibre-worker.js";
 const STYLES = { light: "https://tiles.openfreemap.org/styles/bright", dark: "https://tiles.openfreemap.org/styles/dark" };
 const DEFAULT_COLOR = "var(--accent)";
 const SOURCE = "places";
+const LABEL_FONT = "Noto Sans Regular";
 
 const dark = () =>
   document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
@@ -28,6 +29,28 @@ function resolveColor(color, cache) {
   probe.remove();
   cache.set(color, resolved);
   return resolved;
+}
+
+const PIN_SCALE = 2;
+
+function pinImage(color) {
+  const size = 20 * PIN_SCALE;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext("2d");
+  const centre = size / 2;
+  context.beginPath();
+  context.arc(centre, centre, 8 * PIN_SCALE, 0, Math.PI * 2);
+  context.fillStyle = color;
+  context.fill();
+  context.lineWidth = 1.5 * PIN_SCALE;
+  context.strokeStyle = "rgba(255, 255, 255, 0.9)";
+  context.stroke();
+  context.beginPath();
+  context.arc(centre, centre, 2.5 * PIN_SCALE, 0, Math.PI * 2);
+  context.fillStyle = "#ffffff";
+  context.fill();
+  return context.getImageData(0, 0, size, size);
 }
 
 function piece(part) {
@@ -99,6 +122,9 @@ export const BaseMap = {
     this.bindPopupHover();
 
     this.map.on("style.load", () => this.drawLayers());
+    this.map.setMissingStyleImageResolver(async (id) => {
+      if (id.startsWith("pin:") && !this.map.hasImage(id)) this.map.addImage(id, pinImage(id.slice(4)), { pixelRatio: PIN_SCALE });
+    });
     this.map.once("load", () => this.frame());
 
     this.theme = new MutationObserver(() => {
@@ -137,7 +163,7 @@ export const BaseMap = {
         type: "Feature",
         id: index,
         geometry: { type: "Point", coordinates: [place.longitude, place.latitude] },
-        properties: { index, color: resolveColor(place.color || DEFAULT_COLOR, this.colors) },
+        properties: { index, title: place.title, pin: `pin:${resolveColor(place.color || DEFAULT_COLOR, this.colors)}` },
       })),
     };
   },
@@ -146,15 +172,29 @@ export const BaseMap = {
     this.map.addSource(SOURCE, { type: "geojson", data: this.features() });
     this.map.addLayer({
       id: "place-pins",
-      type: "circle",
+      type: "symbol",
       source: SOURCE,
-      paint: { "circle-radius": 8, "circle-color": ["get", "color"], "circle-stroke-width": 1.5, "circle-stroke-color": "rgba(255, 255, 255, 0.9)" },
+      layout: { "icon-image": ["get", "pin"], "icon-allow-overlap": true, "icon-padding": 0 },
     });
     this.map.addLayer({
-      id: "place-dots",
-      type: "circle",
+      id: "place-labels",
+      type: "symbol",
       source: SOURCE,
-      paint: { "circle-radius": 2.5, "circle-color": "#ffffff" },
+      layout: {
+        "text-field": ["get", "title"],
+        "text-font": [LABEL_FONT],
+        "text-size": 12,
+        "text-max-width": 9,
+        "text-variable-anchor": ["bottom", "top", "left", "right"],
+        "text-radial-offset": 1.15,
+        "text-justify": "auto",
+        "text-padding": 3,
+      },
+      paint: {
+        "text-color": dark() ? "#ececec" : "#1f2328",
+        "text-halo-color": dark() ? "rgba(20, 20, 20, 0.9)" : "rgba(255, 255, 255, 0.92)",
+        "text-halo-width": 1.5,
+      },
     });
     if (this.layersBound) return;
     this.layersBound = true;
