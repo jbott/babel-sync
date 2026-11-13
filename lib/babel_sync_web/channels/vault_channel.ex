@@ -86,6 +86,8 @@ defmodule BabelSyncWeb.VaultChannel do
     {:noreply, socket}
   end
 
+  def handle_info(:vault_deleted, socket), do: {:stop, :normal, socket}
+
   defp handle("create", %{"path" => path} = params, socket) when is_binary(path) do
     kind = kind(params["kind"]) || Vaults.Path.kind_for(path)
 

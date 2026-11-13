@@ -118,6 +118,22 @@ defmodule BabelSyncWeb.DocChannelTest do
     assert Sync.text(ctx.note.id) == "server text"
   end
 
+  test "a restored note takes edits again, and a deleted vault ends the channel", ctx do
+    {doc, text} = client_doc(1)
+    {:ok, reply, socket} = join_doc(ctx.owner, ctx.note, doc)
+    :ok = Yex.apply_update(doc, Base.decode64!(reply.update))
+    {:ok, [deleted]} = Vaults.delete_entry(ctx.note)
+    {:ok, _restored} = Vaults.restore_entry(deleted)
+    Yex.Text.insert(text, 0, "x")
+
+    assert_reply push(socket, "update", {:binary, local_update(doc, reply)}), :ok
+
+    ref = Process.monitor(socket.channel_pid)
+    Process.unlink(socket.channel_pid)
+    {:ok, _vault} = Vaults.delete_vault(ctx.vault)
+    assert_receive {:DOWN, ^ref, :process, _pid, _reason}
+  end
+
   test "a client can ask for its edits to be announced to the vault now", ctx do
     {doc, text} = client_doc(1)
     {:ok, reply, socket} = join_doc(ctx.owner, ctx.note, doc)

@@ -70,6 +70,8 @@ defmodule BabelSyncWeb.VaultLive.Trash do
   @impl true
   def handle_info({:entry_changed, %Entry{}}, socket), do: {:noreply, load(socket)}
 
+  def handle_info(:vault_deleted, socket), do: {:noreply, push_navigate(socket, to: ~p"/")}
+
   defp retention_days do
     case Application.fetch_env!(:babel_sync, BabelSync.Janitor)[:retention_days] do
       days when is_integer(days) and days > 0 -> days

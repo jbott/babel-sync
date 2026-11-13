@@ -2,6 +2,10 @@ defmodule BabelSyncWeb.DocChannel do
   @moduledoc """
   Live editing of one note.
 
+  Whether the person may write is settled when they join: a change of
+  their role disconnects their sockets, and the note being renamed,
+  deleted or restored arrives as it happens, so no frame needs a query.
+
   The client joins with its Yjs state vector and receives what it is
   missing together with the server's state vector, from which it sends
   back what the server is missing. After that both sides exchange updates
@@ -26,19 +30,18 @@ defmodule BabelSyncWeb.DocChannel do
          %Entry{kind: :doc, deleted_at: nil} <- entry,
          {:ok, client_vector} <- decode_vector(params["sv"]),
          :ok = Sync.subscribe(entry_id),
+         :ok = Vaults.subscribe(entry.vault_id),
          {:ok, missing} <- Sync.diff(entry_id, client_vector) do
+      may = Map.new([:write, :admin], &{&1, Scope.authorize(scope, entry.vault_id, &1) == :ok})
+      needed = needed(entry)
+
       reply = %{
         update: Base.encode64(missing),
         sv: Base.encode64(Sync.state_vector(entry_id)),
-        writable: Scope.authorize_write(scope, entry.vault_id, entry.path) == :ok
+        writable: may[needed]
       }
 
-      {:ok, reply,
-       assign(socket,
-         entry_id: entry_id,
-         vault_id: entry.vault_id,
-         needed: if(Vaults.Path.holds_code?(entry.path), do: :admin, else: :write)
-       )}
+      {:ok, reply, assign(socket, entry_id: entry_id, may: may, needed: needed, live: true)}
     else
       {:error, :upgrade} -> {:error, BabelSyncWeb.Protocol.refusal()}
       nil -> {:error, %{reason: "not_found"}}
@@ -50,10 +53,9 @@ defmodule BabelSyncWeb.DocChannel do
 
   @impl true
   def handle_in("update", {:binary, update}, socket) do
-    %{scope: scope, entry_id: entry_id, vault_id: vault_id, needed: needed} = socket.assigns
+    %{scope: scope, entry_id: entry_id} = socket.assigns
 
-    with :ok <- Scope.authorize(scope, vault_id, needed),
-         :ok <- still_a_note(entry_id),
+    with :ok <- writable(socket),
          :ok <- Sync.apply_update(entry_id, update, [origin: self()] ++ Scope.author(scope)) do
       {:reply, :ok, socket}
     else
@@ -64,14 +66,13 @@ defmodule BabelSyncWeb.DocChannel do
   end
 
   def handle_in("flush", _payload, socket) do
-    %{scope: scope, entry_id: entry_id, vault_id: vault_id, needed: needed} = socket.assigns
+    case writable(socket) do
+      :ok ->
+        :ok = Sync.flush(socket.assigns.entry_id)
+        {:reply, :ok, socket}
 
-    with :ok <- Scope.authorize(scope, vault_id, needed),
-         :ok <- still_a_note(entry_id) do
-      :ok = Sync.flush(entry_id)
-      {:reply, :ok, socket}
-    else
-      {:error, reason} -> {:reply, {:error, %{reason: Atom.to_string(reason)}}, socket}
+      {:error, reason} ->
+        {:reply, {:error, %{reason: Atom.to_string(reason)}}, socket}
     end
   end
 
@@ -100,16 +101,26 @@ defmodule BabelSyncWeb.DocChannel do
     {:noreply, socket}
   end
 
+  def handle_info({:entry_changed, %Entry{id: id} = entry}, %{assigns: %{entry_id: id}} = socket) do
+    {:noreply, assign(socket, needed: needed(entry), live: entry.deleted_at == nil)}
+  end
+
+  def handle_info({:entry_changed, _another}, socket), do: {:noreply, socket}
+  def handle_info(:vault_deleted, socket), do: {:stop, :normal, socket}
+
   def handle_info({:awareness, state}, socket) do
     push(socket, "awareness", {:binary, state})
     {:noreply, socket}
   end
 
-  defp still_a_note(entry_id) do
-    case Vaults.get_entry(entry_id) do
-      %Entry{deleted_at: nil} -> :ok
-      _deleted -> {:error, :not_found}
-    end
+  defp writable(%{assigns: %{live: false}}), do: {:error, :not_found}
+
+  defp writable(%{assigns: %{may: may, needed: needed}}) do
+    if may[needed], do: :ok, else: {:error, :forbidden}
+  end
+
+  defp needed(%Entry{path: path}) do
+    if Vaults.Path.holds_code?(path), do: :admin, else: :write
   end
 
   defp decode_vector(nil), do: {:ok, nil}

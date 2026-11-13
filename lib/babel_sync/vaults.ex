@@ -112,6 +112,7 @@ defmodule BabelSync.Vaults do
     stored = BabelSync.Blobs.stored(vault.id)
 
     with {:ok, deleted} <- Repo.delete(vault) do
+      Phoenix.PubSub.broadcast(BabelSync.PubSub, topic(vault.id), :vault_deleted)
       BabelSync.Blobs.discard(stored)
       {:ok, deleted}
     end

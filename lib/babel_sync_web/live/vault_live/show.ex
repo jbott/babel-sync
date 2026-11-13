@@ -409,6 +409,8 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   def handle_info({:awareness, _state}, socket), do: {:noreply, socket}
 
+  def handle_info(:vault_deleted, socket), do: {:noreply, push_navigate(socket, to: ~p"/")}
+
   defp entry_changed(changed, socket) do
     known =
       if changed.deleted_at,
