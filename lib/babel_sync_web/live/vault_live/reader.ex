@@ -7,6 +7,7 @@ defmodule BabelSyncWeb.VaultLive.Reader do
 
   use BabelSyncWeb, :html
 
+  alias BabelSync.Vaults
   alias BabelSync.Vaults.Entry
   alias BabelSyncWeb.Paths
 
@@ -87,6 +88,13 @@ defmodule BabelSyncWeb.VaultLive.Reader do
           class={mode_class(@mode == :read)}
         >Read</button>
       </div>
+      <.icon_button
+        :if={@entry.kind == :doc and Vaults.Path.markdown?(@entry.path)}
+        id="details-button"
+        phx-click="details"
+        icon="hero-list-bullet"
+        label="Outline and links"
+      />
       <.icon_button
         :if={@entry.kind in [:doc, :blob]}
         id="history-button"

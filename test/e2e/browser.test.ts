@@ -270,6 +270,10 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     await waitForText(two, "#finder-results", "after the move");
     await two.keyboard.press("Escape");
     await two.waitForFunction(() => document.querySelector("#finder-dialog") === null);
+    await two.locator("#details-button").click();
+    await two.waitForSelector("#details #linked-none, #details #linked-from");
+    await two.locator("#close-details").click();
+    await two.waitForFunction(() => document.querySelector("#details") === null);
     await two.goto(`${baseUrl}/v/${vaultId}`);
     await two.waitForSelector("#empty");
 

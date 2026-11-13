@@ -5,7 +5,16 @@ defmodule BabelSyncWeb.VaultLive.Show do
   alias BabelSync.{Agent, Auth, Blobs, Canvas, History, Markdown, Sync, Vaults}
   alias BabelSync.Vaults.Entry
   alias BabelSyncWeb.Paths
-  alias BabelSyncWeb.VaultLive.{BaseView, Finder, HistoryPanel, Reader, Sidebar, Tree}
+
+  alias BabelSyncWeb.VaultLive.{
+    BaseView,
+    DetailsPanel,
+    Finder,
+    HistoryPanel,
+    Reader,
+    Sidebar,
+    Tree
+  }
 
   @preview_delay 250
   @tree_delay 150
@@ -45,6 +54,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
        |> assign(:tree_stale, false)
        |> assign(:open_folders, MapSet.new())
        |> assign(:finder, nil)
+       |> assign(:details, nil)
        |> assign(:new_form, to_form(%{"path" => ""}, as: :note))
        |> assign(:notes_created, 0)
        |> assign(:rename_form, nil)
@@ -222,11 +232,35 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   def handle_event("history", _params, %{assigns: %{entry: %Entry{kind: :doc} = entry}} = socket) do
-    {:noreply, socket |> assign(:versions, History.versions(entry.id)) |> assign(:version, nil)}
+    {:noreply,
+     socket
+     |> close_details()
+     |> assign(:versions, History.versions(entry.id))
+     |> assign(:version, nil)}
   end
 
   def handle_event("history", _params, %{assigns: %{entry: %Entry{kind: :blob} = entry}} = socket) do
     {:noreply, assign(socket, :blob_versions, Vaults.list_blob_versions(entry.id))}
+  end
+
+  def handle_event("details", _params, %{assigns: %{details: %{}}} = socket) do
+    {:noreply, close_details(socket)}
+  end
+
+  def handle_event("details", _params, %{assigns: %{entry: %Entry{kind: :doc}}} = socket) do
+    {:noreply,
+     socket
+     |> assign(:versions, nil)
+     |> assign(:version, nil)
+     |> assign(:details, %{headings: [], linked_from: :looking})
+     |> show_details()}
+  end
+
+  def handle_event("close_details", _params, socket), do: {:noreply, close_details(socket)}
+
+  def handle_event("reveal", %{"line" => line}, %{assigns: %{mode: :edit}} = socket)
+      when is_integer(line) do
+    {:noreply, push_event(socket, "reveal-line", %{line: line})}
   end
 
   def handle_event("close_history", _params, socket) do
@@ -317,6 +351,18 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   def handle_async(:search, {:exit, _reason}, socket), do: {:noreply, socket}
 
+  def handle_async(:linked_from, {:ok, {entry_id, notes}}, socket) do
+    case socket.assigns do
+      %{entry: %Entry{id: ^entry_id}, details: %{} = details} ->
+        {:noreply, assign(socket, :details, %{details | linked_from: notes})}
+
+      _moved_on_or_closed ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_async(:linked_from, {:exit, _reason}, socket), do: {:noreply, socket}
+
   @impl true
   def handle_info({:entry_changed, %Entry{} = changed}, socket) do
     if Map.get(socket.assigns.latest, changed.id, -1) >= changed.seq,
@@ -334,7 +380,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   def handle_info(:render_preview, socket) do
-    {:noreply, socket |> assign(:preview_timer, nil) |> render_preview()}
+    {:noreply, socket |> assign(:preview_timer, nil) |> render_preview() |> outline()}
   end
 
   def handle_info(:list_entries, socket) do
@@ -380,6 +426,33 @@ defmodule BabelSyncWeb.VaultLive.Show do
       assign(socket, :preview_timer, Process.send_after(self(), :render_preview, @preview_delay))
 
   defp rerun_base(socket), do: socket
+
+  defp close_details(%{assigns: %{details: nil}} = socket), do: socket
+  defp close_details(socket), do: socket |> cancel_async(:linked_from) |> assign(:details, nil)
+
+  defp show_details(%{assigns: %{details: %{}, entry: %Entry{kind: :doc} = entry}} = socket) do
+    if Vaults.Path.markdown?(entry.path) do
+      entries = socket.assigns.entries
+
+      socket
+      |> assign(:details, DetailsPanel.open(Sync.text(entry.id)))
+      |> cancel_async(:linked_from)
+      |> start_async(:linked_from, fn -> {entry.id, DetailsPanel.linked_from(entry, entries)} end)
+    else
+      close_details(socket)
+    end
+  end
+
+  defp show_details(socket), do: close_details(socket)
+
+  defp outline(%{assigns: %{details: %{} = details, entry: %Entry{kind: :doc} = entry}} = socket) do
+    assign(socket, :details, %{
+      details
+      | headings: DetailsPanel.open(Sync.text(entry.id)).headings
+    })
+  end
+
+  defp outline(socket), do: socket
 
   defp close_finder(%{assigns: %{finder: nil}} = socket), do: socket
   defp close_finder(socket), do: socket |> cancel_async(:search) |> assign(:finder, nil)
@@ -460,7 +533,12 @@ defmodule BabelSyncWeb.VaultLive.Show do
     |> assign(:rename_form, nil)
     |> assign(:base_view, nil)
     |> render_preview()
+    |> show_details_for(previous, entry)
   end
+
+  defp show_details_for(socket, %Entry{id: id}, %Entry{id: id}), do: socket
+  defp show_details_for(%{assigns: %{details: nil}} = socket, _previous, _entry), do: socket
+  defp show_details_for(socket, _previous, _entry), do: show_details(socket)
 
   defp opening_mode(socket, %Entry{id: id}, %Entry{id: id}), do: socket.assigns.mode
 
@@ -601,6 +679,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
           against={@against}
           writable={@writable}
         />
+        <DetailsPanel.details details={@details} entry={@entry} />
         <Finder.finder finder={@finder} />
         <HistoryPanel.attachment_history
           blob_versions={@blob_versions}

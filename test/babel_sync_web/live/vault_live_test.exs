@@ -64,6 +64,48 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
   end
 
+  describe "outline and links" do
+    test "a note's headings and the notes that link to it are shown beside it", %{
+      conn: conn,
+      vault: vault
+    } do
+      plan = entry(vault, "Trips/Lisbon plan.md")
+      packing = entry(vault, "Trips/packing.md")
+      soup = entry(vault, "Recipes/soup.md")
+      :ok = BabelSync.Sync.replace_text(plan.id, "# Lisbon\n\nText.\n\n## Day one\n")
+      :ok = BabelSync.Sync.replace_text(packing.id, "For the [[Lisbon plan|trip]].\n")
+      :ok = BabelSync.Sync.replace_text(soup.id, "No links, but see [[packing]].\n")
+      for note <- [plan, packing, soup], do: :ok = BabelSync.Sync.flush(note.id)
+
+      {:ok, view, _html} = live(conn, Paths.entry(plan))
+      refute has_element?(view, "#details")
+
+      view |> element("#details-button") |> render_click()
+      assert has_element?(view, "#outline a[href='#md-h-lisbon']", "Lisbon")
+      assert has_element?(view, "#outline a", "Day one")
+
+      render_async(view)
+      assert has_element?(view, "#linked-from-#{packing.id}", "packing")
+      refute has_element?(view, "#linked-from-#{soup.id}")
+
+      view |> element("#linked-from-#{packing.id}") |> render_click()
+      assert_patch view, Paths.entry(packing)
+      assert has_element?(view, "#outline-empty")
+      render_async(view)
+      assert has_element?(view, "#linked-from-#{soup.id}")
+
+      view |> element("#history-button") |> render_click()
+      refute has_element?(view, "#details")
+
+      view |> element("#details-button") |> render_click()
+      assert has_element?(view, "#details")
+      refute has_element?(view, "#history")
+      render_async(view)
+      view |> element("#close-details") |> render_click()
+      refute has_element?(view, "#details")
+    end
+  end
+
   describe "finding" do
     test "files are found by name, best match first, and notes by their text", %{
       conn: conn,

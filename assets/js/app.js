@@ -49,6 +49,11 @@ window.addEventListener("phx:assets-changed", async () => {
   window.location.reload();
 });
 
+window.addEventListener("babelsync:close-on-phone", ({ target }) => {
+  if (matchMedia("(min-width: 768px)").matches) return;
+  liveSocket.execJS(target, target.getAttribute("data-close"));
+});
+
 window.addEventListener("beforeunload", (event) => {
   if (anyNoteUnsent()) event.preventDefault();
 });

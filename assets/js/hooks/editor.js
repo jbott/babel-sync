@@ -140,6 +140,12 @@ export const Editor = {
 
     this.session = openNote(token, entryId);
     this.showStatus();
+    this.handleEvent("reveal-line", ({ line }) => {
+      if (!this.view || line < 1 || line > this.view.state.doc.lines) return;
+      const at = this.view.state.doc.line(line).from;
+      this.view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 24 }) });
+      this.view.focus();
+    });
     this.session.awareness.setLocalStateField("user", {
       name: userName,
       color: userColor,
