@@ -22,6 +22,7 @@ defmodule BabelSyncWeb.AuthLive.Account do
        Enum.find(vaults, &(&1.id == params["from"])) || List.first(vaults)
      )
      |> assign(:no_vaults?, vaults == [])
+     |> assign(:vault_names, Map.new(vaults, &{&1.id, &1.name}))
      |> assign(:multi?, multi?)
      |> assign(:passkeys?, Auth.enabled?(:passkey))
      |> assign(:signed_in?, not Auth.open?())
@@ -40,6 +41,13 @@ defmodule BabelSyncWeb.AuthLive.Account do
     case Enum.find(vaults, &(&1.id == from)) do
       nil -> %{to: ~p"/", label: "Back to notes"}
       vault -> %{to: Paths.vault(vault.id), label: "Back to #{vault.name}"}
+    end
+  end
+
+  defp reach(vault_ids, names) do
+    case for id <- vault_ids, name = names[id], do: name do
+      [] -> "no vault you can open"
+      found -> Enum.join(found, ", ")
     end
   end
 
@@ -473,6 +481,9 @@ defmodule BabelSyncWeb.AuthLive.Account do
                         class="flex flex-wrap gap-x-1.5 text-xs tabular-nums text-faint"
                       >
                         <span>{if(grant.read_only, do: "Read only", else: "Reads and edits")}</span>
+                        <span :if={grant.vault_ids} id={"grant-reach-#{grant.id}"}>
+                          in {reach(grant.vault_ids, @vault_names)}
+                        </span>
                         <span>Last active {minute(grant.last_used_at)}</span>
                       </div>
                     </div>

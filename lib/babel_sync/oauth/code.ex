@@ -13,6 +13,7 @@ defmodule BabelSync.OAuth.Code do
     field :redirect_uri, :string
     field :challenge, :string
     field :read_only, :boolean, default: false
+    field :vault_ids, {:array, :string}
     field :expires_at, :utc_datetime_usec
     belongs_to :client, BabelSync.OAuth.Client
     belongs_to :user, BabelSync.Accounts.User

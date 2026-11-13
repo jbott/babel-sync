@@ -3,6 +3,7 @@ defmodule BabelSyncWeb.OAuthHTML do
 
   attr :request, :map, required: true
   attr :params, :map, required: true
+  attr :vaults, :list, required: true
   attr :flash, :map, required: true
   attr :current_scope, :map, required: true
 
@@ -68,12 +69,53 @@ defmodule BabelSyncWeb.OAuthHTML do
                 ]}
               />
               <span :if={@request.read_only}>
-                It can <strong class="font-semibold text-ink">read</strong> every vault you can open.
+                It can <strong class="font-semibold text-ink">read</strong> {reach(@vaults)}.
               </span>
               <span :if={not @request.read_only}>
                 It can <strong class="font-semibold text-ink">read and change</strong>
-                every vault you can open.
+                {reach(@vaults)}.
               </span>
+            </li>
+            <li :if={length(@vaults) > 1} id="consent-vaults" class="group px-6 py-3.5 sm:px-8">
+              <fieldset form="consent-form" class="space-y-2">
+                <legend class="sr-only">Which vaults</legend>
+                <label class="flex cursor-pointer items-center gap-3">
+                  <input
+                    type="radio"
+                    form="consent-form"
+                    id="consent-every-vault"
+                    name="reach"
+                    value="every"
+                    checked
+                    class="size-4 accent-accent"
+                  />
+                  <span>Every vault, and any I join later</span>
+                </label>
+                <label class="flex cursor-pointer items-center gap-3">
+                  <input
+                    type="radio"
+                    form="consent-form"
+                    id="consent-chosen-vaults"
+                    name="reach"
+                    value="chosen"
+                    class="size-4 accent-accent"
+                  />
+                  <span>Only the ones I choose</span>
+                </label>
+                <div class="hidden space-y-1.5 pl-7 pt-1 group-has-[#consent-chosen-vaults:checked]:block">
+                  <label :for={vault <- @vaults} class="flex cursor-pointer items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      form="consent-form"
+                      id={"consent-vault-#{vault.id}"}
+                      name="vault_ids[]"
+                      value={vault.id}
+                      class="size-4 rounded accent-accent"
+                    />
+                    <span class="min-w-0 truncate text-ink">{vault.name}</span>
+                  </label>
+                </div>
+              </fieldset>
             </li>
             <li class="flex gap-3 px-6 py-3.5 sm:px-8">
               <.icon name="hero-arrow-uturn-right" class="mt-0.5 size-5 shrink-0 text-faint" />
@@ -147,4 +189,7 @@ defmodule BabelSyncWeb.OAuthHTML do
     </Layouts.app>
     """
   end
+
+  defp reach([_one, _another | _more]), do: "the vaults you allow below"
+  defp reach(_one_or_none), do: "every vault you can open"
 end

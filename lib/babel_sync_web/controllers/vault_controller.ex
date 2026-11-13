@@ -4,10 +4,11 @@ defmodule BabelSyncWeb.VaultController do
   alias BabelSync.Vaults
 
   def index(conn, _params) do
-    user = conn.assigns.current_scope.user
+    scope = conn.assigns.current_scope
+    user = scope.user
 
     vaults =
-      for vault <- Vaults.list_vaults(user) do
+      for vault <- BabelSync.Accounts.Scope.vaults(scope) do
         %{
           id: vault.id,
           name: vault.name,

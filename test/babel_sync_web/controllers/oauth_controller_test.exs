@@ -4,6 +4,8 @@ defmodule BabelSyncWeb.OAuthControllerTest do
   import BabelSync.Fixtures
   import Phoenix.LiveViewTest
 
+  require Phoenix.ChannelTest
+
   alias BabelSync.Accounts
 
   @verifier "a-verifier-that-is-long-enough-to-be-plausible-0123456789"
@@ -70,6 +72,72 @@ defmodule BabelSyncWeb.OAuthControllerTest do
                redirect_uris: ["http://evil.example/cb"]
              })
              |> json_response(400)
+  end
+
+  test "an approval can be limited to chosen vaults, and reaches nothing else", %{conn: conn} do
+    with_auth([:passkey])
+    owner = Accounts.single_user!()
+    work = vault(owner, %{name: "Work"})
+    home = vault(owner, %{name: "Home"})
+    note = BabelSync.Fixtures.entry(home, "diary.md")
+    %{"client_id" => client_id} = register(conn)
+    browser = sign_in(conn, owner)
+
+    document =
+      browser
+      |> get(~p"/oauth/authorize", authorize_params(client_id))
+      |> html_response(200)
+      |> LazyHTML.from_document()
+
+    assert LazyHTML.text(LazyHTML.query(document, "#consent-access")) =~ "you allow below"
+    assert LazyHTML.attribute(LazyHTML.query(document, "#consent-every-vault"), "checked") == [""]
+
+    assert document |> LazyHTML.query("#consent-vaults input[type=checkbox]") |> Enum.count() ==
+             2
+
+    decide = fn extra ->
+      post(
+        browser,
+        ~p"/oauth/authorize",
+        authorize_params(client_id) |> Map.put(:decision, "approve") |> Map.merge(extra)
+      )
+    end
+
+    nothing_chosen = decide.(%{reach: "chosen"})
+    assert redirected_to(nothing_chosen) =~ "/oauth/authorize?"
+    assert Phoenix.Flash.get(nothing_chosen.assigns.flash, :error) =~ "at least one"
+
+    stranger = Ecto.UUID.generate()
+    approved = decide.(%{reach: "chosen", vault_ids: [work.id, stranger]})
+    assert %{"code" => code} = query_of(approved)
+    assert %{"access_token" => access} = tokens(conn, client_id, code)
+
+    assert {:ok, scope} = BabelSync.Auth.scope_from_token(access)
+    assert scope.vault_ids == [work.id]
+    assert Accounts.Scope.authorize(scope, work.id, :write) == :ok
+    assert Accounts.Scope.authorize(scope, home.id, :read) == {:error, :forbidden}
+    assert [%{name: "Work"}] = BabelSync.Agent.list_vaults(scope)
+
+    api = put_req_header(conn, "authorization", "Bearer " <> access)
+    assert %{"vaults" => [%{"id" => id}]} = api |> get(~p"/api/vaults") |> json_response(200)
+    assert id == work.id
+    assert api |> get(~p"/api/vaults/#{home.id}/notes/#{note.id}/versions") |> response(403)
+
+    {:ok, socket} = Phoenix.ChannelTest.connect(BabelSyncWeb.UserSocket, %{"token" => access})
+
+    assert {:error, %{reason: "forbidden"}} =
+             Phoenix.ChannelTest.subscribe_and_join(socket, "vault:" <> home.id, %{})
+
+    assert {:ok, _reply, _joined} =
+             Phoenix.ChannelTest.subscribe_and_join(socket, "vault:" <> work.id, %{})
+
+    {:ok, account, _html} = live(browser, ~p"/account")
+    assert has_element?(account, "[id^=grant-reach-]", "Work")
+    refute has_element?(account, "[id^=grant-reach-]", "Home")
+
+    every = decide.(%{reach: "every"})
+    assert %{"access_token" => unlimited} = tokens(conn, client_id, query_of(every)["code"])
+    assert {:ok, %{vault_ids: nil}} = BabelSync.Auth.scope_from_token(unlimited)
   end
 
   test "an agent is approved, uses its token over MCP and the API, and is disconnected", %{

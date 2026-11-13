@@ -71,8 +71,8 @@ defmodule BabelSync.Agent do
   @recent_changes 50
 
   @spec list_vaults(Scope.t()) :: [%{id: String.t(), name: String.t(), role: atom()}]
-  def list_vaults(%Scope{user: user}) do
-    for vault <- Vaults.list_vaults(user) do
+  def list_vaults(%Scope{user: user} = scope) do
+    for vault <- Scope.vaults(scope) do
       %{id: vault.id, name: vault.name, role: Vaults.role(user, vault.id)}
     end
   end
@@ -566,8 +566,8 @@ defmodule BabelSync.Agent do
     end
   end
 
-  defp vault(%Scope{user: user} = scope, reference, access) do
-    vaults = Vaults.list_vaults(user)
+  defp vault(%Scope{} = scope, reference, access) do
+    vaults = Scope.vaults(scope)
 
     found =
       case reference do

@@ -1,6 +1,7 @@
 defmodule BabelSyncWeb.OAuthController do
   use BabelSyncWeb, :controller
 
+  alias BabelSync.Accounts.Scope
   alias BabelSync.OAuth
   alias BabelSync.OAuth.Request
   alias BabelSync.RateLimit
@@ -78,6 +79,7 @@ defmodule BabelSyncWeb.OAuthController do
           render(conn, :consent,
             request: request,
             params: Map.take(params, @request_params),
+            vaults: Scope.vaults(conn.assigns.current_scope),
             page_title: "Connect #{request.client.name}"
           )
         else
@@ -101,12 +103,18 @@ defmodule BabelSyncWeb.OAuthController do
 
     case OAuth.request(params) do
       {:ok, %Request{} = request} when not is_nil(scope) ->
-        destination =
-          if decision == "approve",
-            do: OAuth.approve(request, scope),
-            else: OAuth.deny(request)
+        case {decision, chosen_vaults(params)} do
+          {"approve", {:ok, vault_ids}} ->
+            redirect(conn, external: OAuth.approve(request, scope, vault_ids))
 
-        redirect(conn, external: destination)
+          {"approve", :none} ->
+            conn
+            |> put_flash(:error, "Choose at least one vault, or allow every vault.")
+            |> redirect(to: ~p"/oauth/authorize?#{Map.take(params, @request_params)}")
+
+          {_deny, _vaults} ->
+            redirect(conn, external: OAuth.deny(request))
+        end
 
       _invalid ->
         conn
@@ -114,6 +122,13 @@ defmodule BabelSyncWeb.OAuthController do
         |> render(:invalid, reason: :unknown_client, page_title: "Cannot connect")
     end
   end
+
+  defp chosen_vaults(%{"reach" => "chosen", "vault_ids" => [_ | _] = ids}) do
+    if Enum.all?(ids, &is_binary/1), do: {:ok, ids}, else: :none
+  end
+
+  defp chosen_vaults(%{"reach" => "chosen"}), do: :none
+  defp chosen_vaults(_every_vault), do: {:ok, nil}
 
   defp limit_registrations(conn, _opts) do
     limit = Application.fetch_env!(:babel_sync, OAuth)[:registrations_per_hour]

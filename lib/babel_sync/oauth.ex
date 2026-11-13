@@ -94,9 +94,10 @@ defmodule BabelSync.OAuth do
     end
   end
 
-  @spec approve(Request.t(), Scope.t()) :: String.t()
-  def approve(%Request{} = request, %Scope{user: user, read_only: scope_read_only}) do
+  @spec approve(Request.t(), Scope.t(), [Ecto.UUID.t()] | nil) :: String.t()
+  def approve(%Request{} = request, %Scope{user: user} = scope, vault_ids \\ nil) do
     code = secret(@code_prefix)
+    scope_read_only = scope.read_only
 
     Repo.update_all(
       from(c in Client, where: c.id == ^request.client.id and is_nil(c.approved_at)),
@@ -110,6 +111,7 @@ defmodule BabelSync.OAuth do
       redirect_uri: request.redirect_uri,
       challenge: request.challenge,
       read_only: request.read_only or scope_read_only,
+      vault_ids: within(scope, vault_ids),
       expires_at: after_seconds(@code_lifetime)
     })
 
@@ -179,8 +181,8 @@ defmodule BabelSync.OAuth do
   @spec scope_from_access_token(String.t()) :: {:ok, Scope.t()} | :error
   def scope_from_access_token(token) do
     case grant_for_access_token(token) do
-      %Grant{id: id, user: %User{} = user, read_only: read_only} ->
-        {:ok, Scope.for_user(user, read_only: read_only, grant_id: id)}
+      %Grant{id: id, user: %User{} = user, read_only: read_only, vault_ids: vault_ids} ->
+        {:ok, Scope.for_user(user, read_only: read_only, grant_id: id, vault_ids: vault_ids)}
 
       nil ->
         :error
@@ -253,6 +255,14 @@ defmodule BabelSync.OAuth do
     idle = DateTime.add(now, -config(:idle_grant_days), :day)
     Repo.all(from g in Grant, where: g.last_used_at < ^idle) |> Enum.each(&drop/1)
     :ok
+  end
+
+  defp within(%Scope{vault_ids: nil}, nil), do: nil
+  defp within(%Scope{vault_ids: allowed}, nil), do: allowed
+
+  defp within(%Scope{} = scope, chosen) do
+    mine = MapSet.new(Scope.vaults(scope), & &1.id)
+    Enum.filter(Enum.uniq(chosen), &(&1 in mine))
   end
 
   defp drop_unapproved_beyond(kept) do
@@ -360,6 +370,7 @@ defmodule BabelSync.OAuth do
         client_id: code.client_id,
         user_id: code.user_id,
         read_only: code.read_only,
+        vault_ids: code.vault_ids,
         access_hash: digest(access),
         access_expires_at: after_seconds(@access_lifetime),
         refresh_hash: digest(refresh),

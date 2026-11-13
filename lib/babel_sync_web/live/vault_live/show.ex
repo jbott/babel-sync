@@ -34,7 +34,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
       {:ok,
        socket
        |> assign(:vault, vault)
-       |> assign(:vaults, Vaults.list_vaults(scope.user))
+       |> assign(:vaults, Scope.vaults(scope))
        |> assign(:writable, writable)
        |> assign(:admin, Scope.authorize(scope, vault_id, :admin) == :ok)
        |> assign(:mode, if(writable, do: :edit, else: :read))
