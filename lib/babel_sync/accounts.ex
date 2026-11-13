@@ -81,6 +81,7 @@ defmodule BabelSync.Accounts do
 
   defp create_user!(attrs) do
     {:ok, user} = create_user(attrs)
+    :ok = BabelSync.Vaults.accept_invitations(user)
     user
   end
 end

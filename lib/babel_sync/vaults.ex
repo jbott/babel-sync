@@ -11,7 +11,7 @@ defmodule BabelSync.Vaults do
 
   alias BabelSync.Accounts.{Sessions, User}
   alias BabelSync.Repo
-  alias BabelSync.Vaults.{BlobVersion, Entry, Member, Vault}
+  alias BabelSync.Vaults.{BlobVersion, Entry, Invitation, Member, Vault}
 
   @type access :: :read | :write | :admin
 
@@ -132,6 +132,62 @@ defmodule BabelSync.Vaults do
     end
 
     result
+  end
+
+  @doc """
+  Shares the vault with an address: at once when it has an account,
+  and otherwise by keeping a place that its first sign-in takes up.
+  """
+  @spec invite(Vault.t(), String.t(), Member.role()) ::
+          {:ok, :added | :invited} | {:error, Ecto.Changeset.t()}
+  def invite(%Vault{} = vault, email, role) do
+    case BabelSync.Accounts.get_user_by_email(email) do
+      %User{} = user ->
+        with {:ok, _member} <- put_member(vault, user, role), do: {:ok, :added}
+
+      nil ->
+        invitation =
+          Repo.get_by(Invitation, vault_id: vault.id, email: User.normalize_email(email)) ||
+            %Invitation{vault_id: vault.id}
+
+        with {:ok, _invitation} <-
+               invitation
+               |> Invitation.changeset(%{email: email, role: role})
+               |> Repo.insert_or_update(),
+             do: {:ok, :invited}
+    end
+  end
+
+  @spec list_invitations(Vault.t()) :: [Invitation.t()]
+  def list_invitations(%Vault{id: vault_id}) do
+    Repo.all(from i in Invitation, where: i.vault_id == ^vault_id, order_by: i.email)
+  end
+
+  @spec revoke_invitation(Vault.t(), Ecto.UUID.t()) :: :ok
+  def revoke_invitation(%Vault{id: vault_id}, id) do
+    Repo.delete_all(from i in Invitation, where: i.vault_id == ^vault_id and i.id == ^id)
+    :ok
+  end
+
+  @spec invited?(String.t()) :: boolean()
+  def invited?(email) do
+    Repo.exists?(from i in Invitation, where: i.email == ^User.normalize_email(email))
+  end
+
+  @spec accept_invitations(User.t()) :: :ok
+  def accept_invitations(%User{email: nil}), do: :ok
+
+  def accept_invitations(%User{email: email} = user) do
+    {_count, kept} =
+      Repo.delete_all(
+        from i in Invitation, where: i.email == ^email, select: {i.vault_id, i.role}
+      )
+
+    for {vault_id, role} <- kept do
+      {:ok, _member} = put_member(%Vault{id: vault_id}, user, role)
+    end
+
+    :ok
   end
 
   @spec remove_member(Vault.t(), User.t()) :: :ok

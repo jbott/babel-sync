@@ -1,8 +1,8 @@
 defmodule BabelSyncWeb.VaultLive.Settings do
   use BabelSyncWeb, :live_view
 
-  alias BabelSync.Accounts
   alias BabelSync.Accounts.Scope
+  alias BabelSync.Auth.MagicLink
   alias BabelSync.Vaults
   alias BabelSync.Vaults.Vault
   alias BabelSyncWeb.Paths
@@ -19,7 +19,8 @@ defmodule BabelSyncWeb.VaultLive.Settings do
        |> assign(:vault, vault)
        |> assign(:name_form, to_form(Vault.changeset(vault, %{})))
        |> assign(:member_form, to_form(%{"email" => "", "role" => "editor"}, as: :member))
-       |> assign(:members, Vaults.list_members(vault))}
+       |> assign(:members, Vaults.list_members(vault))
+       |> assign(:invitations, Vaults.list_invitations(vault))}
     else
       _denied ->
         {:ok,
@@ -52,17 +53,29 @@ defmodule BabelSyncWeb.VaultLive.Settings do
 
   def handle_event("add_member", %{"member" => %{"email" => email, "role" => role}}, socket)
       when role in ["owner", "editor", "viewer"] do
-    case Accounts.get_user_by_email(email) do
-      nil ->
-        {:noreply,
-         put_flash(socket, :error, "No account uses #{email}. They need to sign in once first.")}
+    vault = socket.assigns.vault
 
-      user ->
-        {:ok, _member} =
-          Vaults.put_member(socket.assigns.vault, user, String.to_existing_atom(role))
-
+    case Vaults.invite(vault, email, String.to_existing_atom(role)) do
+      {:ok, :added} ->
         {:noreply, reload(socket)}
+
+      {:ok, :invited} ->
+        if BabelSync.Auth.enabled?(:magic_link),
+          do: MagicLink.announce_invitation(email, vault.name, url(~p"/login"))
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "#{String.trim(email)} will join when they first sign in.")
+         |> reload()}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "That is not an email address.")}
     end
+  end
+
+  def handle_event("revoke_invitation", %{"id" => id}, socket) when is_binary(id) do
+    with {:ok, id} <- Ecto.UUID.cast(id), do: Vaults.revoke_invitation(socket.assigns.vault, id)
+    {:noreply, reload(socket)}
   end
 
   def handle_event("set_role", %{"user_id" => user_id, "role" => role}, socket)
@@ -104,7 +117,11 @@ defmodule BabelSyncWeb.VaultLive.Settings do
     member.role == :owner and Enum.count(members, &(&1.role == :owner)) == 1
   end
 
-  defp reload(socket), do: assign(socket, :members, Vaults.list_members(socket.assigns.vault))
+  defp reload(socket) do
+    socket
+    |> assign(:members, Vaults.list_members(socket.assigns.vault))
+    |> assign(:invitations, Vaults.list_invitations(socket.assigns.vault))
+  end
 
   @impl true
   def render(assigns) do
@@ -195,6 +212,26 @@ defmodule BabelSyncWeb.VaultLive.Settings do
                 phx-value-user_id={member.user_id}
                 icon="hero-x-mark"
                 label="Remove"
+                tone="danger"
+              />
+            </li>
+            <li
+              :for={invitation <- @invitations}
+              id={"invitation-#{invitation.id}"}
+              class="flex items-center gap-2 py-2 pl-4 pr-2"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-ink">{invitation.email}</span>
+                <span class="block text-xs text-faint">
+                  Invited as {invitation.role}; joins at first sign-in
+                </span>
+              </span>
+              <.icon_button
+                id={"revoke-invitation-#{invitation.id}"}
+                phx-click="revoke_invitation"
+                phx-value-id={invitation.id}
+                icon="hero-x-mark"
+                label="Withdraw invitation"
                 tone="danger"
               />
             </li>

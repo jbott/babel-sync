@@ -71,6 +71,35 @@ defmodule BabelSync.Auth.MagicLink do
     Repo.aggregate(from(l in LoginLink, where: l.expires_at > ^since), :count)
   end
 
+  @doc """
+  Tells an address that a vault has been shared with it and where to
+  sign in. Nothing is said about whether the message could be sent.
+  """
+  @spec announce_invitation(String.t(), String.t(), String.t()) :: :ok
+  def announce_invitation(email, vault_name, sign_in_url) do
+    invitation =
+      Swoosh.Email.new(
+        to: User.normalize_email(email),
+        from: {"Babel Sync", config(:from)},
+        subject: "A vault was shared with you",
+        text_body: """
+        The vault "#{vault_name}" on Babel Sync has been shared with this address.
+
+        Sign in with this address to open it:
+
+        #{sign_in_url}
+
+        If you were not expecting this, you can ignore this message.
+        """
+      )
+
+    with {:error, reason} <- Mailer.deliver(invitation) do
+      Logger.warning("could not send an invitation: #{inspect(reason)}")
+    end
+
+    :ok
+  end
+
   @spec peek(String.t()) :: {:ok, String.t()} | :error
   def peek(token) do
     case Repo.one(live(token)) do
@@ -98,8 +127,12 @@ defmodule BabelSync.Auth.MagicLink do
     cond do
       not String.match?(email, ~r/^[^\s@]+@[^\s@]+$/) -> false
       BabelSync.mode() == :single -> allowed?(email)
-      true -> allowed?(email) or not is_nil(Accounts.get_user_by_email(email))
+      true -> allowed?(email) or known?(email)
     end
+  end
+
+  defp known?(email) do
+    not is_nil(Accounts.get_user_by_email(email)) or BabelSync.Vaults.invited?(email)
   end
 
   defp allowed?(email) do

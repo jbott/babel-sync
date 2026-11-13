@@ -915,10 +915,39 @@ defmodule BabelSyncWeb.VaultLiveTest do
       render_click(view, "remove_member", %{"user_id" => friend.id})
       assert Vaults.role(friend, vault.id) == nil
 
+      view
+      |> form("#add-member", member: %{email: " Newcomer@Example.com", role: "viewer"})
+      |> render_submit()
+
+      assert has_element?(view, "[id^=invitation-]", "newcomer@example.com")
+      assert has_element?(view, "#flash-info", "when they first sign in")
+      assert BabelSync.Auth.MagicLink.permitted?("newcomer@example.com")
+      refute BabelSync.Auth.MagicLink.permitted?("stranger@example.com")
+
+      view
+      |> form("#add-member", member: %{email: "newcomer@example.com", role: "editor"})
+      |> render_submit()
+
+      assert [%{role: :editor} = invitation] = Vaults.list_invitations(vault)
+
+      view
+      |> form("#add-member", member: %{email: "withdrawn@example.com", role: "editor"})
+      |> render_submit()
+
+      [withdrawn] = Vaults.list_invitations(vault) -- [invitation]
+      view |> element("#revoke-invitation-#{withdrawn.id}") |> render_click()
+      refute has_element?(view, "#invitation-#{withdrawn.id}")
+
+      newcomer = BabelSync.Accounts.user_for_email("newcomer@example.com")
+      assert Vaults.role(newcomer, vault.id) == :editor
+      assert Vaults.list_invitations(vault) == []
+
+      assert Vaults.role(BabelSync.Accounts.user_for_email("withdrawn@example.com"), vault.id) ==
+               nil
+
       assert view
-             |> form("#add-member", member: %{email: "nobody@example.com", role: "viewer"})
-             |> render_submit() =~
-               "No account uses"
+             |> form("#add-member", member: %{email: "not an address", role: "viewer"})
+             |> render_submit() =~ "not an email address"
     end
   end
 
