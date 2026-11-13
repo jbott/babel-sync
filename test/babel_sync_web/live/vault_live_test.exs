@@ -214,6 +214,30 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert has_element?(view, "#preview-body .embed-content p", "Shown in place")
     end
 
+    test "canvases open drawn while notes keep the mode last chosen for notes", %{
+      conn: conn,
+      vault: vault
+    } do
+      board = entry(vault, "Board.canvas")
+      note = entry(vault, "note.md")
+      {:ok, view, _html} = live(conn, Paths.entry(note))
+      assert has_element?(view, "#editor-#{note.id}")
+
+      render_patch(view, Paths.entry(board))
+      assert has_element?(view, "#canvas")
+      view |> element("button", "Edit") |> render_click()
+      assert has_element?(view, "#editor-#{board.id}")
+
+      render_patch(view, Paths.entry(note))
+      assert has_element?(view, "#editor-#{note.id}")
+      view |> element("button", "Read") |> render_click()
+
+      render_patch(view, Paths.entry(board))
+      assert has_element?(view, "#canvas")
+      render_patch(view, Paths.entry(note))
+      assert has_element?(view, "#preview-body")
+    end
+
     test "a canvas is drawn as a board of cards, and a broken one is shown as text", %{
       conn: conn,
       vault: vault
@@ -246,7 +270,6 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
       :ok = Sync.replace_text(board.id, Jason.encode!(canvas))
       {:ok, view, _html} = live(conn, Paths.entry(board))
-      view |> element("button", "Read") |> render_click()
 
       assert has_element?(view, "#canvas[phx-hook=Canvas] .canvas-node h1", "Idea")
       assert has_element?(view, "#canvas .canvas-edge")
@@ -283,7 +306,6 @@ defmodule BabelSyncWeb.VaultLiveTest do
         """)
 
       {:ok, view, _html} = live(conn, Paths.entry(base))
-      view |> element("button", "Read") |> render_click()
 
       assert has_element?(view, "#base-table th", "status")
 

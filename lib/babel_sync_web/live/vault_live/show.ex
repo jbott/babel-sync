@@ -32,6 +32,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
        |> assign(:writable, writable)
        |> assign(:admin, Scope.authorize(scope, vault_id, :admin) == :ok)
        |> assign(:mode, if(writable, do: :edit, else: :read))
+       |> assign(:note_mode, if(writable, do: :edit, else: :read))
        |> assign(:socket_token, Auth.socket_token(scope))
        |> assign(:entry, nil)
        |> assign(:preview, nil)
@@ -133,6 +134,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   def handle_event("mode", %{"mode" => mode}, socket) when mode in ["edit", "read"] do
     mode = if mode == "edit" and socket.assigns.writable, do: :edit, else: :read
+
+    socket =
+      if drawn?(socket.assigns.entry), do: socket, else: assign(socket, :note_mode, mode)
+
     {:noreply, socket |> assign(:mode, mode) |> render_preview()}
   end
 
@@ -331,6 +336,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end
 
     socket
+    |> assign(:mode, opening_mode(socket, previous, entry))
     |> assign(:entry, entry)
     |> assign(
       :page_title,
@@ -343,6 +349,16 @@ defmodule BabelSyncWeb.VaultLive.Show do
     |> assign(:base_view, nil)
     |> render_preview()
   end
+
+  defp opening_mode(socket, %Entry{id: id}, %Entry{id: id}), do: socket.assigns.mode
+
+  defp opening_mode(socket, _previous, entry),
+    do: if(drawn?(entry), do: :read, else: socket.assigns.note_mode)
+
+  defp drawn?(%Entry{kind: :doc, path: path}),
+    do: String.downcase(Path.extname(path)) in ~w(.canvas .base)
+
+  defp drawn?(_entry), do: false
 
   defp render_preview(%{assigns: %{entry: %Entry{kind: :doc} = entry, mode: :read}} = socket) do
     text = Sync.text(entry.id)
