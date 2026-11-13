@@ -23,11 +23,19 @@ defmodule BabelSyncWeb.LiveScope do
   end
 
   defp fetch(socket, session) do
-    assign_new(socket, :current_scope, fn ->
+    socket
+    |> assign_new(:current_scope, fn ->
       case Auth.scope_from_session(session[Scope.session_key()]) do
         {:ok, scope} -> scope
         :error -> nil
       end
     end)
+    |> announce_new_assets()
+  end
+
+  defp announce_new_assets(socket) do
+    if Phoenix.LiveView.connected?(socket) and Phoenix.LiveView.static_changed?(socket),
+      do: Phoenix.LiveView.push_event(socket, "assets-changed", %{}),
+      else: socket
   end
 end

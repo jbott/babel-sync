@@ -44,8 +44,10 @@ XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:827,6573616
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:870,30AFD1C
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:881,7748F4E
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:920,73943EA
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:924,48CE617
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:927,4743CF9
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:931,28D26AA
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:935,400F5
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:938,3E9E2A
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/obsidian_controller.ex:28,3242BD8
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/transfer_controller.ex:147,1F70068

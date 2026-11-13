@@ -13,3 +13,14 @@ export function sharedClient(token) {
 
   return client;
 }
+
+const openNotes = new Set();
+
+export function track(session) {
+  openNotes.add(session);
+  return () => openNotes.delete(session);
+}
+
+export function allNotesSaved(timeoutMs) {
+  return Promise.all([...openNotes].map((session) => session.whenSynced(timeoutMs)));
+}

@@ -6,7 +6,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { tags } from "@lezer/highlight";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import * as Y from "yjs";
-import { sharedClient } from "./client";
+import { sharedClient, track } from "./client";
 
 const tint = (token, share) => `color-mix(in oklab, var(${token}) ${share}%, transparent)`;
 
@@ -140,6 +140,7 @@ export const Editor = {
     const client = sharedClient(token);
 
     this.session = client.doc(entryId);
+    this.untrack = track(this.session);
     this.session.awareness.setLocalStateField("user", {
       name: userName,
       color: userColor,
@@ -170,6 +171,7 @@ export const Editor = {
 
   destroyed() {
     this.view?.destroy();
+    this.untrack?.();
     this.session?.close();
   },
 };

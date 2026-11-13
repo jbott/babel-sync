@@ -10,6 +10,7 @@ import { Folders } from "./hooks/folders";
 import { Markdown } from "./hooks/markdown";
 import { Canvas } from "./hooks/canvas";
 import { BaseMap } from "./hooks/base_map";
+import { allNotesSaved } from "./hooks/client";
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
 const liveSocket = new LiveSocket("/live", Socket, {
@@ -25,6 +26,27 @@ window.addEventListener("phx:page-loading-start", (_info) => {
   topbar.show(750);
 });
 window.addEventListener("phx:page-loading-stop", (_info) => topbar.hide());
+
+const RELOAD_GUARD = "babelsync:reloaded-for-assets";
+const RELOAD_SPACING_MS = 30_000;
+const SAVE_WAIT_MS = 15_000;
+
+window.addEventListener("phx:assets-changed", async () => {
+  let last = 0;
+  try {
+    last = Number(sessionStorage.getItem(RELOAD_GUARD) || 0);
+  } catch {}
+  if (Date.now() - last < RELOAD_SPACING_MS) return;
+  try {
+    await allNotesSaved(SAVE_WAIT_MS);
+  } catch {
+    return;
+  }
+  try {
+    sessionStorage.setItem(RELOAD_GUARD, String(Date.now()));
+  } catch {}
+  window.location.reload();
+});
 
 liveSocket.connect();
 

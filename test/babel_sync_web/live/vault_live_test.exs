@@ -519,6 +519,35 @@ defmodule BabelSyncWeb.VaultLiveTest do
       view |> form("#vault-switcher-form", vault: vault.id) |> render_change()
       assert has_element?(view, "#entry-path", "note.md")
     end
+
+    defp put_manifest(latest),
+      do: Phoenix.Config.put(BabelSyncWeb.Endpoint, :cache_static_manifest_latest, latest)
+
+    test "a page running assets older than the server's is told to reload", %{
+      conn: conn,
+      vault: vault
+    } do
+      previous = BabelSyncWeb.Endpoint.config(:cache_static_manifest_latest)
+      on_exit(fn -> put_manifest(previous) end)
+      current = "/assets/js/app-c0ffee.js"
+      put_manifest(%{"js/app.js" => "js/app-c0ffee.js"})
+
+      {:ok, stale, _html} =
+        conn
+        |> put_connect_params(%{
+          "_track_static" => ["http://www.example.com/assets/js/app-0ld.js"]
+        })
+        |> live(Paths.vault(vault.id))
+
+      assert_push_event(stale, "assets-changed", %{})
+
+      {:ok, fresh, _html} =
+        conn
+        |> put_connect_params(%{"_track_static" => ["http://www.example.com" <> current]})
+        |> live(Paths.vault(vault.id))
+
+      refute_push_event(fresh, "assets-changed", %{})
+    end
   end
 
   describe "raw files" do
