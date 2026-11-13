@@ -84,7 +84,7 @@ defmodule BabelSync.Auth do
            ),
          true <- session_id == nil or match?({:ok, _session}, Sessions.fetch(session_id)),
          %User{} = user <- Accounts.get_user(user_id) do
-      {:ok, Scope.for_user(user, read_only: read_only)}
+      {:ok, Scope.for_user(user, read_only: read_only, session_id: session_id)}
     else
       _invalid -> :error
     end

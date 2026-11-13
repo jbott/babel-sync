@@ -6,7 +6,7 @@ defmodule BabelSync.Accounts.Sessions do
 
   import Ecto.Query
 
-  alias BabelSync.Accounts.{Session, User}
+  alias BabelSync.Accounts.{Scope, Session, User}
   alias BabelSync.Repo
 
   @agent_bytes 255
@@ -61,11 +61,13 @@ defmodule BabelSync.Accounts.Sessions do
 
   @spec reconnect(Ecto.UUID.t()) :: :ok
   def reconnect(user_id) do
-    BabelSyncWeb.Endpoint.broadcast("user_socket:" <> user_id, "disconnect", %{})
+    disconnect(Scope.user_topic(user_id))
 
     from(s in Session, where: s.user_id == ^user_id, select: s.id)
     |> Repo.all()
-    |> Enum.each(&BabelSyncWeb.Endpoint.broadcast(topic(&1), "disconnect", %{}))
+    |> Enum.each(&disconnect_session/1)
+
+    BabelSync.OAuth.reconnect(user_id)
   end
 
   @spec topic(Ecto.UUID.t()) :: String.t()
@@ -73,6 +75,13 @@ defmodule BabelSync.Accounts.Sessions do
 
   defp close(query) do
     {_count, ids} = Repo.delete_all(select(query, [s], s.id))
-    Enum.each(ids, &BabelSyncWeb.Endpoint.broadcast(topic(&1), "disconnect", %{}))
+    Enum.each(ids, &disconnect_session/1)
   end
+
+  defp disconnect_session(id) do
+    disconnect(topic(id))
+    disconnect(Scope.session_topic(id))
+  end
+
+  defp disconnect(topic), do: BabelSyncWeb.Endpoint.broadcast(topic, "disconnect", %{})
 end

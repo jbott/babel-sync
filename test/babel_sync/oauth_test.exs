@@ -377,7 +377,7 @@ defmodule BabelSync.OAuthTest do
       assert :ok = OAuth.revoke_token("bsr_unknown")
     end
 
-    test "a refresh token from before the grace period is dead, and one from another client is refused" do
+    test "a spent refresh token still answers until its successor is used, then ends the grant" do
       user = user()
       client = client()
       {:ok, first} = exchange(client, code_for(client, user))
@@ -385,14 +385,60 @@ defmodule BabelSync.OAuthTest do
       refresh =
         &OAuth.token(%{"grant_type" => "refresh_token", "refresh_token" => &1, "client_id" => &2})
 
-      assert {:error, "invalid_grant"} = refresh.(first.refresh_token, client().id)
-      assert {:ok, _second} = refresh.(first.refresh_token, client.id)
+      long_ago = fn ->
+        then = DateTime.add(DateTime.utc_now(), -600, :second)
+        BabelSync.Repo.update_all(OAuth.Grant, set: [rotated_at: then, last_used_at: then])
+      end
 
-      BabelSync.Repo.update_all(OAuth.Grant,
-        set: [rotated_at: DateTime.add(DateTime.utc_now(), -600, :second)]
-      )
+      assert {:error, "invalid_grant"} = refresh.(first.refresh_token, client().id)
+      assert {:ok, second} = refresh.(first.refresh_token, client.id)
+
+      long_ago.()
+      assert {:ok, lost_and_asked_again} = refresh.(first.refresh_token, client.id)
+      assert lost_and_asked_again.refresh_token == second.refresh_token
+
+      [grant] = OAuth.list_grants(user)
+      BabelSyncWeb.Endpoint.subscribe(BabelSync.Accounts.Scope.grant_topic(grant.id))
+      assert {:ok, _scope} = OAuth.scope_from_access_token(second.access_token)
 
       assert {:error, "invalid_grant"} = refresh.(first.refresh_token, client.id)
+      assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
+      assert OAuth.list_grants(user) == []
+      assert :error = OAuth.scope_from_access_token(second.access_token)
+      assert {:error, "invalid_grant"} = refresh.(second.refresh_token, client.id)
+    end
+
+    test "a grant is ended when nothing has used it for months, and using it keeps it" do
+      user = user()
+      client = client()
+      {:ok, kept} = exchange(client, code_for(client, user))
+      {:ok, _idle} = exchange(client, code_for(client, user))
+
+      BabelSync.Repo.update_all(OAuth.Grant,
+        set: [last_used_at: DateTime.add(DateTime.utc_now(), -181, :day)]
+      )
+
+      assert {:ok, _scope} = OAuth.scope_from_access_token(kept.access_token)
+      :ok = OAuth.prune()
+
+      assert [%OAuth.Grant{}] = OAuth.list_grants(user)
+      assert {:ok, _scope} = OAuth.scope_from_access_token(kept.access_token)
+    end
+
+    test "a scope names its grant, and only that grant's connections close when it is revoked" do
+      user = user()
+      client = client()
+      {:ok, one} = exchange(client, code_for(client, user))
+      {:ok, other} = exchange(client, code_for(client, user))
+      {:ok, scope} = OAuth.scope_from_access_token(one.access_token)
+      {:ok, other_scope} = OAuth.scope_from_access_token(other.access_token)
+
+      BabelSyncWeb.Endpoint.subscribe(BabelSync.Accounts.Scope.socket_topic(other_scope))
+      :ok = OAuth.revoke_grant(user, scope.grant_id)
+      refute_receive %Phoenix.Socket.Broadcast{event: "disconnect"}, 50
+
+      :ok = OAuth.revoke_grant(user, other_scope.grant_id)
+      assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
     end
   end
 end

@@ -13,5 +13,5 @@ defmodule BabelSyncWeb.UserSocket do
   end
 
   @impl true
-  def id(socket), do: "user_socket:" <> socket.assigns.scope.user.id
+  def id(socket), do: BabelSync.Accounts.Scope.socket_topic(socket.assigns.scope)
 end

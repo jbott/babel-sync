@@ -285,7 +285,7 @@ defmodule BabelSyncWeb.VaultChannelTest do
     member = user()
     {:ok, _} = Vaults.put_member(vault, member, :editor)
     {:ok, _reply, _socket} = join_vault(member, vault)
-    BabelSyncWeb.Endpoint.subscribe("user_socket:" <> member.id)
+    BabelSyncWeb.Endpoint.subscribe(BabelSync.Accounts.Scope.user_topic(member.id))
 
     {:ok, _} = Vaults.put_member(vault, member, :editor)
     refute_receive %Phoenix.Socket.Broadcast{event: "disconnect"}, 50

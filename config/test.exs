@@ -28,7 +28,10 @@ config :babel_sync, BabelSyncWeb.Endpoint,
   secret_key_base: "sj+jwuZO/j3G9eYuaaSWTWGHcYCNANkZLsa0qNLAAEcVRApOnQ5NxTWShL+eAKCT",
   server: true
 
-config :babel_sync, BabelSync.OAuth, unapproved_clients: 1000, registrations_per_hour: 100_000
+config :babel_sync, BabelSync.OAuth,
+  unapproved_clients: 1000,
+  registrations_per_hour: 100_000,
+  idle_grant_days: 180
 
 # In test we don't send emails
 config :babel_sync, BabelSync.Mailer, adapter: Swoosh.Adapters.Test

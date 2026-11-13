@@ -331,14 +331,22 @@ defmodule BabelSyncWeb.Auth.LoginTest do
       assert :error = Auth.scope_from_token(Auth.socket_token(Accounts.Scope.for_user(ghost)))
     end
 
-    test "a page's socket token stops working when its browser session ends" do
+    test "a page's socket token stops working, and its socket closes, when its browser session ends" do
       owner = Accounts.single_user!()
       session = Accounts.Sessions.start(owner, "a browser")
+      other = Accounts.Sessions.start(owner, "another browser")
       scope = %{Accounts.Scope.for_user(owner) | session_id: session.id}
       token = Auth.socket_token(scope)
 
-      assert {:ok, %Accounts.Scope{}} = Auth.scope_from_token(token)
+      assert {:ok, %Accounts.Scope{} = connected} = Auth.scope_from_token(token)
+      assert connected.session_id == session.id
+      BabelSyncWeb.Endpoint.subscribe(Accounts.Scope.socket_topic(connected))
+
+      :ok = Accounts.Sessions.finish(owner, other.id)
+      refute_receive %Phoenix.Socket.Broadcast{event: "disconnect"}, 50
+
       :ok = Accounts.Sessions.finish(owner, session.id)
+      assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
       assert :error = Auth.scope_from_token(token)
     end
 

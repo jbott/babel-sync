@@ -5,6 +5,13 @@ defmodule BabelSync.OAuth do
   MCP. Clients are public, register themselves, and use the authorization
   code flow with PKCE. Each approval is a grant the user can revoke.
 
+  A refresh token is good once. Asking again with the same one returns
+  the same new pair, since the first answer may never have arrived, but
+  only until the new pair has been used: after that, and after a short
+  grace for requests already on their way, a second holder of the old
+  token is what a stolen token looks like, and the grant is ended for
+  both. A grant nobody has used for months is ended too.
+
   Registering needs no sign-in, so a registration nobody has approved is
   kept only for a day, and only the newest of them are kept at all.
   """
@@ -22,6 +29,7 @@ defmodule BabelSync.OAuth do
   @code_lifetime 300
   @access_lifetime 3600
   @rotation_grace 120
+  @use_noted_every 300
   @unapproved_lifetime 86_400
   @excess_batch 500
   @full_scope "vault"
@@ -144,16 +152,14 @@ defmodule BabelSync.OAuth do
     grant =
       Repo.one(
         from g in Grant,
-          where:
-            g.refresh_hash == ^hash or
-              (g.previous_refresh_hash == ^hash and g.rotated_at > ^grace)
+          where: g.refresh_hash == ^hash or g.previous_refresh_hash == ^hash
       )
 
     client_id = params["client_id"]
 
     case grant do
       %Grant{client_id: ^client_id, refresh_hash: ^hash} -> {:ok, rotate(grant, refresh)}
-      %Grant{client_id: ^client_id} -> repeated(grant, refresh)
+      %Grant{client_id: ^client_id} -> repeated(grant, refresh, grace)
       _invalid -> {:error, "invalid_grant"}
     end
   end
@@ -173,8 +179,8 @@ defmodule BabelSync.OAuth do
   @spec scope_from_access_token(String.t()) :: {:ok, Scope.t()} | :error
   def scope_from_access_token(token) do
     case grant_for_access_token(token) do
-      %Grant{user: %User{} = user, read_only: read_only} ->
-        {:ok, Scope.for_user(user, read_only: read_only)}
+      %Grant{id: id, user: %User{} = user, read_only: read_only} ->
+        {:ok, Scope.for_user(user, read_only: read_only, grant_id: id)}
 
       nil ->
         :error
@@ -186,11 +192,21 @@ defmodule BabelSync.OAuth do
     hash = digest(token)
     now = DateTime.utc_now()
 
-    Repo.one(
-      from g in Grant,
-        where: g.access_hash == ^hash and g.access_expires_at > ^now,
-        preload: [:user, :client]
-    )
+    grant =
+      Repo.one(
+        from g in Grant,
+          where: g.access_hash == ^hash and g.access_expires_at > ^now,
+          preload: [:user, :client]
+      )
+
+    with %Grant{} <- grant, do: used(grant, now)
+  end
+
+  @spec reconnect(Ecto.UUID.t()) :: :ok
+  def reconnect(user_id) do
+    from(g in Grant, where: g.user_id == ^user_id, select: g.id)
+    |> Repo.all()
+    |> Enum.each(&disconnect/1)
   end
 
   @spec rename_grant(User.t(), Ecto.UUID.t(), String.t()) :: {:ok, Client.t()} | :error
@@ -234,6 +250,8 @@ defmodule BabelSync.OAuth do
     Repo.delete_all(from c in Code, where: c.expires_at < ^now)
     stale = DateTime.add(now, -@unapproved_lifetime, :second)
     Repo.delete_all(from c in Client, where: is_nil(c.approved_at) and c.inserted_at < ^stale)
+    idle = DateTime.add(now, -config(:idle_grant_days), :day)
+    Repo.all(from g in Grant, where: g.last_used_at < ^idle) |> Enum.each(&drop/1)
     :ok
   end
 
@@ -260,8 +278,23 @@ defmodule BabelSync.OAuth do
 
   defp drop(%Grant{} = grant) do
     Repo.delete!(grant)
-    BabelSyncWeb.Endpoint.broadcast("user_socket:" <> grant.user_id, "disconnect", %{})
-    :ok
+    disconnect(grant.id)
+  end
+
+  defp disconnect(grant_id) do
+    BabelSyncWeb.Endpoint.broadcast(Scope.grant_topic(grant_id), "disconnect", %{})
+  end
+
+  defp used(%Grant{last_used_at: last} = grant, now) do
+    first_since_refresh? =
+      not is_nil(grant.rotated_at) and DateTime.compare(last, grant.rotated_at) != :gt
+
+    if first_since_refresh? or DateTime.diff(now, last, :second) >= @use_noted_every do
+      Repo.update_all(from(g in Grant, where: g.id == ^grant.id), set: [last_used_at: now])
+      %{grant | last_used_at: now}
+    else
+      grant
+    end
   end
 
   defp fetch_client(id) when is_binary(id) do
@@ -336,12 +369,22 @@ defmodule BabelSync.OAuth do
     response(grant, access, refresh)
   end
 
-  defp repeated(%Grant{} = grant, presented) do
+  defp repeated(%Grant{} = grant, presented, grace) do
     refresh = successor(@refresh_prefix, presented)
+    recent? = DateTime.compare(grant.rotated_at, grace) == :gt
+    successor_unused? = DateTime.compare(grant.last_used_at, grant.rotated_at) != :gt
 
-    if digest(refresh) == grant.refresh_hash,
-      do: {:ok, response(grant, successor(@access_prefix, presented), refresh)},
-      else: {:error, "invalid_grant"}
+    cond do
+      digest(refresh) != grant.refresh_hash ->
+        {:error, "invalid_grant"}
+
+      recent? or successor_unused? ->
+        {:ok, response(grant, successor(@access_prefix, presented), refresh)}
+
+      true ->
+        drop(grant)
+        {:error, "invalid_grant"}
+    end
   end
 
   defp rotate(%Grant{} = grant, presented) do

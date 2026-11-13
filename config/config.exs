@@ -35,7 +35,8 @@ config :babel_sync, BabelSync.Janitor,
 
 config :babel_sync, BabelSync.OAuth,
   unapproved_clients: 1000,
-  registrations_per_hour: 30
+  registrations_per_hour: 30,
+  idle_grant_days: 180
 
 config :babel_sync, BabelSync.Blobs, max_size: 5 * 1024 * 1024 * 1024
 
