@@ -243,6 +243,23 @@ defmodule BabelSyncWeb.VaultLive.Show do
   def handle_event(_event_for_an_entry_no_longer_open, _params, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_async(:base, {:ok, {entry_id, result}}, socket) do
+    case {socket.assigns.entry, result} do
+      {%Entry{id: ^entry_id}, {:ok, base}} ->
+        {:noreply, assign(socket, :base, base)}
+
+      {%Entry{id: ^entry_id} = entry, {:error, problem}} ->
+        notice = "> [!warning] This base could not be run: #{problem}\n\n"
+        {:noreply, show_markdown(socket, entry, Sync.text(entry.id), notice)}
+
+      _moved_on ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_async(:base, {:exit, _reason}, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_info({:entry_changed, %Entry{} = changed}, socket) do
     if Map.get(socket.assigns.latest, changed.id, -1) >= changed.seq,
       do: {:noreply, socket},
@@ -388,31 +405,64 @@ defmodule BabelSyncWeb.VaultLive.Show do
   end
 
   defp show_base(socket, entry, text) do
-    %{current_scope: scope, vault: vault, base_view: wanted} = socket.assigns
+    socket = socket |> assign(:shown_as, :base) |> assign(:preview, nil)
 
+    socket =
+      if match?(%{entry_id: id} when id == entry.id, socket.assigns.base),
+        do: socket,
+        else: assign(socket, :base, nil)
+
+    if connected?(socket) do
+      %{current_scope: scope, vault: vault, base_view: wanted, entries: entries} = socket.assigns
+
+      socket
+      |> cancel_async(:base)
+      |> start_async(:base, fn ->
+        {entry.id, run_base(scope, vault.id, entry, text, wanted, entries)}
+      end)
+    else
+      socket
+    end
+  end
+
+  defp run_base(scope, vault_id, entry, text, wanted, entries) do
     with {:ok, definition} <- Bases.Definition.parse(text),
          names = Enum.map(definition.views, & &1.name),
          view = if(wanted in names, do: wanted, else: List.first(names)),
          {:ok, %{rows: _} = table} <-
-           Agent.query_notes(scope, vault.id, base: entry.path, view: view, limit: @base_rows) do
-      socket
-      |> assign(:shown_as, :base)
-      |> assign(:preview, nil)
-      |> assign(:base, %{views: names, view: view, table: based(table, socket.assigns.entries)})
+           Agent.query_notes(scope, vault_id, base: entry.path, view: view, limit: @base_rows) do
+      {:ok,
+       %{
+         entry_id: entry.id,
+         views: names,
+         view: view,
+         table: based(table, definition.names, entries)
+       }}
     else
-      failed ->
-        notice = "> [!warning] This base could not be run: #{problem(failed)}\n\n"
-        show_markdown(socket, entry, text, notice)
+      failed -> {:error, problem(failed)}
     end
   end
 
-  defp based(table, entries) do
+  defp based(table, names, entries) do
     paths = Map.new(entries, &{&1.path, &1})
 
+    shown =
+      table.columns
+      |> Enum.with_index()
+      |> Enum.drop(1)
+      |> Enum.reject(fn {column, _at} -> column == "file.name" end)
+
     %{
-      columns: table.columns |> tl() |> Enum.map(&String.replace_prefix(&1, "note.", "")),
+      columns:
+        Enum.map(shown, fn {column, _at} ->
+          column = String.replace_prefix(column, "note.", "")
+          Map.get(names, column, column)
+        end),
       rows:
-        for([path | cells] <- table.rows, do: %{path: path, entry: paths[path], cells: cells}),
+        for row <- table.rows do
+          [path | _cells] = row
+          %{path: path, entry: paths[path], cells: Enum.map(shown, &Enum.at(row, elem(&1, 1)))}
+        end,
       total: table.total
     }
   end
@@ -795,6 +845,18 @@ defmodule BabelSyncWeb.VaultLive.Show do
                 <.icon name={icon} class="size-4" />
               </button>
             </div>
+          </article>
+
+          <article
+            :if={
+              @entry && @entry.kind == :doc && @mode == :read && @shown_as == :base && is_nil(@base)
+            }
+            id="base-loading"
+            class="flex flex-1 items-start justify-center px-6 py-16 text-sm text-muted"
+          >
+            <span class="inline-flex items-center gap-2">
+              <.icon name="hero-arrow-path" class="size-4 animate-spin" /> Running the base…
+            </span>
           </article>
 
           <article

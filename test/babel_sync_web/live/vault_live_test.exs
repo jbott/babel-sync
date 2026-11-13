@@ -295,19 +295,26 @@ defmodule BabelSyncWeb.VaultLiveTest do
       :ok =
         Sync.replace_text(base.id, """
         filters: file.inFolder("Tasks")
+        properties:
+          note.status:
+            displayName: State
         views:
           - type: table
             name: All
-            order: [status]
+            order: [file.name, status]
           - type: table
             name: Open
             filters: status == "open"
             order: [status]
         """)
 
-      {:ok, view, _html} = live(conn, Paths.entry(base))
+      assert conn |> get(Paths.entry(base)) |> html_response(200) =~ ~s(id="base-loading")
 
-      assert has_element?(view, "#base-table th", "status")
+      {:ok, view, _html} = live(conn, Paths.entry(base))
+      render_async(view)
+
+      assert has_element?(view, "#base-table th", "State")
+      refute has_element?(view, "#base-table th", "file.name")
 
       assert has_element?(
                view,
@@ -318,12 +325,14 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert has_element?(view, "#base-table td", "done")
 
       view |> element("#base-views button", "Open") |> render_click()
+      render_async(view)
       assert has_element?(view, "#base-views [aria-selected=true]", "Open")
       assert has_element?(view, "#base-table a", "Alpha")
       refute has_element?(view, "#base-table a", "Beta")
 
       :ok = Sync.replace_text(base.id, "filters: \"(((\"")
       send(view.pid, :render_preview)
+      render_async(view)
       assert has_element?(view, "#preview-body .callout", "could not be run")
     end
 

@@ -4,6 +4,8 @@ defmodule BabelSync.Bases.Note do
   properties written as YAML between `---` lines at its top.
   """
 
+  alias BabelSync.Bases.PropertyCache
+
   @enforce_keys [:path]
   defstruct [:path, :created, :modified, size: 0, text: "", properties: %{}]
 
@@ -24,15 +26,20 @@ defmodule BabelSync.Bases.Note do
 
   @spec properties(String.t()) :: %{optional(String.t()) => term()}
   def properties("---\n" <> rest) do
-    with [block, _body] <- String.split(rest, ~r/^---[ \t]*$/m, parts: 2),
-         {:ok, %{} = parsed} <- YamlElixir.read_from_string(block) do
-      Map.new(parsed, fn {key, value} -> {to_string(key), value} end)
-    else
-      _unreadable -> %{}
+    case String.split(rest, ~r/^---[ \t]*$/m, parts: 2) do
+      [block, _body] -> PropertyCache.fetch(block, &parse/1)
+      _unclosed -> %{}
     end
   end
 
   def properties(_text), do: %{}
+
+  defp parse(block) do
+    case YamlElixir.read_from_string(block) do
+      {:ok, %{} = parsed} -> Map.new(parsed, fn {key, value} -> {to_string(key), value} end)
+      _unreadable -> %{}
+    end
+  end
 
   @spec name(t()) :: String.t()
   def name(%__MODULE__{path: path}), do: Path.basename(path)

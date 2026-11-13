@@ -6,7 +6,7 @@ defmodule BabelSync.Bases.Definition do
 
   alias BabelSync.Bases.Expression
 
-  defstruct filter: nil, formulas: %{}, views: []
+  defstruct filter: nil, formulas: %{}, views: [], names: %{}
 
   @type view :: %{
           name: String.t(),
@@ -19,7 +19,8 @@ defmodule BabelSync.Bases.Definition do
   @type t :: %__MODULE__{
           filter: Expression.t() | nil,
           formulas: %{optional(String.t()) => Expression.t()},
-          views: [view()]
+          views: [view()],
+          names: %{optional(String.t()) => String.t()}
         }
 
   @spec parse(String.t()) :: {:ok, t()} | {:error, String.t()}
@@ -27,7 +28,13 @@ defmodule BabelSync.Bases.Definition do
     with {:ok, %{} = yaml} <- read(text),
          {:ok, filter} <- filter(yaml["filters"]),
          {:ok, views} <- views(yaml["views"]) do
-      {:ok, %__MODULE__{filter: filter, formulas: formulas(yaml["formulas"]), views: views}}
+      {:ok,
+       %__MODULE__{
+         filter: filter,
+         formulas: formulas(yaml["formulas"]),
+         views: views,
+         names: display_names(yaml["properties"])
+       }}
     else
       {:ok, _not_a_map} -> {:error, "the base file is not a YAML mapping"}
       {:error, message} when is_binary(message) -> {:error, message}
@@ -84,6 +91,15 @@ defmodule BabelSync.Bases.Definition do
   end
 
   defp formulas(_none), do: %{}
+
+  defp display_names(%{} = properties) do
+    for {property, %{"displayName" => name}} <- properties,
+        is_binary(name) and name != "",
+        into: %{},
+        do: {property |> to_string() |> String.replace_prefix("note.", ""), name}
+  end
+
+  defp display_names(_none), do: %{}
 
   defp views(views) when is_list(views) do
     views
