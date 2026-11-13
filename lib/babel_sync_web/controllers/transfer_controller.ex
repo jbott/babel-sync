@@ -28,6 +28,7 @@ defmodule BabelSyncWeb.TransferController do
       conn
       |> put_resp_header("content-disposition", disposition(entry.path))
       |> put_resp_header("x-content-type-options", "nosniff")
+      |> put_resp_header("content-security-policy", "sandbox; default-src 'none'")
       |> deliver(entry)
     else
       _missing -> refuse(conn, :not_found, "This link has expired or was never valid.")

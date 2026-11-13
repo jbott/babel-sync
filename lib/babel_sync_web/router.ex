@@ -22,6 +22,7 @@ defmodule BabelSyncWeb.Router do
     plug :put_root_layout, html: {BabelSyncWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug BabelSyncWeb.Plugs.ContentPolicy
     plug :fetch_scope
   end
 
