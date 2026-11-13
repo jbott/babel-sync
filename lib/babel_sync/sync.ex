@@ -93,6 +93,13 @@ defmodule BabelSync.Sync do
   end
 
   defp server(entry_id) do
+    case Registry.lookup(BabelSync.Sync.Registry, entry_id) do
+      [{running, _value}] -> running
+      [] -> started(entry_id)
+    end
+  end
+
+  defp started(entry_id) do
     case DynamicSupervisor.start_child(BabelSync.Sync.Supervisor, {DocServer, entry_id}) do
       {:ok, pid} -> pid
       {:error, {:already_started, pid}} -> pid

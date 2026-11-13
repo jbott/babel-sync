@@ -53,6 +53,7 @@ config :phoenix,
 config :babel_sync, BabelSync.Sync,
   idle_timeout: :timer.minutes(5),
   settle_after: :timer.minutes(5),
+  settle_within: :timer.minutes(10),
   compact_after: 20
 
 config :babel_sync, BabelSync.Blobs, max_size: 64 * 1024 * 1024

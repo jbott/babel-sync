@@ -20,6 +20,7 @@ defmodule BabelSync.Sync.DocServer do
     :doc,
     :text,
     :settle_timer,
+    :unsettled_since,
     applied: [],
     last_author: nil,
     versioned_hash: nil
@@ -33,6 +34,7 @@ defmodule BabelSync.Sync.DocServer do
 
   @impl true
   def init(entry_id) do
+    Process.flag(:trap_exit, true)
     doc = Yex.Doc.new()
     {state, updates} = Store.load(entry_id)
 
@@ -48,10 +50,24 @@ defmodule BabelSync.Sync.DocServer do
       doc: doc,
       text: text,
       applied: Enum.map(updates, &elem(&1, 0)),
-      versioned_hash: Store.hash(Yex.Text.to_string(text))
+      versioned_hash: settled_hash(entry_id, Yex.Text.to_string(text))
     }
 
-    {:ok, server, idle_timeout()}
+    {:ok, server, {:continue, :settle}}
+  end
+
+  @impl true
+  def handle_continue(:settle, server), do: {:noreply, settle(server), idle_timeout()}
+
+  @impl true
+  def terminate(_reason, server), do: settle(server)
+
+  defp settled_hash(entry_id, content) do
+    case Vaults.get_entry(entry_id) do
+      %Vaults.Entry{content_hash: nil} when content != "" -> nil
+      %Vaults.Entry{content_hash: hash} when is_binary(hash) -> hash
+      _new_or_gone -> Store.hash(content)
+    end
   end
 
   @impl true
@@ -115,9 +131,9 @@ defmodule BabelSync.Sync.DocServer do
     {:noreply, settle(%{server | settle_timer: nil}), idle_timeout()}
   end
 
-  def handle_info(:timeout, server) do
-    {:stop, :normal, settle(server)}
-  end
+  def handle_info(:timeout, server), do: {:stop, :normal, server}
+
+  def handle_info({:EXIT, _from, reason}, server), do: {:stop, reason, server}
 
   defp record(server, update, origin, author_id) do
     id = Store.append(server.entry_id, update)
@@ -138,13 +154,17 @@ defmodule BabelSync.Sync.DocServer do
     %{server | applied: []}
   end
 
-  defp schedule_settle(%{settle_timer: nil} = server) do
-    %{server | settle_timer: Process.send_after(self(), :settle, settle_after())}
-  end
-
   defp schedule_settle(server) do
-    Process.cancel_timer(server.settle_timer)
-    schedule_settle(%{server | settle_timer: nil})
+    if server.settle_timer, do: Process.cancel_timer(server.settle_timer)
+    now = System.monotonic_time(:millisecond)
+    since = server.unsettled_since || now
+    wait = min(settle_after(), max(since + settle_within() - now, 0))
+
+    %{
+      server
+      | unsettled_since: since,
+        settle_timer: Process.send_after(self(), :settle, wait)
+    }
   end
 
   defp settle(server) do
@@ -155,17 +175,12 @@ defmodule BabelSync.Sync.DocServer do
     if hash != server.versioned_hash do
       Store.put_version(server.entry_id, content, server.last_author)
 
-      with %Vaults.Entry{} = entry <- Vaults.get_entry(server.entry_id),
-           {:error, :not_found} <-
-             Vaults.update_entry(entry, %{content_hash: hash, size: byte_size(content)}) do
-        :ok
-      else
-        nil -> :ok
-        {:ok, _entry} -> :ok
+      with %Vaults.Entry{} = entry <- Vaults.get_entry(server.entry_id) do
+        Vaults.update_entry(entry, %{content_hash: hash, size: byte_size(content)})
       end
     end
 
-    %{server | settle_timer: nil, versioned_hash: hash}
+    %{server | settle_timer: nil, unsettled_since: nil, versioned_hash: hash}
   end
 
   defp apply_ops(ops, text) do
@@ -186,5 +201,6 @@ defmodule BabelSync.Sync.DocServer do
   defp config(key), do: Application.fetch_env!(:babel_sync, BabelSync.Sync)[key]
   defp idle_timeout, do: config(:idle_timeout)
   defp settle_after, do: config(:settle_after)
+  defp settle_within, do: config(:settle_within)
   defp compact_after, do: config(:compact_after)
 end

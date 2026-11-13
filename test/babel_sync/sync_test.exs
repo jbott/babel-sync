@@ -183,4 +183,43 @@ defmodule BabelSync.SyncTest do
     assert [%{content: "idle"}] = Sync.list_versions(entry.id)
     assert DocServer.via(entry.id) |> GenServer.whereis() == nil
   end
+
+  test "a note whose process is shut down is settled first", %{entry: entry} do
+    :ok = Sync.replace_text(entry.id, "typed just before a restart")
+    stop(entry.id)
+
+    assert [%{content: "typed just before a restart"}] = Sync.list_versions(entry.id)
+
+    assert BabelSync.Vaults.get_entry(entry.id).content_hash ==
+             BabelSync.Sync.Store.hash("typed just before a restart")
+  end
+
+  test "a note whose process was killed unsettled is settled when next opened", %{entry: entry} do
+    :ok = Sync.replace_text(entry.id, "typed just before a crash")
+    [{pid, _}] = Registry.lookup(BabelSync.Sync.Registry, entry.id)
+    ref = Process.monitor(pid)
+    Process.exit(pid, :kill)
+    assert_receive {:DOWN, ^ref, _, _, :killed}
+    assert Sync.list_versions(entry.id) == []
+
+    assert Sync.text(entry.id) == "typed just before a crash"
+    :ok = Sync.flush(entry.id)
+
+    assert [%{content: "typed just before a crash"}] = Sync.list_versions(entry.id)
+
+    assert BabelSync.Vaults.get_entry(entry.id).content_hash ==
+             BabelSync.Sync.Store.hash("typed just before a crash")
+  end
+
+  test "opening a settled or empty note saves nothing", %{entry: entry} do
+    assert Sync.text(entry.id) == ""
+    stop(entry.id)
+    assert Sync.list_versions(entry.id) == []
+
+    :ok = Sync.replace_text(entry.id, "once")
+    stop(entry.id)
+    assert Sync.text(entry.id) == "once"
+    stop(entry.id)
+    assert [%{content: "once"}] = Sync.list_versions(entry.id)
+  end
 end
