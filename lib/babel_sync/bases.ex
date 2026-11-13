@@ -19,6 +19,7 @@ defmodule BabelSync.Bases do
   @type table :: %{
           columns: [String.t()],
           rows: [[String.t()]],
+          groups: [String.t()] | nil,
           total: non_neg_integer()
         }
 
@@ -49,7 +50,8 @@ defmodule BabelSync.Bases do
     with {:ok, view} <- view(definition, opts),
          {:ok, where} <- Definition.filter(opts[:where]),
          {:ok, sort} <- sort(opts[:sort], view, opts[:near]),
-         {:ok, group} <- optional(opts[:group_by]) do
+         {:ok, group} <- optional(opts[:group_by]),
+         {:ok, sections} <- sections(view, group) do
       context = %{formulas: definition.formulas, now: opts[:now] || DateTime.utc_now()}
       filters = Enum.reject([definition.filter, view && view.filter, where], &is_nil/1)
 
@@ -62,7 +64,8 @@ defmodule BabelSync.Bases do
 
         if group,
           do: {:ok, grouped(rows, group, opts[:group_by], context)},
-          else: {:ok, table(sorted(rows, sort, context), view, opts, context)}
+          else:
+            {:ok, table(sorted(rows, sections ++ sort, context), view, opts, context, sections)}
       catch
         {:invalid, message} -> {:error, message}
       end
@@ -91,6 +94,12 @@ defmodule BabelSync.Bases do
   defp view(definition, opts) do
     if opts[:definition], do: Definition.view(definition, opts[:view]), else: {:ok, nil}
   end
+
+  defp sections(%{group_by: {property, direction}}, nil) do
+    with {:ok, tree} <- column(property), do: {:ok, [{tree, direction}]}
+  end
+
+  defp sections(_view, _group), do: {:ok, []}
 
   defp optional(nil), do: {:ok, nil}
   defp optional(source), do: Expression.parse(source)
@@ -195,7 +204,7 @@ defmodule BabelSync.Bases do
     %{group: label, counts: counts, total: length(rows)}
   end
 
-  defp table(rows, view, opts, context) do
+  defp table(rows, view, opts, context, sections) do
     limit = (opts[:limit] || (view && view.limit) || @default_limit) |> max(1) |> min(@most)
     shown = Enum.take(rows, limit)
     wanted = opts[:select] || (view && view.columns != [] && view.columns) || common(shown)
@@ -213,9 +222,15 @@ defmodule BabelSync.Bases do
     %{
       columns: columns,
       rows: for(row <- shown, do: Enum.map(trees, &cell(evaluated(&1, row, context)))),
+      groups: labels(sections, shown, context),
       total: length(rows)
     }
   end
+
+  defp labels([{tree, _direction}], rows, context),
+    do: for(row <- rows, do: cell(evaluated(tree, row, context)))
+
+  defp labels([], _rows, _context), do: nil
 
   defp common(rows) do
     rows

@@ -1,7 +1,9 @@
 Config.CSWH: Cross-Site Websocket Hijacking,lib/babel_sync_web/endpoint.ex:17,6731413
+DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:757,59F2C97
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent.ex:774,5DB85FF
 DOS.Regex: Potential Resource Risk in Dynamic Regex Compilation,lib/babel_sync/agent/glob.ex:15,186480B
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/auth/passkeys.ex:91,E3BA49
+Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/bases/index.ex:76,66AB627
 Traversal.FileModule: Directory Traversal in `File.cp!`,lib/babel_sync/backup.ex:57,61E583B
 Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/babel_sync/backup.ex:22,2498705
 Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/babel_sync/backup.ex:56,5273CF5
@@ -37,5 +39,7 @@ XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:766,50D2E81
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:777,20A7FD1
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:816,6E86786
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:827,6573616
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:870,30AFD1C
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:881,7748F4E
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/obsidian_controller.ex:28,3242BD8
 XSS.SendResp: XSS in `send_resp`,lib/babel_sync_web/controllers/transfer_controller.ex:147,1F70068

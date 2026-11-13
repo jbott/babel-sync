@@ -285,10 +285,17 @@ defmodule BabelSyncWeb.VaultLiveTest do
       conn: conn,
       vault: vault
     } do
-      for {name, status} <- [{"Alpha", "open"}, {"Beta", "done"}] do
-        note = entry(vault, "Tasks/#{name}.md")
-        :ok = Sync.replace_text(note.id, "---\nstatus: #{status}\n---\n# #{name}")
-      end
+      notes =
+        for {name, status, extra} <- [
+              {"Alpha", "open",
+               "source: \"[[Beta]]\"\nsite: \"[Docs](https://example.com/docs)\""},
+              {"Beta", "done", "site: https://example.org\nmade: 2024-03-09T08:00:00Z"}
+            ],
+            into: %{} do
+          note = entry(vault, "Tasks/#{name}.md")
+          :ok = Sync.replace_text(note.id, "---\nstatus: #{status}\n#{extra}\n---\n# #{name}")
+          {name, note}
+        end
 
       base = entry(vault, "Tasks.base")
 
@@ -301,7 +308,10 @@ defmodule BabelSyncWeb.VaultLiveTest do
         views:
           - type: table
             name: All
-            order: [file.name, status]
+            groupBy:
+              property: status
+              direction: DESC
+            order: [file.name, status, source, site, made]
           - type: table
             name: Open
             filters: status == "open"
@@ -315,14 +325,35 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
       assert has_element?(view, "#base-table th", "State")
       refute has_element?(view, "#base-table th", "file.name")
+      assert has_element?(view, ~s(#base-table a[href="#{Paths.entry(notes["Beta"])}"]), "Beta")
+      assert has_element?(view, "#base-table td", "done")
+
+      headings =
+        view |> render() |> LazyHTML.from_fragment() |> LazyHTML.query("#base-table tbody th")
+
+      assert Enum.map(headings, &String.trim(LazyHTML.text(&1))) == ["open", "done"]
 
       assert has_element?(
                view,
-               ~s(#base-table a[href="#{Paths.entry(Vaults.get_entry_by_path(vault.id, "Tasks/Beta.md"))}"]),
+               ~s(#base-table td a[href="#{Paths.entry(notes["Beta"])}"]),
                "Beta"
              )
 
-      assert has_element?(view, "#base-table td", "done")
+      assert has_element?(
+               view,
+               ~s(#base-table td a[href="https://example.com/docs"][target=_blank]),
+               "Docs"
+             )
+
+      assert has_element?(view, ~s(#base-table td a[href="https://example.org"]))
+      assert has_element?(view, "#base-table td", "9 Mar 2024")
+
+      :ok = Sync.replace_text(notes["Beta"].id, "---\nstatus: shipped\n---\n# Beta")
+      :ok = Sync.flush(notes["Beta"].id)
+      _ = :sys.get_state(view.pid)
+      send(view.pid, :render_preview)
+      render_async(view)
+      assert has_element?(view, "#base-table td", "shipped")
 
       view |> element("#base-views button", "Open") |> render_click()
       render_async(view)

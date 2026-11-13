@@ -285,7 +285,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
     socket = assign(socket, :latest, Map.put(socket.assigns.latest, changed.id, changed.seq))
     entries = Enum.reject(socket.assigns.entries, &(&1.id == changed.id))
     entries = if changed.deleted_at, do: entries, else: [changed | entries]
-    socket = put_entries(socket, entries)
+    socket = socket |> put_entries(entries) |> rerun_base()
 
     case socket.assigns.entry do
       %Entry{id: id} when id == changed.id and not is_nil(changed.deleted_at) ->
@@ -304,6 +304,12 @@ defmodule BabelSyncWeb.VaultLive.Show do
         {:noreply, socket}
     end
   end
+
+  defp rerun_base(%{assigns: %{shown_as: :base, mode: :read, preview_timer: nil}} = socket),
+    do:
+      assign(socket, :preview_timer, Process.send_after(self(), :render_preview, @preview_delay))
+
+  defp rerun_base(socket), do: socket
 
   defp open_created(socket, entry) do
     socket |> update(:notes_created, &(&1 + 1)) |> push_patch(to: Paths.entry(entry))
@@ -445,6 +451,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
 
   defp based(table, names, entries) do
     paths = Map.new(entries, &{&1.path, &1})
+    resolve = Markdown.resolver(entries)
 
     shown =
       table.columns
@@ -459,12 +466,59 @@ defmodule BabelSyncWeb.VaultLive.Show do
           Map.get(names, column, column)
         end),
       rows:
-        for row <- table.rows do
-          [path | _cells] = row
-          %{path: path, entry: paths[path], cells: Enum.map(shown, &Enum.at(row, elem(&1, 1)))}
-        end,
+        table.rows
+        |> Enum.zip(table.groups || List.duplicate(nil, length(table.rows)))
+        |> Enum.map_reduce(:none, fn {[path | _cells] = row, group}, previous ->
+          cells = Enum.map(shown, &linked(Enum.at(row, elem(&1, 1)), resolve))
+          heading = if table.groups && group != previous, do: blank(group)
+
+          {%{path: path, entry: paths[path], cells: cells, heading: heading}, group}
+        end)
+        |> elem(0),
       total: table.total
     }
+  end
+
+  @timestamp ~r/^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z$/
+  @cell_link ~r/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s,)]+)/
+
+  defp blank(""), do: "None"
+  defp blank(label), do: label
+
+  defp linked(cell, resolve) do
+    case Regex.run(@timestamp, cell) do
+      [^cell, date] -> [{:text, Calendar.strftime(Date.from_iso8601!(date), "%-d %b %Y")}]
+      nil -> links_in(cell, resolve)
+    end
+  end
+
+  defp links_in(cell, resolve) do
+    @cell_link
+    |> Regex.split(cell, include_captures: true, trim: true)
+    |> Enum.map(fn part ->
+      case Regex.run(@cell_link, part) do
+        [^part, target | rest] when target != "" ->
+          note_link(target, Enum.at(rest, 0, ""), resolve)
+
+        [^part, "", "", label, url] ->
+          {:web, url, label}
+
+        [^part, "", "", "", "", url] ->
+          {:web, url, url}
+
+        _plain ->
+          {:text, part}
+      end
+    end)
+  end
+
+  defp note_link(target, shown, resolve) do
+    label = if shown == "", do: target, else: shown
+
+    case resolve.(target) do
+      %Entry{} = entry -> {:note, Paths.entry(entry), label}
+      nil -> {:text, label}
+    end
   end
 
   defp problem({:error, {:invalid_query, message}}), do: message
@@ -896,24 +950,52 @@ defmodule BabelSyncWeb.VaultLive.Show do
                   </tr>
                 </thead>
                 <tbody>
-                  <tr
-                    :for={row <- @base.table.rows}
-                    class="border-b border-line/60 transition hover:bg-sunken/60"
-                  >
-                    <td class="whitespace-nowrap px-4 py-2 md:px-5">
-                      <.link
-                        :if={row.entry}
-                        patch={Paths.entry(row.entry)}
-                        class="font-medium text-ink underline-offset-2 hover:underline"
+                  <%= for row <- @base.table.rows do %>
+                    <tr :if={row.heading} class="border-b border-line bg-sunken/70">
+                      <th
+                        colspan={length(@base.table.columns) + 1}
+                        class="px-4 pb-1.5 pt-4 text-left text-xs font-semibold uppercase tracking-wide text-muted md:px-5"
                       >
-                        {Path.rootname(Path.basename(row.path))}
-                      </.link>
-                      <span :if={is_nil(row.entry)}>{row.path}</span>
-                    </td>
-                    <td :for={cell <- row.cells} class="max-w-xs truncate px-3 py-2 text-muted">
-                      {cell}
-                    </td>
-                  </tr>
+                        {row.heading}
+                      </th>
+                    </tr>
+                    <tr class="border-b border-line/60 transition hover:bg-sunken/60">
+                      <td class="whitespace-nowrap px-4 py-2 md:px-5">
+                        <.link
+                          :if={row.entry}
+                          patch={Paths.entry(row.entry)}
+                          class="font-medium text-ink underline-offset-2 hover:underline"
+                        >
+                          {Path.rootname(Path.basename(row.path))}
+                        </.link>
+                        <span :if={is_nil(row.entry)}>{row.path}</span>
+                      </td>
+                      <td :for={cell <- row.cells} class="max-w-xs truncate px-3 py-2 text-muted">
+                        <%= for part <- cell do %>
+                          <%= case part do %>
+                            <% {:note, href, label} -> %>
+                              <.link
+                                patch={href}
+                                class="text-accent underline-offset-2 hover:underline"
+                              >
+                                {label}
+                              </.link>
+                            <% {:web, href, label} -> %>
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="text-accent underline-offset-2 hover:underline"
+                              >
+                                {label}
+                              </a>
+                            <% {:text, text} -> %>
+                              {text}
+                          <% end %>
+                        <% end %>
+                      </td>
+                    </tr>
+                  <% end %>
                 </tbody>
               </table>
               <p

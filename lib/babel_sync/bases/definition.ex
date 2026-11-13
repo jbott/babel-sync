@@ -13,6 +13,7 @@ defmodule BabelSync.Bases.Definition do
           filter: Expression.t() | nil,
           columns: [String.t()],
           sort: [{String.t(), :asc | :desc}],
+          group_by: {String.t(), :asc | :desc} | nil,
           limit: pos_integer() | nil
         }
 
@@ -123,9 +124,15 @@ defmodule BabelSync.Bases.Definition do
         for %{"property" => property} = sort <- List.wrap(view["sort"]), is_binary(property) do
           {property, direction(sort["direction"])}
         end,
+      group_by: group_by(view["groupBy"]),
       limit: if(is_integer(view["limit"]) and view["limit"] > 0, do: view["limit"])
     }
   end
+
+  defp group_by(%{"property" => property} = group) when is_binary(property),
+    do: {property, direction(group["direction"])}
+
+  defp group_by(_none), do: nil
 
   defp direction(direction) when is_binary(direction),
     do: if(String.downcase(direction) == "desc", do: :desc, else: :asc)

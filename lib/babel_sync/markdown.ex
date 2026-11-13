@@ -119,6 +119,12 @@ defmodule BabelSync.Markdown do
   @spec resolve_target(String.t(), [Entry.t()]) :: Entry.t() | nil
   def resolve_target(target, entries), do: lookup(target, index(entries))
 
+  @spec resolver([Entry.t()]) :: (String.t() -> Entry.t() | nil)
+  def resolver(entries) do
+    index = index(entries)
+    &lookup(&1, index)
+  end
+
   defp render(text, context, properties?) do
     {frontmatter, body} = split_frontmatter(text)
     document = MDEx.parse_document!(body, extension: @extension)
