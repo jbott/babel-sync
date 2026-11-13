@@ -1,12 +1,13 @@
 import { basicSetup } from "codemirror";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { tags } from "@lezer/highlight";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import * as Y from "yjs";
 import { closeNote, openNote, sharedClient } from "./client";
+import { livePreview, wikilinks } from "./live_preview";
 
 const tint = (token, share) => `color-mix(in oklab, var(${token}) ${share}%, transparent)`;
 
@@ -152,6 +153,18 @@ export const NoteEditor = {
       colorLight: userColor.replace("45%)", "45% / 0.25)"),
     });
 
+    this.rendering = new Compartment();
+    this.rendered = livePreview({ follow: (link) => this.follow(link) });
+    this.sourceButton = document.getElementById("source-button");
+    this.toggleSource = () => {
+      remember(!this.source());
+      this.showSource();
+      this.view.dispatch({ effects: this.rendering.reconfigure(this.source() ? [] : this.rendered) });
+      this.view.focus();
+    };
+    this.sourceButton?.addEventListener("click", this.toggleSource);
+    this.showSource();
+
     const undoManager = new Y.UndoManager(this.session.text);
     const editable = writable === "true";
 
@@ -162,7 +175,8 @@ export const NoteEditor = {
         extensions: [
           keymap.of(yUndoManagerKeymap),
           basicSetup,
-          markdown({ extensions: [frontmatter] }),
+          markdown({ base: markdownLanguage, extensions: [frontmatter, wikilinks] }),
+          this.rendering.of(this.source() ? [] : this.rendered),
           syntaxHighlighting(marks),
           EditorView.lineWrapping,
           EditorState.readOnly.of(!editable),
@@ -178,7 +192,24 @@ export const NoteEditor = {
     sharedClient(this.el.dataset.token);
   },
 
+  source() {
+    return remembered();
+  },
+
+  showSource() {
+    this.sourceButton?.setAttribute("aria-pressed", String(this.source()));
+  },
+
+  follow({ target, address }) {
+    if (address && /^https?:\/\//i.test(address)) {
+      window.open(address, "_blank", "noopener,noreferrer");
+    } else {
+      this.pushEvent("follow", { target: target ?? decoded(address) });
+    }
+  },
+
   destroyed() {
+    this.sourceButton?.removeEventListener("click", this.toggleSource);
     this.stopStatus?.();
     this.view?.destroy();
     if (this.session) closeNote(this.session);
@@ -218,6 +249,30 @@ export const NoteEditor = {
     draw();
   },
 };
+
+const SOURCE = "babelsync:source";
+
+function remembered() {
+  try {
+    return localStorage.getItem(SOURCE) === "yes";
+  } catch {
+    return false;
+  }
+}
+
+function remember(source) {
+  try {
+    localStorage.setItem(SOURCE, source ? "yes" : "no");
+  } catch {}
+}
+
+function decoded(address) {
+  try {
+    return decodeURIComponent(address);
+  } catch {
+    return address;
+  }
+}
 
 function status(session, reached, problem) {
   if (problem === "not_found") return ["gone", "This note was deleted"];

@@ -265,6 +265,16 @@ defmodule BabelSyncWeb.VaultLive.Show do
     {:noreply, push_event(socket, "reveal-line", %{line: line})}
   end
 
+  def handle_event("follow", %{"target" => target}, socket) when is_binary(target) do
+    note = target |> String.split(["#", "^"], parts: 2) |> hd() |> String.trim()
+
+    case Markdown.resolve_target(note, socket.assigns.link_index) do
+      %Entry{} = entry -> {:noreply, push_patch(socket, to: Paths.entry(entry))}
+      nil when note == "" -> {:noreply, socket}
+      nil -> {:noreply, put_flash(socket, :error, "Nothing here is named #{note}.")}
+    end
+  end
+
   def handle_event("close_history", _params, socket) do
     {:noreply,
      socket |> assign(:versions, nil) |> assign(:version, nil) |> assign(:blob_versions, nil)}

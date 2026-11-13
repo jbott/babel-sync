@@ -44,6 +44,11 @@ async function open(path: string): Promise<Page> {
     if (message.type() === "error") problems.push(`console: ${message.text()}`);
   });
   page.on("dialog", (dialog) => dialog.accept());
+  await page.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem("babelsync:source", localStorage.getItem("babelsync:source") ?? "yes");
+    } catch {}
+  });
   await page.goto(baseUrl + path, { waitUntil: "networkidle0" });
   await page.waitForSelector(".phx-connected");
   return page;
@@ -231,6 +236,16 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     await one.locator('#toolbar button[phx-value-mode="edit"]').click();
     await one.waitForSelector(".cm-content");
     await waitForText(one, ".cm-content", "after the move");
+
+    await two.keyboard.sendCharacter("- [ ] buy milk\n");
+    await waitForText(one, ".cm-content", "- [ ] buy milk");
+    await one.locator("#source-button").click();
+    await one.waitForSelector(".cm-task:not(:checked)");
+    await one.locator(".cm-task").click();
+    await waitForText(two, ".cm-content", "- [x] buy milk");
+    await one.waitForSelector(".cm-task:checked");
+    await one.locator("#source-button").click();
+    await one.waitForFunction(() => document.querySelector(".cm-task") === null);
 
     await one.locator("#history-button").click();
     await one.waitForSelector("#history [phx-click=show_version]");

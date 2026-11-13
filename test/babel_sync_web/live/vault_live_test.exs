@@ -94,6 +94,7 @@ defmodule BabelSyncWeb.VaultLiveTest do
             {"mode", %{"mode" => "write"}},
             {"base_view", %{"view" => %{}}},
             {"upload_failed", %{"name" => %{}}},
+            {"follow", %{"target" => ["a"]}},
             {"never_heard_of_it", %{}}
           ] do
         render_hook(view, event, params)
@@ -143,6 +144,23 @@ defmodule BabelSyncWeb.VaultLiveTest do
       render_async(view)
       view |> element("#close-details") |> render_click()
       refute has_element?(view, "#details")
+    end
+  end
+
+  describe "a link followed from the editor" do
+    test "opens the note it names, or says nothing has that name", %{conn: conn, vault: vault} do
+      plan = entry(vault, "Trips/Lisbon plan.md")
+      packing = entry(vault, "Trips/packing.md")
+      {:ok, view, _html} = live(conn, Paths.entry(plan))
+
+      render_hook(view, "follow", %{"target" => "packing#Shoes"})
+      assert_patch view, Paths.entry(packing)
+
+      render_hook(view, "follow", %{"target" => "Trips/Lisbon%20plan.md"})
+      assert has_element?(view, "#flash-error", "Trips/Lisbon%20plan.md")
+
+      render_hook(view, "follow", %{"target" => "Trips/Lisbon plan.md"})
+      assert_patch view, Paths.entry(plan)
     end
   end
 

@@ -89,6 +89,14 @@ defmodule BabelSyncWeb.VaultLive.Reader do
         >Read</button>
       </div>
       <.icon_button
+        :if={@entry.kind == :doc and @mode == :edit and Vaults.Path.markdown?(@entry.path)}
+        id="source-button"
+        phx-mounted={JS.ignore_attributes(["aria-pressed"])}
+        aria-pressed="false"
+        icon="hero-code-bracket"
+        label="Show the Markdown as written"
+      />
+      <.icon_button
         :if={@entry.kind == :doc and Vaults.Path.markdown?(@entry.path)}
         id="details-button"
         phx-click="details"
