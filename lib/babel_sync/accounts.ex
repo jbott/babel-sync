@@ -9,6 +9,7 @@ defmodule BabelSync.Accounts do
   alias BabelSync.Vaults
 
   @owner_name "Owner"
+  @owner_id "00000000-0000-4000-8000-000000000001"
 
   @spec create_user(map()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
   def create_user(attrs) do
@@ -64,8 +65,12 @@ defmodule BabelSync.Accounts do
         user
 
       [] ->
-        {:ok, user} = create_user(%{name: @owner_name})
-        user
+        Repo.insert!(%User{id: @owner_id, name: @owner_name},
+          on_conflict: :nothing,
+          conflict_target: :id
+        )
+
+        Repo.get!(User, @owner_id)
     end
   end
 
