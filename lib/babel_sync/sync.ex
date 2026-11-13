@@ -87,18 +87,17 @@ defmodule BabelSync.Sync do
 
   defp author(opts), do: {opts[:author_id], opts[:author_app]}
 
-  defp call(entry_id, message) do
+  @attempts 4
+
+  defp call(entry_id, message, attempts \\ @attempts) do
     GenServer.call(server(entry_id), message)
   catch
-    :exit, {reason, _call} when reason in [:noproc, :normal] ->
-      GenServer.call(server(entry_id), message)
+    :exit, {reason, _call} when reason in [:noproc, :normal] and attempts > 1 ->
+      call(entry_id, message, attempts - 1)
   end
 
   defp server(entry_id) do
-    case Registry.lookup(BabelSync.Sync.Registry, entry_id) do
-      [{running, _value}] -> running
-      [] -> started(entry_id)
-    end
+    GenServer.whereis(DocServer.via(entry_id)) || started(entry_id)
   end
 
   defp started(entry_id) do
