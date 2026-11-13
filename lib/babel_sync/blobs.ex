@@ -245,11 +245,18 @@ defmodule BabelSync.Blobs do
     |> Enum.count(fn blob ->
       {:ok, collected?} =
         Repo.transact(fn ->
-          case Repo.delete_all(from b in unreferenced, where: b.id == ^blob.id) do
-            {1, _} -> {:ok, Store.impl().delete(key(blob)) == :ok}
+          with {1, _} <- Repo.delete_all(from b in unreferenced, where: b.id == ^blob.id),
+               :ok <- Store.impl().delete(key(blob)) do
+            {:ok, true}
+          else
             {0, _} -> {:ok, false}
+            {:error, reason} -> {:error, reason}
           end
         end)
+        |> case do
+          {:ok, collected?} -> {:ok, collected?}
+          {:error, _kept_for_next_time} -> {:ok, false}
+        end
 
       collected?
     end)
@@ -327,6 +334,7 @@ defmodule BabelSync.Blobs do
 
   defp abandon(upload) do
     Store.impl().abort_upload(key(upload), upload.store_ref)
+    if get(upload.vault_id, upload.hash) == nil, do: Store.impl().delete(key(upload))
     Repo.delete!(upload)
   end
 

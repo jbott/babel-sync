@@ -196,6 +196,21 @@ defmodule BabelSync.JanitorTest do
       refute Blobs.get_upload(upload.id)
     end
 
+    test "bytes assembled for an upload that was never recorded go with it" do
+      vault = vault()
+      data = "assembled, then the server stopped"
+      hash = Blobs.hash_binary(data)
+      {:ok, upload, [1]} = Blobs.begin_upload(vault.id, %{hash: hash, size: byte_size(data)})
+      :ok = Blobs.put_part(upload, 1, data)
+      key = "vaults/#{vault.id}/#{hash}"
+      :ok = Blobs.Store.impl().finish_upload(key, upload.store_ref, [{1, "1"}])
+      assert File.exists?(Blobs.Store.Disk.path(key))
+
+      assert :ok = Janitor.run(days_from_now(2))
+      refute Blobs.get_upload(upload.id)
+      refute File.exists?(Blobs.Store.Disk.path(key))
+    end
+
     test "bytes a device has just been told it need not upload are kept" do
       vault = vault()
       {:ok, blob} = Blobs.put(vault.id, "about to be attached")

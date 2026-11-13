@@ -71,8 +71,10 @@ defmodule BabelSync.Blobs.Store.S3 do
 
   @impl true
   def delete(key) do
-    request(:delete, key, [])
-    :ok
+    case request(:delete, key, []) do
+      {:ok, %{status: status}} when status in [200, 204, 404] -> :ok
+      other -> failure(other)
+    end
   end
 
   @impl true

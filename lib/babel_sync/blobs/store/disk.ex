@@ -88,8 +88,10 @@ defmodule BabelSync.Blobs.Store.Disk do
 
   @impl true
   def delete(key) do
-    File.rm(path(key))
-    :ok
+    case File.rm(path(key)) do
+      {:error, reason} when reason != :enoent -> {:error, reason}
+      _gone -> :ok
+    end
   end
 
   @impl true
