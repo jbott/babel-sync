@@ -100,7 +100,7 @@ A device signed in as a viewer applies remote changes and sends nothing. Local e
 |---|---|---|
 | The protocol converges, a device that says "synced" equals the server, and no written value is lost, even when changes are missed or records forgotten | `spec/Sync.tla`, model-checked with TLC: 2 devices, 2 entries, 4 edits, 2 faults; 2.7 million states | Proof for that size of model. Says nothing about the code |
 | Without the audit, a missed change leaves a device wrong but "synced" | `spec/SyncFeedOnly.cfg`: TLC finds the counterexample in four steps | Confirms the model can express the bug that happened |
-| The TypeScript engine converges under crashes, restarts and offline edits | `plugin/test/simulation.test.ts`: three engines against a real server, random operations, crash injection | Evidence, not proof. Seeded and repeatable in content, but timing varies between runs |
+| The TypeScript engine converges under crashes, restarts and offline edits | `plugin/test/simulation.test.ts`: three engines against a real server, random operations, crash injection, and a state database that fails and stalls at random | Evidence, not proof. Seeded and repeatable in content, but timing varies between runs |
 | Named scenarios behave as intended | `plugin/test/engine.test.ts`. The test file system reports every change back to the engine, including the engine's own, as Obsidian does, and can be made blind to case or made to refuse names | One case each |
 | The plugin works inside Obsidian | `plugin/test/real-obsidian.mjs`, two isolated Obsidian instances | Desktop only |
 

@@ -31,23 +31,23 @@ class FakeDatabase {
     this.closing = true;
   }
 
-  transaction(name: string): unknown {
+  transaction(names: string[]): unknown {
     if (this.closing) throw new Error("The database connection is closing.");
-    const rows = this.rows.get(name)!;
     const request = new FakeRequest();
-    const transaction = { oncomplete: null as Handler, onabort: null as Handler, onerror: null as Handler, error: null };
-    const settle = (result: unknown) => {
-      request.result = result;
-      setTimeout(() => transaction.oncomplete?.(), 0);
-      return request;
+    const transaction = { oncomplete: null as Handler, onabort: null as Handler, onerror: null as Handler, error: null, abort: () => {} };
+    setTimeout(() => transaction.oncomplete?.(), 0);
+    const objectStore = (name: string) => {
+      assert.ok(names.includes(name));
+      const rows = this.rows.get(name)!;
+      const settle = (result: unknown) => Object.assign(request, { result });
+      return {
+        put: (value: { id?: string }, key?: unknown) => settle(rows.set(key ?? value.id, value)),
+        delete: (key: unknown) => settle(rows.delete(key)),
+        get: (key: unknown) => settle(rows.get(key)),
+        getAll: () => settle([...rows.values()]),
+        clear: () => settle(rows.clear()),
+      };
     };
-    const objectStore = () => ({
-      put: (value: { id?: string }, key?: unknown) => settle(rows.set(key ?? value.id, value)),
-      delete: (key: unknown) => settle(rows.delete(key)),
-      get: (key: unknown) => settle(rows.get(key)),
-      getAll: () => settle([...rows.values()]),
-      clear: () => settle(rows.clear()),
-    });
     return Object.assign(transaction, { objectStore });
   }
 }
@@ -77,10 +77,10 @@ function entry(n: number): LocalEntry {
 test("many writes that meet a lost connection share one new connection", async () => {
   const { opened } = fakeIndexedDb();
   const store = new IdbStore("lost");
-  await store.setSeq(1);
+  await store.commit({ entries: [], removed: [], seq: 1 });
 
   opened[0].closing = true;
-  await Promise.all(Array.from({ length: 40 }, (_unused, n) => store.put(entry(n))));
+  await Promise.all(Array.from({ length: 40 }, (_unused, n) => store.commit({ entries: [entry(n)], removed: [] })));
 
   assert.equal(opened.length, 2);
   assert.equal((await store.load()).entries.length, 40);
@@ -90,11 +90,11 @@ test("many writes that meet a lost connection share one new connection", async (
 test("a connection the system closes is replaced before the next write", async () => {
   const { opened } = fakeIndexedDb();
   const store = new IdbStore("closed");
-  await store.setSeq(7);
+  await store.commit({ entries: [], removed: [], seq: 7 });
 
   opened[0].closing = true;
   opened[0].onclose?.();
-  await store.put(entry(1));
+  await store.commit({ entries: [entry(1)], removed: [] });
 
   assert.equal(opened.length, 2);
   assert.deepEqual(await store.load(), { seq: 7, entries: [entry(1)] });
@@ -104,9 +104,9 @@ test("a connection the system closes is replaced before the next write", async (
 test("a store that was closed on purpose does not come back", async () => {
   const { opened } = fakeIndexedDb();
   const store = new IdbStore("stopped");
-  await store.setSeq(1);
+  await store.commit({ entries: [], removed: [], seq: 1 });
   await store.close();
 
-  await assert.rejects(store.put(entry(1)), /closing/);
+  await assert.rejects(store.commit({ entries: [entry(1)], removed: [] }), /closing/);
   assert.equal(opened.length, 1);
 });

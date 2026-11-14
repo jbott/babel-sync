@@ -38,6 +38,12 @@ export function applyTextChange(text: Y.Text, next: string, origin: unknown): vo
   }, origin);
 }
 
+export function distance(one: string, other: string): number {
+  let changed = 0;
+  for (const [operation, chunk] of diff(one, other)) if (operation !== diff.EQUAL) changed += chunk.length;
+  return changed;
+}
+
 export function conflictPath(path: string, device: string, now: Date): string {
   const slash = path.lastIndexOf("/");
   const folder = slash === -1 ? "" : path.slice(0, slash + 1);

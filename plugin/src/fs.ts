@@ -34,13 +34,14 @@ export type LocalEntry = {
   doc?: Uint8Array;
   seq?: number;
   unwanted?: boolean;
+  next?: { doc: Uint8Array; hash: string };
 };
+
+export type Batch = { entries: LocalEntry[]; removed: string[]; seq?: number };
 
 export interface StateStore {
   load(): Promise<{ seq: number; entries: LocalEntry[] }>;
-  put(entry: LocalEntry): Promise<void>;
-  remove(id: string): Promise<void>;
-  setSeq(seq: number): Promise<void>;
+  commit(batch: Batch): Promise<void>;
 }
 
 export class MemoryStore implements StateStore {
@@ -51,16 +52,10 @@ export class MemoryStore implements StateStore {
     return { seq: this.seq, entries: [...this.entries.values()].map((entry) => ({ ...entry })) };
   }
 
-  async put(entry: LocalEntry) {
-    this.entries.set(entry.id, { ...entry });
-  }
-
-  async remove(id: string) {
-    this.entries.delete(id);
-  }
-
-  async setSeq(seq: number) {
-    this.seq = seq;
+  async commit({ entries, removed, seq }: Batch) {
+    for (const id of removed) this.entries.delete(id);
+    for (const entry of entries) this.entries.set(entry.id, { ...entry });
+    if (seq !== undefined) this.seq = seq;
   }
 }
 

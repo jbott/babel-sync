@@ -1,9 +1,12 @@
-import type { LocalEntry, StateStore } from "./fs.ts";
+import type { Batch, LocalEntry, StateStore } from "./fs.ts";
 
 const ENTRIES = "entries";
 const META = "meta";
 
 const ATTEMPTS = 3;
+const PATIENCE_MS = 15_000;
+
+type Action = (transaction: IDBTransaction) => IDBRequest | void;
 
 export class IdbStore implements StateStore {
   private name: string;
@@ -39,26 +42,29 @@ export class IdbStore implements StateStore {
   }
 
   async load(): Promise<{ seq: number; entries: LocalEntry[] }> {
-    const entries = await this.request<LocalEntry[]>(ENTRIES, "readonly", (store) => store.getAll());
-    const seq = await this.request<number | undefined>(META, "readonly", (store) => store.get("seq"));
+    const entries = await this.request<LocalEntry[]>([ENTRIES], "readonly", (transaction) => transaction.objectStore(ENTRIES).getAll());
+    const seq = await this.request<number | undefined>([META], "readonly", (transaction) => transaction.objectStore(META).get("seq"));
     return { seq: seq ?? 0, entries };
   }
 
-  async put(entry: LocalEntry): Promise<void> {
-    await this.request(ENTRIES, "readwrite", (store) => store.put({ ...entry }));
+  async commit({ entries, removed, seq }: Batch): Promise<void> {
+    await this.request([ENTRIES, META], "readwrite", (transaction) => {
+      const held = transaction.objectStore(ENTRIES);
+      for (const id of removed) held.delete(id);
+      for (const entry of entries) held.put({ ...entry });
+      if (seq !== undefined) transaction.objectStore(META).put(seq, "seq");
+    });
   }
 
-  async remove(id: string): Promise<void> {
-    await this.request(ENTRIES, "readwrite", (store) => store.delete(id));
-  }
-
-  async setSeq(seq: number): Promise<void> {
-    await this.request(META, "readwrite", (store) => store.put(seq, "seq"));
+  async probe(): Promise<void> {
+    await this.request([META], "readonly", (transaction) => transaction.objectStore(META).get("seq")).catch(() => {});
   }
 
   async clear(): Promise<void> {
-    await this.request(ENTRIES, "readwrite", (store) => store.clear());
-    await this.request(META, "readwrite", (store) => store.clear());
+    await this.request([ENTRIES, META], "readwrite", (transaction) => {
+      transaction.objectStore(ENTRIES).clear();
+      transaction.objectStore(META).clear();
+    });
   }
 
   async close(): Promise<void> {
@@ -66,11 +72,11 @@ export class IdbStore implements StateStore {
     await this.database.then((database) => database.close()).catch(() => {});
   }
 
-  private async request<T>(name: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest): Promise<T> {
+  private async request<T>(names: string[], mode: IDBTransactionMode, action: Action): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       const connection = this.database;
       try {
-        return await this.once<T>(connection, name, mode, action);
+        return await this.once<T>(connection, names, mode, action);
       } catch (error) {
         if (attempt === ATTEMPTS || this.closed) throw error;
         this.replace(connection);
@@ -78,15 +84,29 @@ export class IdbStore implements StateStore {
     }
   }
 
-  private async once<T>(connection: Promise<IDBDatabase>, name: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest): Promise<T> {
+  private async once<T>(connection: Promise<IDBDatabase>, names: string[], mode: IDBTransactionMode, action: Action): Promise<T> {
     const database = await connection;
 
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction(name, mode);
-      const request = action(transaction.objectStore(name));
-      transaction.oncomplete = () => resolve(request.result as T);
-      transaction.onabort = () => reject(transaction.error ?? request.error ?? new Error("the sync state write was aborted"));
-      transaction.onerror = () => reject(transaction.error ?? request.error);
+      const transaction = database.transaction(names, mode);
+      const request = action(transaction);
+      const overdue = setTimeout(() => {
+        try {
+          transaction.abort();
+        } catch {
+          reject(new Error("the sync state database did not answer"));
+        }
+      }, PATIENCE_MS);
+      const failed = (error: unknown) => {
+        clearTimeout(overdue);
+        reject(error ?? new Error("the sync state database did not answer"));
+      };
+      transaction.oncomplete = () => {
+        clearTimeout(overdue);
+        resolve(request?.result as T);
+      };
+      transaction.onabort = () => failed(transaction.error ?? request?.error);
+      transaction.onerror = () => failed(transaction.error ?? request?.error);
     });
   }
 }

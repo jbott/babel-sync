@@ -59,7 +59,11 @@ defmodule BabelSync.E2E.JsClientTest do
 
   test "the plugin's sync state survives the system closing its database" do
     {output, status} =
-      System.cmd("node", ["--test", "plugin/test/idb-store.test.ts"], stderr_to_stdout: true)
+      System.cmd(
+        "node",
+        ["--test", "plugin/test/idb-store.test.ts", "plugin/test/state-writer.test.ts"],
+        stderr_to_stdout: true
+      )
 
     assert status == 0, output
   end

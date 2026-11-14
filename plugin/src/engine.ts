@@ -2,7 +2,8 @@ import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { type BabelSyncClient, type DocSession, type Entry, type VaultSession, Emitter, HttpError, RequestError, blobHash } from "@babelsync/core";
 import { type LocalEntry, type StateStore, type VaultFs, parentOf } from "./fs.ts";
-import { applyTextChange, conflictPath, kindFor, normalize, textHash } from "./text.ts";
+import { StateWriter } from "./state-writer.ts";
+import { applyTextChange, conflictPath, distance, kindFor, normalize, textHash } from "./text.ts";
 
 function numbered(path: string, copy: number): string {
   const dot = path.lastIndexOf(".");
@@ -23,6 +24,7 @@ export type EngineOptions = {
   sessionIdleMs?: number;
   retryMs?: number;
   settleMs?: number;
+  stateRetryMs?: number;
   now?: () => Date;
 };
 
@@ -55,6 +57,7 @@ const SETTLING_PASSES = 5;
 const QUIETLY = true;
 const THOROUGHLY = true;
 const ATTEMPTS = 3;
+const STALLED = "cannot save sync state on this device; trying again";
 
 function folded(path: string): string {
   return path.normalize("NFC").toLowerCase();
@@ -71,6 +74,14 @@ function explained(error: unknown, reason: string): string {
 
 class Unplaceable extends Error {}
 
+function textOf(state: Uint8Array | undefined): string {
+  const doc = new Y.Doc();
+  if (state) Y.applyUpdate(doc, state);
+  const text = doc.getText("content").toString();
+  doc.destroy();
+  return text;
+}
+
 async function placing<T>(work: Promise<T>): Promise<T> {
   try {
     return await work;
@@ -84,8 +95,11 @@ export type Progress = { direction: "receiving" | "sending"; done: number; total
 export class SyncEngine extends Emitter<{ status: Status; error: string; notice: string; progress: Progress | null; log: string }> {
   status: Status = "offline";
   progress: Progress | null = null;
+  stalled: string | null = null;
 
   private options: EngineOptions;
+  private state: StateWriter;
+  private wanted: Status = "offline";
   private vault: VaultSession | null = null;
   private byId = new Map<string, LocalEntry>();
   private byPath = new Map<string, string>();
@@ -113,15 +127,34 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   constructor(options: EngineOptions) {
     super();
     this.options = options;
+    this.state = new StateWriter(options.store, (trouble) => this.stall(trouble), options.stateRetryMs);
+  }
+
+  protected override emit<K extends "status" | "error" | "notice" | "progress" | "log">(
+    event: K,
+    value: { status: Status; error: string; notice: string; progress: Progress | null; log: string }[K],
+  ): void {
+    if (this.stopped && (event === "error" || event === "notice")) return;
+    super.emit(event, value);
+  }
+
+  private stall(trouble: string | null): void {
+    this.emit("log", trouble ? `could not save sync state: ${trouble}` : "sync state is being saved again");
+    this.stalled = trouble ? STALLED : null;
+    this.setStatus(this.wanted);
+  }
+
+  resume(): void {
+    this.state.retry();
   }
 
   async start(): Promise<void> {
-    const { seq, entries } = await this.options.store.load();
+    const { seq, entries } = await this.state.load();
     for (const entry of entries) {
       const unfetched = entry.kind !== "folder" && entry.hash === null && !entry.unwanted;
       if (entry.seq !== undefined && !unfetched) this.versions.set(entry.id, entry.seq);
-      if (!entry.unwanted && this.ignored(entry.path)) await this.options.store.put({ ...entry, doc: undefined, hash: null, unwanted: true });
-      else if (!entry.unwanted) this.remember(entry);
+      if (!entry.unwanted && this.ignored(entry.path)) await this.state.put({ ...entry, doc: undefined, hash: null, unwanted: true });
+      else if (!entry.unwanted) this.remember(entry.next ? await this.resolved(entry) : entry);
       else if (!this.ignored(entry.path)) await this.discard(entry.id);
     }
 
@@ -155,6 +188,21 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
       this.emit("error", reason);
       this.setStatus("error");
     });
+  }
+
+  private async resolved(entry: LocalEntry): Promise<LocalEntry> {
+    const { fs } = this.options;
+    const next = entry.next!;
+    entry.next = undefined;
+
+    if (await fs.stat(entry.path)) {
+      const disk = normalize(await fs.readText(entry.path));
+      const written = (await textHash(disk)) === next.hash || entry.hash === null || distance(disk, textOf(next.doc)) < distance(disk, textOf(entry.doc));
+      if (written) Object.assign(entry, next);
+    }
+
+    await this.state.put(entry);
+    return entry;
   }
 
   private get firstRetryMs(): number {
@@ -202,8 +250,9 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   }
 
   private async mark(remote: Entry): Promise<void> {
-    this.acknowledge(remote);
     const local = this.byId.get(remote.id);
+    if (!local && !remote.deleted) return;
+    this.acknowledge(remote);
     if (local) await this.persist(local);
   }
 
@@ -211,7 +260,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
     if (remote.deleted) return this.discard(remote.id);
 
     this.versions.set(remote.id, remote.seq);
-    await this.options.store.put({
+    await this.state.put({
       id: remote.id,
       path: remote.path,
       kind: remote.kind,
@@ -226,20 +275,22 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   }
 
   private persist(entry: LocalEntry): Promise<void> {
-    return this.options.store.put({ ...entry, seq: this.versions.get(entry.id) });
+    return this.state.put({ ...entry, seq: this.versions.get(entry.id) });
   }
 
   private async discard(id: string): Promise<void> {
     this.versions.delete(id);
-    await this.options.store.remove(id);
+    await this.state.remove(id);
   }
 
   private async receive(remote: Entry): Promise<void> {
+    if (this.stopped) return;
     try {
       await this.take(remote);
       this.failures.delete(remote.id);
       await this.advance(remote.seq);
     } catch (error) {
+      if (this.stopped) throw error;
       this.emit("log", `could not apply ${remote.path}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
       const attempts = error instanceof Unplaceable ? (this.failures.get(remote.id) ?? 0) + 1 : 0;
       this.failures.set(remote.id, attempts);
@@ -261,7 +312,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   private async advance(seq: number): Promise<void> {
     if (this.behind || seq <= this.applied) return;
     this.applied = seq;
-    await this.options.store.setSeq(seq);
+    await this.state.setSeq(seq);
   }
 
   private fallBehind(): void {
@@ -289,6 +340,8 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
     }
     this.live.clear();
     this.vault?.close();
+    this.state.close();
+    this.stalled = null;
     this.setStatus("offline");
   }
 
@@ -434,9 +487,11 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
 
   private setStatus(status: Status): void {
     if (status !== "syncing") this.report(null);
-    if (this.status === status) return;
-    this.status = status;
-    this.emit("status", status);
+    this.wanted = status;
+    const shown = this.stalled ? "error" : status;
+    if (this.status === shown) return;
+    this.status = shown;
+    this.emit("status", shown);
   }
 
   private async reconcile(changes: Entry[], complete = false, digest?: string | null, thoroughly = false): Promise<void> {
@@ -510,7 +565,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
       await this.pushLocal(file.path);
       this.unsent.delete(file.path);
     } catch (error) {
-      if (!this.online) throw error;
+      if (this.stopped || !this.online) throw error;
       const reason = error instanceof Error ? error.message : String(error);
       const stamp = `${file.mtime}:${file.size}`;
       const before = this.unsent.get(file.path);
@@ -682,13 +737,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
       this.fetched.delete(entry.id);
       if (fetched) Y.transact(doc, () => fetched.forEach((update) => Y.applyUpdate(doc, update)), FETCHED);
       else if (!(await this.exchange(entry.id))) return;
-      const text = doc.getText("content").toString();
-
-      const here = (await fs.stat(remote.path)) ? normalize(await fs.readText(remote.path)) : text;
-      if (here !== text && !(await this.superseded(remote, await textHash(here)))) {
-        await this.keepCopy(remote.path);
-      }
-      await this.writeBack(entry, text);
+      await this.writeBack(entry);
       return;
     }
 
@@ -700,16 +749,15 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
       return;
     }
 
-    const here = (await fs.stat(remote.path)) ? await blobHash(await fs.readBinary(remote.path)) : remote.blob_hash;
-    if (here !== remote.blob_hash && !(await this.superseded(remote, here))) {
-      await this.keepCopy(remote.path);
-    }
+    const here = (await fs.stat(remote.path)) ? await blobHash(await fs.readBinary(remote.path)) : null;
+    const clash = here !== null && here !== remote.blob_hash && !(await this.superseded(remote, here));
+    if (clash) await this.keepCopy(remote.path);
 
     this.remember(entry);
-    await this.download(entry, remote.blob_hash);
+    await this.download(entry, remote.blob_hash, clash ? null : here);
   }
 
-  private async superseded(remote: Entry, hash: string): Promise<boolean> {
+  private async superseded(remote: { id: string; path: string }, hash: string): Promise<boolean> {
     try {
       const known = await this.vault!.knownVersion(remote.id, hash);
       if (known) this.emit("log", `${remote.path} here was an older version; taking the server's`);
@@ -762,10 +810,9 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
     } else if (remote.kind === "blob" && remote.blob_hash && remote.blob_hash !== local.hash) {
       if (this.tooLarge(remote.size)) return void this.leftOut(remote.path, remote.size);
       const disk = await this.diskHash(local);
-      if (disk !== null && disk !== local.hash && disk !== remote.blob_hash) {
-        await this.keepCopy(local.path);
-      }
-      if (disk !== remote.blob_hash) await this.download(local, remote.blob_hash);
+      const clash = disk !== null && disk !== local.hash && disk !== remote.blob_hash;
+      if (clash) await this.keepCopy(local.path);
+      if (disk !== remote.blob_hash) await this.download(local, remote.blob_hash, clash ? null : disk);
       else await this.record(local, remote.blob_hash);
     }
   }
@@ -1002,6 +1049,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
 
   private async lose(id: string): Promise<void> {
     const entry = this.byId.get(id);
+    this.buried.set(id, this.vault?.seq ?? Infinity);
     if (!entry) return;
     this.emit("log", `the server no longer has ${entry.path}`);
     if (!entry.dirty) return this.removeLocally(entry);
@@ -1025,7 +1073,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
 
     const absorbed = await this.absorb(entry);
     if (absorbed && this.online && !(await this.exchange(id, true))) return;
-    await this.writeBack(entry, this.doc(id).getText("content").toString());
+    await this.writeBack(entry);
   }
 
   private async absorb(entry: LocalEntry): Promise<boolean> {
@@ -1042,33 +1090,68 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
     applyTextChange(fork.getText("content"), disk, DISK);
     const forked = Y.encodeStateAsUpdate(fork);
     fork.destroy();
-    Y.applyUpdate(this.doc(entry.id), forked, DISK);
 
     entry.doc = forked;
     entry.hash = hash;
     entry.dirty = true;
     await this.touch(entry);
+    Y.applyUpdate(this.doc(entry.id), forked, DISK);
     return true;
   }
 
-  private async writeBack(entry: LocalEntry, text: string): Promise<void> {
+  private async diskText(entry: LocalEntry): Promise<string | null> {
     const { fs } = this.options;
-    const file = await fs.stat(entry.path);
-    if (!file && entry.hash !== null) return;
-    const disk = file ? normalize(await fs.readText(entry.path)) : null;
-    const changedMeanwhile = disk !== null && disk !== text && entry.hash !== null && (await textHash(disk)) !== entry.hash;
-    if (changedMeanwhile) return this.settle(entry.id);
-    if (disk !== text) {
-      this.emit("log", `writing the note's text to ${entry.path}`);
-      entry.doc = Y.encodeStateAsUpdate(this.doc(entry.id));
-      await this.persist(entry);
-      await placing(fs.writeText(entry.path, text));
-    }
-    await this.record(entry, await textHash(text));
+    return (await fs.stat(entry.path)) ? normalize(await fs.readText(entry.path)) : null;
   }
 
-  private async download(entry: LocalEntry, hash: string): Promise<void> {
+  private async writeBack(entry: LocalEntry): Promise<void> {
+    const before = await this.diskText(entry);
+    if (before === null && entry.hash !== null) return;
+
+    const doc = this.doc(entry.id);
+    const text = doc.getText("content").toString();
+    const state = Y.encodeStateAsUpdate(doc);
+    const hash = await textHash(text);
+    if (before === text) return this.keep(entry, state, hash);
+
+    entry.next = { doc: state, hash };
+    await this.persist(entry);
+
+    if (entry.hash === null) {
+      await this.clear(entry, text);
+    } else {
+      const disk = await this.diskText(entry);
+      const edited = disk !== null && disk !== text && (await textHash(disk)) !== entry.hash;
+      if (disk === null || edited) entry.next = undefined;
+      if (disk === null) return;
+      if (edited) return this.settle(entry.id);
+    }
+
+    this.emit("log", `writing the note's text to ${entry.path}`);
+    await placing(this.options.fs.writeText(entry.path, text));
+    await this.keep(entry, state, hash);
+  }
+
+  private async clear(entry: LocalEntry, text: string): Promise<void> {
+    for (;;) {
+      const disk = await this.diskText(entry);
+      if (disk === null || disk === text) return;
+      if (await this.superseded(entry, await textHash(disk))) return;
+      await this.keepCopy(entry.path);
+    }
+  }
+
+  private async keep(entry: LocalEntry, state: Uint8Array, hash: string): Promise<void> {
+    entry.doc = state;
+    entry.hash = hash;
+    entry.next = undefined;
+    await this.touch(entry);
+  }
+
+  private async download(entry: LocalEntry, hash: string, seen: string | null): Promise<void> {
     const data = await this.options.client.download(this.options.vaultId, hash);
+    const now = await this.diskHash(entry);
+    if (now !== null && now !== seen && now !== hash) await this.keepCopy(entry.path);
     await placing(this.options.fs.writeBinary(entry.path, data));
     await this.record(entry, hash);
   }

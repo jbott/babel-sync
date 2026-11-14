@@ -727,7 +727,7 @@ test("bases and canvases are text that merges, and a device that held one as an 
   const fs = new MemoryFs();
   const store = new MemoryStore();
   await fs.writeText("Places/Food.base", "views:\n  - edited before the change\n");
-  await store.put({ ...created, kind: "blob", hash: "an-older-attachment", doc: undefined, dirty: false, moved: false });
+  await store.commit({ entries: [{ ...created, kind: "blob", hash: "an-older-attachment", doc: undefined, dirty: false, moved: false }], removed: [] });
   const phone = await boot("phone", vault, { fs, store });
 
   await eventually(

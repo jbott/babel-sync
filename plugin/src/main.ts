@@ -114,6 +114,7 @@ export default class BabelSyncPlugin extends Plugin {
         return this.scanConfig();
       }
       void this.accessToken().catch(() => {});
+      void this.store?.probe().then(() => this.engine?.resume());
       if (this.hiddenAt && Date.now() - this.hiddenAt > AWAY_MS) {
         this.client?.probe();
         this.scanConfig();
@@ -693,6 +694,7 @@ export default class BabelSyncPlugin extends Plugin {
   private show(status: Status): void {
     if (status !== this.status) this.record(`status: ${status}`);
     this.status = status;
+    if (this.engine?.stalled) this.lastError = this.engine.stalled;
     if (status === "synced") {
       this.lastSynced = Date.now();
       this.lastError = "";

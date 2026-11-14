@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { BabelSyncClient } from "@babelsync/core";
 import { SyncEngine } from "../src/engine.ts";
 import { MemoryFs, MemoryStore } from "../src/fs.ts";
+import { FlakyStore, STORE_FAULT } from "./faults.ts";
 
 const baseUrl = process.env.BABELSYNC_URL!;
 const token = process.env.BABELSYNC_TOKEN!;
@@ -20,10 +21,19 @@ async function discard(fs: MemoryFs, path: string, ledger: Ledger): Promise<void
   ledger.discarded.push(await fs.readText(path));
 }
 
+function overwriting(name: string, step: number): string {
+  const count = [...String(step)].map((digit) => "ABCDEFGHIJ"[Number(digit)]).join("");
+  return `${name.toUpperCase()}_WROTE_${count}!`;
+}
+
+function added(text: string): string {
+  return text.replace(/[A-Z_!]/g, "");
+}
+
 function occurrences(text: string, part: string): number {
   return text.split(part).length - 1;
 }
-type Device = Disk & { name: string; client: BabelSyncClient; engine: SyncEngine; errors: string[]; log: string[] };
+type Device = Disk & { name: string; flaky: FlakyStore | null; client: BabelSyncClient; engine: SyncEngine; errors: string[]; log: string[] };
 
 function random(seed: number): () => number {
   let state = seed >>> 0;
@@ -54,15 +64,17 @@ function watch(fs: MemoryFs, engine: SyncEngine): void {
   };
 }
 
-async function boot(name: string, vaultId: string, disk: Disk, story: string[] = []): Promise<Device> {
+async function boot(name: string, vaultId: string, disk: Disk, story: string[] = [], faults?: () => number): Promise<Device> {
   const client = new BabelSyncClient({ baseUrl, token: () => token, transport: WebSocket });
   const errors: string[] = [];
+  const flaky = faults ? new FlakyStore(disk.store, faults) : null;
   const engine = new SyncEngine({
     client,
     vaultId,
     fs: disk.fs,
-    store: disk.store,
+    store: flaky ?? disk.store,
     device: name,
+    stateRetryMs: 20,
     sessionIdleMs: 50,
     settleMs: 50,
     retryMs: 200,
@@ -76,13 +88,14 @@ async function boot(name: string, vaultId: string, disk: Disk, story: string[] =
   });
   client.connect();
   await engine.start();
-  return { name, ...disk, client, engine, errors, log };
+  return { name, ...disk, flaky, client, engine, errors, log };
 }
 
 function crash(device: Device): Disk {
   const disk = copyOf(device);
   void device.client.disconnect();
   void device.engine.stop().catch(() => {});
+  device.flaky?.shut();
   return disk;
 }
 
@@ -119,8 +132,10 @@ async function act(disk: Disk, engine: SyncEngine | null, name: string, step: nu
       return `${name} adds a line to ${path}`;
     } else {
       const had = fs.files.has(path);
+      const deleting = !had && [...disk.store.entries.values()].some((entry) => entry.path === path && entry.hash !== null);
+      if (deleting) return `${name} idles, as ${path} is still being deleted`;
       await discard(fs, path, ledger);
-      await fs.writeText(path, `${name} wrote ${step}.\n`);
+      await fs.writeText(path, overwriting(name, step));
       engine?.localChanged(path);
       return `${name} ${had ? "writes over" : "creates"} ${path}`;
     }
@@ -169,6 +184,7 @@ for (const [index, vaultId] of vaultIds.entries()) {
 
   test(`devices that crash, restart and edit offline end up identical, with every line nobody discarded (seed ${seed})`, async () => {
     const chance = random(seed);
+    const faults = random(seed + 7919);
     const history: string[] = [];
     const ledger: Ledger = { added: [], discarded: [] };
     const running = new Map<string, Device>();
@@ -176,7 +192,7 @@ for (const [index, vaultId] of vaultIds.entries()) {
     const everyone: Device[] = [];
 
     for (const name of NAMES) {
-      const device = await boot(name, vaultId, { fs: new MemoryFs(), store: new MemoryStore() }, history);
+      const device = await boot(name, vaultId, { fs: new MemoryFs(), store: new MemoryStore() }, history, faults);
       running.set(name, device);
       everyone.push(device);
     }
@@ -192,7 +208,7 @@ for (const [index, vaultId] of vaultIds.entries()) {
         history.push(`${step}: ${name} crashes`);
       } else if (!device && roll < 0.4) {
         history.push(`${step}: ${name} restarts`);
-        const back = await boot(name, vaultId, down.get(name)!, history);
+        const back = await boot(name, vaultId, down.get(name)!, history, faults);
         down.delete(name);
         running.set(name, back);
         everyone.push(back);
@@ -205,7 +221,7 @@ for (const [index, vaultId] of vaultIds.entries()) {
 
     history.push("everyone restarts");
     for (const [name, disk] of down) {
-      const back = await boot(name, vaultId, disk, history);
+      const back = await boot(name, vaultId, disk, history, faults);
       running.set(name, back);
       everyone.push(back);
     }
@@ -237,12 +253,15 @@ for (const [index, vaultId] of vaultIds.entries()) {
 
     assert.deepEqual(differing, [], report());
 
+    const surfaced = everyone.flatMap((device) => device.errors.filter((error) => error.includes(STORE_FAULT)).map((error) => `${device.name}: ${error}`));
+    assert.deepEqual(surfaced, [], `trouble saving sync state reached the person\n${report()}`);
+
     const notes = [...witness.fs.files.keys()].filter((path) => !path.endsWith(".png"));
     const kept = await Promise.all(notes.map(async (path) => ({ path, text: await witness.fs.readText(path) })));
-    const everything = kept.map((note) => note.text).join("\n");
-    const discarded = ledger.discarded.join("\n");
+    const everything = added(kept.map((note) => note.text).join("\n"));
+    const discarded = added(ledger.discarded.join("\n"));
     const lost = ledger.added.filter((line) => !everything.includes(line) && !discarded.includes(line));
-    const repeated = kept.flatMap(({ path, text }) => ledger.added.filter((line) => occurrences(text, line) > 1).map((line) => `${path}: ${line}`));
+    const repeated = kept.flatMap(({ path, text }) => ledger.added.filter((line) => occurrences(added(text), line) > 1).map((line) => `${path}: ${line}`));
     const notesNow = kept.map(({ path, text }) => `${path} holds ${JSON.stringify(text)}`).join("\n");
     assert.deepEqual(lost, [], `lines that were added and never deleted or written over are gone\n${report()}\n${notesNow}`);
     assert.deepEqual(repeated, [], `lines appear twice in one note\n${report()}\n${notesNow}`);
