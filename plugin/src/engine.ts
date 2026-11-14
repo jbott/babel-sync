@@ -3,7 +3,7 @@ import type { Awareness } from "y-protocols/awareness";
 import { type BabelSyncClient, type DocSession, type Entry, type VaultSession, Emitter, HttpError, RequestError, blobHash } from "@babelsync/core";
 import { type LocalEntry, type StateStore, type VaultFs, parentOf } from "./fs.ts";
 import { StateWriter } from "./state-writer.ts";
-import { applyTextChange, conflictPath, distance, kindFor, normalize, textHash } from "./text.ts";
+import { applyTextChange, conflictPath, kindFor, normalize, textHash } from "./text.ts";
 
 function numbered(path: string, copy: number): string {
   const dot = path.lastIndexOf(".");
@@ -74,14 +74,6 @@ function explained(error: unknown, reason: string): string {
 
 class Unplaceable extends Error {}
 
-function textOf(state: Uint8Array | undefined): string {
-  const doc = new Y.Doc();
-  if (state) Y.applyUpdate(doc, state);
-  const text = doc.getText("content").toString();
-  doc.destroy();
-  return text;
-}
-
 async function placing<T>(work: Promise<T>): Promise<T> {
   try {
     return await work;
@@ -123,6 +115,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   private fetched = new Map<string, Uint8Array[]>();
   private unsent = new Map<string, { stamp: string; attempts: number }>();
   private told = new Set<string>();
+  private unsure = false;
 
   constructor(options: EngineOptions) {
     super();
@@ -151,10 +144,11 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   async start(): Promise<void> {
     const { seq, entries } = await this.state.load();
     for (const entry of entries) {
+      if (entry.next) await this.resolve(entry);
       const unfetched = entry.kind !== "folder" && entry.hash === null && !entry.unwanted;
       if (entry.seq !== undefined && !unfetched) this.versions.set(entry.id, entry.seq);
       if (!entry.unwanted && this.ignored(entry.path)) await this.state.put({ ...entry, doc: undefined, hash: null, unwanted: true });
-      else if (!entry.unwanted) this.remember(entry.next ? await this.resolved(entry) : entry);
+      else if (!entry.unwanted) this.remember(entry);
       else if (!this.ignored(entry.path)) await this.discard(entry.id);
     }
 
@@ -190,19 +184,16 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
     });
   }
 
-  private async resolved(entry: LocalEntry): Promise<LocalEntry> {
-    const { fs } = this.options;
+  private async resolve(entry: LocalEntry): Promise<void> {
     const next = entry.next!;
     entry.next = undefined;
 
-    if (await fs.stat(entry.path)) {
-      const disk = normalize(await fs.readText(entry.path));
-      const written = (await textHash(disk)) === next.hash || entry.hash === null || distance(disk, textOf(next.doc)) < distance(disk, textOf(entry.doc));
-      if (written) Object.assign(entry, next);
-    }
+    const disk = await this.diskText(entry);
+    const found = disk === null ? null : await textHash(disk);
+    if (found === next.hash) Object.assign(entry, next);
+    else if (found !== null && entry.hash !== null && found !== entry.hash) entry.hash = null;
 
     await this.state.put(entry);
-    return entry;
   }
 
   private get firstRetryMs(): number {
@@ -216,6 +207,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   }
 
   private async audit(): Promise<void> {
+    this.unsure = false;
     const { entries, gone } = await this.vault!.audit(Object.fromEntries(this.held()));
     this.emit("log", `audit: the server differs on ${entries.length} entries and no longer has ${gone.length}`);
 
@@ -512,7 +504,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
     }
     this.fetched.clear();
 
-    if (digest === UNCONDITIONAL || (digest !== undefined && !this.behind && digest !== (await this.digest()))) {
+    if (digest === UNCONDITIONAL || this.unsure || (digest !== undefined && !this.behind && digest !== (await this.digest()))) {
       await this.audit();
     }
 
@@ -586,6 +578,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
       if (this.stopped || !this.online) return;
       void this.run(async () => {
         const seen = this.changes;
+        if (this.unsure) await this.audit();
         const acted = await this.sweep();
         this.passes = acted ? this.passes + 1 : 0;
         if (acted && this.passes < SETTLING_PASSES) return;
@@ -1200,10 +1193,12 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
       return;
     }
 
-    const untouched = holder.kind !== "folder" && !holder.dirty && (await this.diskHash(holder)) === holder.hash;
-    if (untouched && holder.hash !== null) await this.options.fs.remove(path);
+    const untouched = async () => holder.kind !== "folder" && !holder.dirty && holder.hash !== null && (await this.diskHash(holder)) === holder.hash;
+    const removable = await untouched();
+    this.unsure = true;
     this.forget(holder);
     await this.discard(holder.id);
+    if (removable && (await untouched())) await this.options.fs.remove(path);
   }
 
   private async diskHash(entry: LocalEntry): Promise<string | null> {

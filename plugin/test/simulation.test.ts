@@ -30,6 +30,10 @@ function added(text: string): string {
   return text.replace(/[A-Z_!]/g, "");
 }
 
+function beingDeleted({ fs, store }: Disk, path: string): boolean {
+  return !fs.files.has(path) && [...store.entries.values()].some((entry) => entry.path === path && entry.hash !== null);
+}
+
 function occurrences(text: string, part: string): number {
   return text.split(part).length - 1;
 }
@@ -132,8 +136,7 @@ async function act(disk: Disk, engine: SyncEngine | null, name: string, step: nu
       return `${name} adds a line to ${path}`;
     } else {
       const had = fs.files.has(path);
-      const deleting = !had && [...disk.store.entries.values()].some((entry) => entry.path === path && entry.hash !== null);
-      if (deleting) return `${name} idles, as ${path} is still being deleted`;
+      if (!had && beingDeleted(disk, path)) return `${name} idles, as ${path} is still being deleted`;
       await discard(fs, path, ledger);
       await fs.writeText(path, overwriting(name, step));
       engine?.localChanged(path);
@@ -153,7 +156,7 @@ async function act(disk: Disk, engine: SyncEngine | null, name: string, step: nu
 
   const from = pick(existing);
   const extension = from.slice(from.lastIndexOf("."));
-  const to = pick(PATHS.filter((path) => path.endsWith(extension) && !fs.files.has(path)));
+  const to = pick(PATHS.filter((path) => path.endsWith(extension) && !fs.files.has(path) && !beingDeleted(disk, path)));
   if (!to) return `${name} idles`;
   await fs.rename(from, to);
   engine?.localRenamed(from, to);
