@@ -52,6 +52,7 @@ export default class BabelSyncPlugin extends Plugin {
   private client: BabelSyncClient | null = null;
   private engine: SyncEngine | null = null;
   private store: IdbStore | null = null;
+  private showing = new Map<string, Notice>();
   private fs!: ObsidianFs;
   private collab!: Collab;
   private statusBar: HTMLElement | null = null;
@@ -461,7 +462,10 @@ export default class BabelSyncPlugin extends Plugin {
 
   private notify(message: string, timeout?: number, onTap?: () => void): void {
     this.record(`shown: ${message}`);
+    if (this.showing.get(message)?.noticeEl.isConnected) return;
     const notice = new Notice(message, timeout);
+    this.showing.set(message, notice);
+    for (const [shown, old] of this.showing) if (!old.noticeEl.isConnected && old !== notice) this.showing.delete(shown);
     if (onTap) notice.noticeEl.addEventListener("click", onTap);
   }
 

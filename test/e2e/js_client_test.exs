@@ -57,6 +57,13 @@ defmodule BabelSync.E2E.JsClientTest do
     assert status == 0, output
   end
 
+  test "the plugin's sync state survives the system closing its database" do
+    {output, status} =
+      System.cmd("node", ["--test", "plugin/test/idb-store.test.ts"], stderr_to_stdout: true)
+
+    assert status == 0, output
+  end
+
   test "two plugin sync engines keep their vaults identical through the server" do
     owner = user()
     vaults = for n <- 1..44, do: vault(owner, %{name: "Device test #{n}"})

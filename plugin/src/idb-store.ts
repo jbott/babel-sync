@@ -16,23 +16,26 @@ export class IdbStore implements StateStore {
   }
 
   private open(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(this.name, 1);
       request.onupgradeneeded = () => {
         request.result.createObjectStore(ENTRIES, { keyPath: "id" });
         request.result.createObjectStore(META);
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        request.result.onclose = () => this.replace(opening);
+        resolve(request.result);
+      };
       request.onerror = () => reject(request.error);
       request.onblocked = () => reject(new Error("the sync state database is blocked"));
     });
+    return opening;
   }
 
-  private reopen(): void {
-    if (this.closed) return;
-    const stale = this.database;
+  private replace(lost: Promise<IDBDatabase>): void {
+    if (this.closed || this.database !== lost) return;
     this.database = this.open();
-    void stale.then((database) => database.close()).catch(() => {});
+    void lost.then((database) => database.close()).catch(() => {});
   }
 
   async load(): Promise<{ seq: number; entries: LocalEntry[] }> {
@@ -65,17 +68,18 @@ export class IdbStore implements StateStore {
 
   private async request<T>(name: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest): Promise<T> {
     for (let attempt = 1; ; attempt++) {
+      const connection = this.database;
       try {
-        return await this.once<T>(name, mode, action);
+        return await this.once<T>(connection, name, mode, action);
       } catch (error) {
         if (attempt === ATTEMPTS || this.closed) throw error;
-        this.reopen();
+        this.replace(connection);
       }
     }
   }
 
-  private async once<T>(name: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest): Promise<T> {
-    const database = await this.database;
+  private async once<T>(connection: Promise<IDBDatabase>, name: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest): Promise<T> {
+    const database = await connection;
 
     return new Promise((resolve, reject) => {
       const transaction = database.transaction(name, mode);
