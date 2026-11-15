@@ -125,12 +125,18 @@ defmodule BabelSyncWeb.VaultLive.Source do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      column="max-w-3xl"
+      trail={[
+        {@vault.name, Paths.vault(@vault.id)},
+        {"Settings", Paths.settings(@vault.id)},
+        {if(@item, do: @item.name, else: "Source"), nil}
+      ]}
+    >
       <div class="mx-auto max-w-3xl space-y-8 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
-          <:trail>
-            <.back_link navigate={~p"/v/#{@vault.id}/settings"} />
-          </:trail>
           {if @item, do: @item.name, else: "Source"}
           <:subtitle :if={@item}>
             <.link

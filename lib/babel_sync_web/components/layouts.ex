@@ -32,6 +32,10 @@ defmodule BabelSyncWeb.Layouts do
   attr :column, :string, default: "max-w-2xl", doc: "the width the masthead lines up with"
   attr :on_account, :boolean, default: false, doc: "mark the account link as the page shown"
 
+  attr :trail, :list,
+    default: [],
+    doc: "the pages above this one and then this one, each as {label, path} with a nil path last"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -45,9 +49,10 @@ defmodule BabelSyncWeb.Layouts do
         id="masthead"
         class="sticky top-0 z-10 -mx-4 bg-page px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] sm:-mx-6 sm:px-6 md:pt-[calc(env(safe-area-inset-top)+1.75rem)] lg:-mx-8 lg:px-8"
       >
-        <div class={["mx-auto flex h-9 items-center justify-between gap-4", @column]}>
-          <.brand />
-          <.account_link :if={@current_scope} active={@on_account} class="-mr-2" />
+        <div class={["mx-auto flex h-9 items-center gap-2", @column]}>
+          <.brand wordmark={@trail == []} />
+          <.crumbs trail={@trail} />
+          <.account_link :if={@current_scope} active={@on_account} class="-mr-2 ml-auto" />
         </div>
       </div>
       {render_slot(@inner_block)}
@@ -61,6 +66,7 @@ defmodule BabelSyncWeb.Layouts do
   Renders the mark and wordmark as the link back to the list of vaults.
   """
   attr :class, :any, default: nil
+  attr :wordmark, :boolean, default: true
 
   def brand(assigns) do
     ~H"""
@@ -73,8 +79,42 @@ defmodule BabelSyncWeb.Layouts do
       ]}
     >
       <.logo class="size-5 text-accent" />
-      <span class="font-serif text-base font-semibold tracking-tight">Babel Sync</span>
+      <span :if={@wordmark} class="font-serif text-base font-semibold tracking-tight">
+        Babel Sync
+      </span>
     </.link>
+    """
+  end
+
+  @doc """
+  Renders the way down to a page: each page above it as a link, then the
+  page itself.
+  """
+  attr :trail, :list, required: true
+
+  def crumbs(assigns) do
+    ~H"""
+    <nav
+      :if={@trail != []}
+      id="crumbs"
+      aria-label="Where this page is"
+      class="flex min-w-0 items-center gap-1 text-sm"
+    >
+      <%= for {{label, path}, at} <- Enum.with_index(@trail) do %>
+        <span aria-hidden="true" class="text-faint">/</span>
+        <.link
+          :if={path}
+          id={"crumb-#{at}"}
+          navigate={path}
+          class="min-w-8 truncate rounded-md px-1 py-0.5 font-medium text-muted transition-colors duration-150 hover:bg-ink/7 hover:text-ink"
+        >
+          {label}
+        </.link>
+        <span :if={!path} aria-current="page" class="shrink-0 px-1 font-semibold text-ink">
+          {label}
+        </span>
+      <% end %>
+    </nav>
     """
   end
 

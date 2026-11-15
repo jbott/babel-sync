@@ -82,12 +82,13 @@ defmodule BabelSyncWeb.VaultLive.Trash do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      trail={[{@vault.name, Paths.vault(@vault.id)}, {"Trash", nil}]}
+    >
       <div class="mx-auto max-w-2xl space-y-7 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
-          <:trail>
-            <.back_link navigate={Paths.vault(@vault.id)} />
-          </:trail>
           Trash
           <:subtitle :if={@retention_days}>
             Deleted files are kept for {@retention_days} days.

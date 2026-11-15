@@ -81,12 +81,13 @@ defmodule BabelSyncWeb.VaultLive.Connect do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      trail={[{@vault.name, Paths.vault(@vault.id)}, {"Connect", nil}]}
+    >
       <div class="mx-auto max-w-2xl space-y-9 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
-          <:trail>
-            <.back_link id="connect-back" navigate={Paths.vault(@vault.id)} />
-          </:trail>
           Connect Obsidian
           <:subtitle>
             <span id="connect-vault" class="font-medium text-ink">{@vault.name}</span>

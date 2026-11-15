@@ -122,12 +122,19 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
     assigns = assign(assigns, :tabs, @tabs)
 
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      column="max-w-3xl"
+      trail={[
+        {@vault.name, Paths.vault(@vault.id)},
+        {"Settings", Paths.settings(@vault.id)},
+        {@name, ~p"/v/#{@vault.id}/sources/#{@entry.id}"},
+        {"Notes", nil}
+      ]}
+    >
       <div class="mx-auto max-w-3xl space-y-6 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
-          <:trail>
-            <.back_link navigate={~p"/v/#{@vault.id}/sources/#{@entry.id}"} />
-          </:trail>
           {@name} notes
           <:subtitle>
             Every note this source keeps up to date, and the ones deleted here that it will

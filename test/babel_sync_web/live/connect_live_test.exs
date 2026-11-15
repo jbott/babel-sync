@@ -18,7 +18,7 @@ defmodule BabelSyncWeb.ConnectLiveTest do
     {:ok, view, _html} = live(conn, Paths.connect(vault.id))
 
     assert has_element?(view, "#connect-vault", "Research")
-    assert has_element?(view, "#connect-back[href='#{Paths.vault(vault.id)}']")
+    assert has_element?(view, "#crumbs a[href='#{Paths.vault(vault.id)}']")
     assert has_element?(view, "#connect-devices-link[href='/account?from=#{vault.id}#grants']")
   end
 

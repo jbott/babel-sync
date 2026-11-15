@@ -357,18 +357,16 @@ defmodule BabelSyncWeb.CoreComponents do
   end
 
   @doc """
-  Renders a page header: an optional trail back to the parent page, the
-  title, an optional subtitle and optional actions.
+  Renders a page header: the title, an optional subtitle and optional
+  actions.
   """
   slot :inner_block, required: true
-  slot :trail
   slot :subtitle
   slot :actions
 
   def header(assigns) do
     ~H"""
     <header class="space-y-3">
-      <div :if={@trail != []} class="text-sm">{render_slot(@trail)}</div>
       <div class="flex items-end justify-between gap-6">
         <div class="min-w-0">
           <h1 class="truncate font-serif text-2xl font-bold tracking-tight text-ink">
@@ -381,27 +379,6 @@ defmodule BabelSyncWeb.CoreComponents do
         <div :if={@actions != []} class="flex-none">{render_slot(@actions)}</div>
       </div>
     </header>
-    """
-  end
-
-  @doc """
-  Renders the link that leads from a page back to its parent.
-  """
-  attr :navigate, :string, required: true
-  attr :id, :string, default: nil
-
-  def back_link(assigns) do
-    ~H"""
-    <.link
-      id={@id}
-      navigate={@navigate}
-      class="group -ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-muted transition hover:text-ink"
-    >
-      <.icon
-        name="hero-arrow-left-mini"
-        class="size-4 shrink-0"
-      /> Back
-    </.link>
     """
   end
 

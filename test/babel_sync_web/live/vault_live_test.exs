@@ -316,29 +316,30 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
       {:ok, account, _html} = live(conn, ~p"/account?from=#{journal.id}")
 
-      assert has_element?(account, "#account-back[href='#{Paths.vault(journal.id)}']")
+      assert has_element?(account, "#crumbs a[href='#{Paths.vault(journal.id)}']", "Journal")
 
-      refute has_element?(account, "#account-back[href='#{Paths.vault(vault.id)}']")
+      refute has_element?(account, "#crumbs a[href='#{Paths.vault(vault.id)}']")
     end
 
-    test "falls back to the notes for a vault that is unknown or someone else's", %{conn: conn} do
+    test "names no vault that is unknown or someone else's", %{conn: conn} do
       foreign = vault(user(), %{name: "Someone else's"})
 
       for from <- [foreign.id, "nonsense", ""] do
         {:ok, account, _html} = live(conn, ~p"/account?from=#{from}")
 
-        assert has_element?(account, "#account-back[href='/']")
+        refute has_element?(account, "#crumbs a")
+        assert has_element?(account, "#crumbs [aria-current=page]")
       end
 
       {:ok, account, _html} = live(conn, ~p"/account")
-      assert has_element?(account, "#account-back[href='/']")
+      refute has_element?(account, "#crumbs a")
     end
 
     test "is left out for someone without a vault", %{anonymous: conn} do
       conn = sign_in(conn, user())
       {:ok, account, _html} = live(conn, ~p"/account?from=#{Ecto.UUID.generate()}")
 
-      refute has_element?(account, "#account-back")
+      refute has_element?(account, "#crumbs a")
       assert has_element?(account, "#vaults-empty")
     end
   end

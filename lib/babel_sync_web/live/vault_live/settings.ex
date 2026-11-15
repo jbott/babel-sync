@@ -184,12 +184,13 @@ defmodule BabelSyncWeb.VaultLive.Settings do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      trail={[{@vault.name, Paths.vault(@vault.id)}, {"Settings", nil}]}
+    >
       <div class="mx-auto max-w-2xl space-y-10 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
-          <:trail>
-            <.back_link navigate={Paths.vault(@vault.id)} />
-          </:trail>
           {@vault.name}
           <:subtitle>Vault settings</:subtitle>
         </.header>

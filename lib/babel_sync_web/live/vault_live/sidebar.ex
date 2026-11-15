@@ -33,31 +33,22 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
     >
       <header
         id="vault-bar"
-        class="sticky top-0 z-10 box-content flex h-9 items-center justify-between gap-2 bg-sunken px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] md:static md:pb-0 md:pt-3"
+        class="sticky top-0 z-10 box-content flex h-9 items-center gap-2 bg-sunken px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] md:static md:pb-0 md:pt-3"
       >
-        <Layouts.brand />
-        <Layouts.account_link :if={@current_scope} from={@vault.id} class="-mr-2" />
-      </header>
-
-      <div
-        id="vault-controls"
-        class={[
-          "items-center gap-0.5 px-2 pt-0.5 md:pt-2.5",
-          if(@entry, do: "hidden md:flex", else: "flex")
-        ]}
-      >
+        <Layouts.brand wordmark={false} />
+        <span aria-hidden="true" class="-mx-0.5 text-faint">/</span>
         <form
           id="vault-switcher-form"
           phx-change="switch_vault"
           phx-auto-recover="ignore"
-          class="relative mr-1 min-w-0 flex-1"
+          class="relative mr-auto min-w-0"
         >
           <select
             id="vault-switcher"
             name="vault"
             aria-label="Vault"
             title="Switch vault"
-            class="block h-9 w-full min-w-0 cursor-pointer appearance-none truncate rounded-lg bg-ink/5 pl-3 pr-8 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus-visible:ring-2 focus-visible:ring-accent/60 md:h-8"
+            class="block h-8 w-full min-w-0 cursor-pointer appearance-none truncate rounded-lg bg-transparent [field-sizing:content] pl-2 pr-7 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-ink/7 focus-visible:ring-2 focus-visible:ring-accent/60"
           >
             <option :for={vault <- @vaults} value={vault.id} selected={vault.id == @vault.id}>
               {vault.name}
@@ -68,31 +59,20 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
           </select>
           <.icon
             name="hero-chevron-up-down-mini"
-            class="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-faint"
+            class="pointer-events-none absolute right-1.5 top-1/2 size-4 -translate-y-1/2 text-faint"
           />
         </form>
-        <.icon_button
-          navigate={Paths.trash(@vault.id)}
-          id="vault-trash"
-          icon="hero-trash"
-          label="Trash"
-        />
-        <.icon_button
-          :if={@admin}
-          navigate={Paths.settings(@vault.id)}
-          id="vault-settings"
-          icon="hero-cog-6-tooth"
-          label="Vault settings"
-        />
-      </div>
+        <Layouts.account_link :if={@current_scope} from={@vault.id} class="-mr-2" />
+      </header>
 
-      <div :if={@writable} class={["px-2 pt-2", @entry && "hidden md:block"]}>
-        <div class="flex items-center gap-1">
+      <div class={["px-2 pt-0.5 md:pt-2.5", @entry && "hidden md:block"]}>
+        <div id="vault-controls" class="flex items-center justify-end gap-0.5">
           <.form
+            :if={@writable}
             for={@new_form}
             id="new-note"
             phx-submit="create_note"
-            class="relative min-w-0 flex-1"
+            class="relative mr-0.5 min-w-0 flex-1"
           >
             <button
               class="absolute left-0 top-0 grid size-9 cursor-pointer place-items-center rounded-lg text-faint transition-colors duration-150 hover:text-ink md:size-8"
@@ -116,6 +96,7 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
             />
           </.form>
           <label
+            :if={@writable}
             class="grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors duration-150 hover:bg-ink/7 hover:text-ink has-focus-visible:ring-2 has-focus-visible:ring-accent/60 md:size-8"
             title="Upload files"
           >
@@ -131,8 +112,22 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
               data-token={@socket_token}
             />
           </label>
+          <.icon_button
+            navigate={Paths.trash(@vault.id)}
+            id="vault-trash"
+            icon="hero-trash"
+            label="Trash"
+          />
+          <.icon_button
+            :if={@admin}
+            navigate={Paths.settings(@vault.id)}
+            id="vault-settings"
+            icon="hero-cog-6-tooth"
+            label="Vault settings"
+          />
         </div>
         <progress
+          :if={@writable}
           id="upload-progress"
           phx-update="ignore"
           class="upload-meter mt-2"

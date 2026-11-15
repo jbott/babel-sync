@@ -16,7 +16,7 @@ defmodule BabelSyncWeb.AuthLive.Account do
     {:ok,
      socket
      |> assign(:page_title, "Settings")
-     |> assign(:back, back(vaults, params["from"]))
+     |> assign(:trail, trail(vaults, params["from"]))
      |> assign(
        :connect_vault,
        Enum.find(vaults, &(&1.id == params["from"])) || List.first(vaults)
@@ -35,12 +35,10 @@ defmodule BabelSyncWeb.AuthLive.Account do
      |> load()}
   end
 
-  defp back([], _from), do: nil
-
-  defp back(vaults, from) do
+  defp trail(vaults, from) do
     case Enum.find(vaults, &(&1.id == from)) do
-      nil -> ~p"/"
-      vault -> Paths.vault(vault.id)
+      nil -> [{"Your settings", nil}]
+      vault -> [{vault.name, Paths.vault(vault.id)}, {"Your settings", nil}]
     end
   end
 
@@ -213,13 +211,11 @@ defmodule BabelSyncWeb.AuthLive.Account do
       flash={@flash}
       current_scope={@current_scope}
       on_account
+      trail={@trail}
       column="max-w-4xl"
     >
       <div class="mx-auto max-w-4xl pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
-          <:trail :if={@back}>
-            <.back_link id="account-back" navigate={@back} />
-          </:trail>
           Settings
         </.header>
 
