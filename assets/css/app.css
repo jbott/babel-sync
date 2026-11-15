@@ -106,6 +106,7 @@
 
 :root {
   color-scheme: light;
+  --page: oklch(97.4% 0.008 85);
   --canvas: oklch(97.4% 0.008 85);
   --surface: oklch(99.3% 0.004 85);
   --sunken: oklch(95% 0.011 85);
@@ -143,6 +144,7 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
+  --page: oklch(16.8% 0.007 70);
   --canvas: oklch(19.5% 0.007 70);
   --surface: oklch(22.5% 0.008 70);
   --sunken: oklch(16.8% 0.007 70);
@@ -171,6 +173,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
+    --page: oklch(16.8% 0.007 70);
     --canvas: oklch(19.5% 0.007 70);
     --surface: oklch(22.5% 0.008 70);
     --sunken: oklch(16.8% 0.007 70);
@@ -201,6 +204,7 @@
   --color-*: initial;
   --color-transparent: transparent;
   --color-current: currentColor;
+  --color-page: var(--page);
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
   --color-sunken: var(--sunken);
@@ -246,13 +250,13 @@
 
 @layer base {
   html {
-    background: var(--canvas);
+    background: var(--page);
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
   }
 
   body {
-    background: var(--canvas);
+    background: var(--page);
     color: var(--ink);
     font-family: var(--ff-sans);
     font-size: 0.9375rem;
