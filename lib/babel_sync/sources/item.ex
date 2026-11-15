@@ -2,8 +2,9 @@ defmodule BabelSync.Sources.Item do
   @moduledoc """
   Which note stands for one thing a source brings in, and the properties
   the source last set on it. The note is known by its entry, so it may
-  be renamed or moved; one whose note was deleted is marked gone, and is
-  not made again.
+  be renamed or moved. One whose note was deleted is marked gone and is
+  not made again, but still names the deleted note while that is in the
+  trash, so restoring the note brings it back into the source's care.
   """
 
   use BabelSync.Schema

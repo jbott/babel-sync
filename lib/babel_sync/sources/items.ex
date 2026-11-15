@@ -14,7 +14,7 @@ defmodule BabelSync.Sources.Items do
   time. The body is written when the note is made and never again. A
   note whose text would come out the same is not written at all, so it
   costs no version and no device hears of it. A note a person deleted
-  stays deleted.
+  stays deleted, and is kept up again once it is restored from the trash.
   """
 
   import Ecto.Query
@@ -33,15 +33,13 @@ defmodule BabelSync.Sources.Items do
           match: {String.t(), String.t()} | nil
         }
   @type outcome :: :created | :changed | :unchanged | :gone
+  @type shown :: :all | :current | :deleted
   @type found :: (String.t(), String.t() -> Entry.t() | nil)
 
   @spec put(Source.t(), Scope.t(), [String.t()], wanted(), found()) ::
           {:ok, outcome(), String.t() | nil} | {:error, String.t()}
   def put(%Source{} = source, %Scope{} = scope, folders, wanted, found) do
     case Repo.one(from i in Item, where: i.source_id == ^source.id and i.key == ^wanted.key) do
-      %Item{gone: true} ->
-        {:ok, :gone, nil}
-
       %Item{} = item ->
         case item.entry_id && Vaults.get_entry(item.entry_id) do
           %Entry{deleted_at: nil, kind: :doc} = entry -> update(scope, item, entry, wanted)
@@ -153,16 +151,17 @@ defmodule BabelSync.Sources.Items do
     written = Jason.encode!(Map.new(properties))
     now = DateTime.utc_now()
 
-    if item.entry_id != entry_id or item.written != written do
+    if item.gone or item.entry_id != entry_id or item.written != written do
       Repo.insert!(
         %Item{
           item
           | entry_id: entry_id,
             written: written,
+            gone: false,
             inserted_at: item.inserted_at || now,
             updated_at: now
         },
-        on_conflict: [set: [entry_id: entry_id, written: written, updated_at: now]],
+        on_conflict: [set: [entry_id: entry_id, written: written, gone: false, updated_at: now]],
         conflict_target: [:source_id, :key]
       )
     end
@@ -170,12 +169,93 @@ defmodule BabelSync.Sources.Items do
     :ok
   end
 
+  defp forget(%Item{gone: true}), do: {:ok, :gone, nil}
+
   defp forget(%Item{} = item) do
     Repo.update_all(from(i in Item, where: i.id == ^item.id),
-      set: [gone: true, entry_id: nil, updated_at: DateTime.utc_now()]
+      set: [gone: true, updated_at: DateTime.utc_now()]
     )
 
     {:ok, :gone, nil}
+  end
+
+  @doc """
+  The notes a source keeps, each with its entry: all of them, only those
+  whose note is in the vault (`:current`), or only those whose note was
+  deleted (`:deleted`). `matching` narrows them to keys and paths that
+  hold that text. A deleted note's entry is there while the note is still
+  in the trash.
+  """
+  @spec list(Source.t(), shown(), String.t(), pos_integer()) :: [{Item.t(), Entry.t() | nil}]
+  def list(%Source{} = source, shown, matching, limit) do
+    Repo.all(
+      from [i, e] in listed(source, shown, matching),
+        order_by: [asc: e.folded, asc: i.key],
+        limit: ^limit,
+        select: {i, e}
+    )
+  end
+
+  @spec counts(Source.t(), String.t()) :: %{shown() => non_neg_integer()}
+  def counts(%Source{} = source, matching) do
+    Map.new([:all, :current, :deleted], fn shown ->
+      {shown, Repo.aggregate(listed(source, shown, matching), :count)}
+    end)
+  end
+
+  defp listed(source, shown, matching) do
+    from(i in Item,
+      left_join: e in Entry,
+      on: e.id == i.entry_id,
+      where: i.source_id == ^source.id
+    )
+    |> shown(shown)
+    |> matching(String.trim(matching))
+  end
+
+  defp shown(query, :all), do: query
+
+  defp shown(query, :current),
+    do: from([i, e] in query, where: is_nil(e.deleted_at) and not is_nil(e.id))
+
+  defp shown(query, :deleted),
+    do: from([i, e] in query, where: not is_nil(e.deleted_at) or is_nil(e.id))
+
+  defp matching(query, ""), do: query
+
+  defp matching(query, text) do
+    pattern = "%" <> String.replace(String.downcase(text), ["!", "%", "_"], &("!" <> &1)) <> "%"
+
+    from [i, e] in query,
+      where:
+        fragment("? LIKE ? ESCAPE '!'", e.folded, ^pattern) or
+          fragment("lower(?) LIKE ? ESCAPE '!'", i.key, ^pattern)
+  end
+
+  @doc """
+  Puts a deleted note back under the source's care. While the note is in
+  the trash it is restored as it was. Once it has left the trash the
+  source forgets it, so the next run makes it anew.
+  """
+  @spec reinstate(Source.t(), Ecto.UUID.t()) ::
+          {:ok, :restored | :forgotten} | {:error, :not_found}
+  def reinstate(%Source{id: source_id}, item_id) do
+    item = Repo.get_by(Item, id: item_id, source_id: source_id)
+
+    case item && {item, item.entry_id && Vaults.get_entry(item.entry_id)} do
+      {_item, %Entry{deleted_at: nil}} ->
+        {:error, :not_found}
+
+      {_item, %Entry{} = trashed} ->
+        with {:ok, _restored} <- Vaults.restore_entry(trashed), do: {:ok, :restored}
+
+      {item, nil} ->
+        Repo.delete!(item)
+        {:ok, :forgotten}
+
+      nil ->
+        {:error, :not_found}
+    end
   end
 
   @doc """

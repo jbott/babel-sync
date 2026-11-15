@@ -5,7 +5,7 @@ defmodule BabelSync.SourcesTest do
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Agent, Repo, Sources, Sync, Vaults}
-  alias BabelSync.Sources.{Item, Scheduler, Secrets, Source}
+  alias BabelSync.Sources.{Item, Items, Scheduler, Secrets, Source}
 
   defmodule Site do
     @moduledoc false
@@ -291,6 +291,57 @@ defmodule BabelSync.SourcesTest do
       assert %{status: :done, created: 0} = run(source)
       refute Vaults.get_entry_by_path(vault.id, "Data/Stars/one.md")
       assert Repo.get_by(Item, source_id: source.id).gone
+    end
+
+    test "keeps a deleted note up again once it is restored from the trash",
+         %{vault: vault, owner: owner} = context do
+      source = approved(context)
+      stars([star("one", 1)])
+      run(source)
+      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Data/Stars/one.md")
+      run(source)
+
+      {:ok, _} = Agent.restore_file(Scope.for_user(owner), vault.id, "Data/Stars/one.md")
+      stars([star("one", 2)])
+
+      assert %{status: :done, created: 0, changed: 1} = run(source)
+      assert text(vault, "Data/Stars/one.md") =~ "stars: 2"
+      refute Repo.get_by(Item, source_id: source.id).gone
+    end
+
+    test "lists the notes it keeps and the ones deleted, and restores a deleted one",
+         %{vault: vault, owner: owner, admin: admin} = context do
+      source = approved(context)
+      stars([star("one", 1), star("two", 2)])
+      run(source)
+      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Data/Stars/one.md")
+
+      assert %{all: 2, current: 1, deleted: 1} = Items.counts(source, "")
+      assert %{all: 1, current: 1, deleted: 0} = Items.counts(source, "TWO")
+      assert [{item, %{path: "Data/Stars/one.md"}}] = Items.list(source, :deleted, "", 10)
+      assert [{_two, %{path: "Data/Stars/two.md"}}] = Items.list(source, :current, "", 10)
+
+      assert {:error, :forbidden} = Sources.reinstate(Scope.for_user(user()), source, item.id)
+      assert {:ok, :restored} = Sources.reinstate(admin, source, item.id)
+      assert Vaults.get_entry_by_path(vault.id, "Data/Stars/one.md")
+      assert %{current: 2, deleted: 0} = Items.counts(source, "")
+      assert {:error, :not_found} = Sources.reinstate(admin, source, item.id)
+    end
+
+    test "makes a deleted note anew once it has left the trash and is asked for again",
+         %{vault: vault, owner: owner, admin: admin} = context do
+      source = approved(context)
+      stars([star("one", 1)])
+      run(source)
+      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Data/Stars/one.md")
+      run(source)
+      Vaults.purge_trash(DateTime.add(DateTime.utc_now(), 60))
+
+      assert [{item, nil}] = Items.list(source, :deleted, "", 10)
+      assert %{status: :done, created: 0} = run(source)
+      assert {:ok, :forgotten} = Sources.reinstate(admin, source, item.id)
+      assert %{status: :done, created: 1} = run(source)
+      assert Vaults.get_entry_by_path(vault.id, "Data/Stars/one.md")
     end
 
     test "takes over a note that already holds the thing",

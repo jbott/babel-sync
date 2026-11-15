@@ -24,7 +24,7 @@ defmodule BabelSync.Sources do
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Blobs, Repo, Sync, Vaults}
-  alias BabelSync.Sources.{Run, Script, Secrets, Source}
+  alias BabelSync.Sources.{Items, Run, Script, Secrets, Source}
   alias BabelSync.Vaults.{Entry, Vault}
 
   @type draft :: %{
@@ -229,6 +229,19 @@ defmodule BabelSync.Sources do
 
   @spec revoke(Scope.t(), Source.t()) :: :ok | {:error, :forbidden}
   def revoke(scope, %Source{} = source), do: admin(scope, source, fn -> Repo.delete!(source) end)
+
+  @spec reinstate(Scope.t(), Source.t(), Ecto.UUID.t()) ::
+          {:ok, :restored | :forgotten} | {:error, :forbidden | :not_found}
+  def reinstate(scope, %Source{} = source, item_id) do
+    if browser_admin?(scope, source.vault_id) do
+      with {:ok, done} <- Items.reinstate(source, item_id) do
+        announce(source)
+        {:ok, done}
+      end
+    else
+      {:error, :forbidden}
+    end
+  end
 
   @spec run_now(Scope.t(), Source.t()) :: :ok | {:error, :forbidden}
   def run_now(scope, %Source{} = source) do
