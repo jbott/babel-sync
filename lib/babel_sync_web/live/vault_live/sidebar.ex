@@ -149,18 +149,7 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
           icon="hero-magnifying-glass-mini"
           label="Find a file or search in notes"
         />
-        <.icon_button
-          id="open-all-folders"
-          phx-click={JS.dispatch("babelsync:folders", to: "#tree", detail: %{open: true})}
-          icon="hero-arrows-pointing-out-mini"
-          label="Open all folders"
-        />
-        <.icon_button
-          id="close-all-folders"
-          phx-click={JS.dispatch("babelsync:folders", to: "#tree", detail: %{open: false})}
-          icon="hero-arrows-pointing-in-mini"
-          label="Close all folders"
-        />
+        <.all_folders open={all_open?(@tree, @open_folders)} />
       </div>
 
       <nav
@@ -256,5 +245,45 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
       </li>
     </ul>
     """
+  end
+
+  attr :open, :boolean, required: true
+
+  defp all_folders(assigns) do
+    assigns =
+      assign(assigns, :label, if(assigns.open, do: "Close all folders", else: "Open all folders"))
+
+    ~H"""
+    <button
+      id="all-folders"
+      type="button"
+      title={@label}
+      aria-label={@label}
+      aria-expanded={to_string(@open)}
+      phx-click={JS.dispatch("babelsync:folders", to: "#tree", detail: %{open: not @open})}
+      class="grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors duration-150 hover:bg-ink/7 hover:text-ink md:size-8"
+    >
+      <svg
+        viewBox="0 0 20 20"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+        class="size-[1.125rem]"
+      >
+        <path :if={not @open} d="m6 7.5 4-4 4 4M6 12.5l4 4 4-4" />
+        <path :if={@open} d="m6 3.5 4 4 4-4M6 16.5l4-4 4 4" />
+      </svg>
+    </button>
+    """
+  end
+
+  defp all_open?(tree, open) do
+    case Tree.folders(tree) do
+      [] -> false
+      folders -> Enum.all?(folders, &MapSet.member?(open, &1))
+    end
   end
 end
