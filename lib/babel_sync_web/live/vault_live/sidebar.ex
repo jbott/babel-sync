@@ -27,15 +27,70 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
     <aside
       id="sidebar"
       class={[
-        "flex-col border-line bg-sunken pt-[env(safe-area-inset-top)] md:flex md:w-72 md:shrink-0 md:border-r",
-        if(@entry, do: "hidden", else: "flex w-full")
+        "flex flex-col border-line bg-sunken md:w-72 md:shrink-0 md:border-r md:pt-[env(safe-area-inset-top)]",
+        if(@entry, do: "shrink-0", else: "flex-1 md:flex-none")
       ]}
     >
-      <div class="px-4 pt-3">
-        <Layouts.brand />
-      </div>
+      <header
+        id="vault-bar"
+        class="sticky top-0 z-10 flex items-center gap-2 bg-sunken px-2 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] md:contents"
+      >
+        <div class="shrink-0 pl-2 md:px-4 md:pt-3">
+          <Layouts.brand />
+        </div>
+        <div
+          id="vault-controls"
+          class="flex min-w-0 flex-1 items-center gap-0.5 md:order-last md:flex-none md:border-t md:border-line md:px-2 md:pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pt-2"
+        >
+          <form
+            id="vault-switcher-form"
+            phx-change="switch_vault"
+            phx-auto-recover="ignore"
+            class="relative mr-1 min-w-0 flex-1"
+          >
+            <select
+              id="vault-switcher"
+              name="vault"
+              aria-label="Vault"
+              title="Switch vault"
+              class="block h-9 w-full min-w-0 cursor-pointer appearance-none truncate rounded-lg bg-ink/5 pl-3 pr-8 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus-visible:ring-2 focus-visible:ring-accent/60 md:h-8"
+            >
+              <option :for={vault <- @vaults} value={vault.id} selected={vault.id == @vault.id}>
+                {vault.name}
+              </option>
+              <hr />
+              <option value="connect">Connect Obsidian…</option>
+              <option value="manage">Manage vaults…</option>
+            </select>
+            <.icon
+              name="hero-chevron-up-down-mini"
+              class="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-faint"
+            />
+          </form>
+          <.icon_button
+            navigate={Paths.trash(@vault.id)}
+            id="vault-trash"
+            icon="hero-trash"
+            label="Trash"
+          />
+          <.icon_button
+            :if={@admin}
+            navigate={Paths.settings(@vault.id)}
+            id="vault-settings"
+            icon="hero-cog-6-tooth"
+            label="Vault settings"
+          />
+          <.icon_button
+            :if={@current_scope}
+            id="account-link"
+            navigate={~p"/account?#{[from: @vault.id]}"}
+            icon="hero-user-circle"
+            label="Your settings"
+          />
+        </div>
+      </header>
 
-      <div :if={@writable} class="px-2 pt-2.5">
+      <div :if={@writable} class={["px-2 pt-0.5 md:pt-2.5", @entry && "hidden md:block"]}>
         <div class="flex items-center gap-1">
           <.form
             for={@new_form}
@@ -91,7 +146,10 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
         ></progress>
       </div>
 
-      <div :if={@tree != []} class="mt-2 flex items-center gap-0.5 pl-4 pr-2">
+      <div
+        :if={@tree != []}
+        class={["mt-2 items-center gap-0.5 pl-4 pr-2", if(@entry, do: "hidden md:flex", else: "flex")]}
+      >
         <span class="flex-1 text-2xs font-semibold uppercase tracking-[0.1em] text-faint">
           Files
         </span>
@@ -120,7 +178,10 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
         aria-label="Files"
         phx-hook="Folders"
         data-vault-id={@vault.id}
-        class="mt-1 flex-1 overflow-y-auto px-2 pb-6 text-base md:text-sm"
+        class={[
+          "mt-1 px-2 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] text-base md:flex-1 md:overflow-y-auto md:pb-6 md:text-sm",
+          @entry && "hidden md:block"
+        ]}
       >
         <div :if={@tree == []} class="px-3 py-10 text-center">
           <.icon name="hero-document-plus" class="size-7 text-faint" />
@@ -140,54 +201,6 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
           vault_id={@vault.id}
         />
       </nav>
-
-      <div class="flex items-center gap-0.5 border-t border-line px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
-        <form
-          id="vault-switcher-form"
-          phx-change="switch_vault"
-          phx-auto-recover="ignore"
-          class="relative mr-1 min-w-0 flex-1"
-        >
-          <select
-            id="vault-switcher"
-            name="vault"
-            aria-label="Vault"
-            title="Switch vault"
-            class="block h-9 w-full min-w-0 cursor-pointer appearance-none truncate rounded-lg bg-ink/5 pl-3 pr-8 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus-visible:ring-2 focus-visible:ring-accent/60 md:h-8"
-          >
-            <option :for={vault <- @vaults} value={vault.id} selected={vault.id == @vault.id}>
-              {vault.name}
-            </option>
-            <hr />
-            <option value="connect">Connect Obsidian…</option>
-            <option value="manage">Manage vaults…</option>
-          </select>
-          <.icon
-            name="hero-chevron-up-down-mini"
-            class="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-faint"
-          />
-        </form>
-        <.icon_button
-          navigate={Paths.trash(@vault.id)}
-          id="vault-trash"
-          icon="hero-trash"
-          label="Trash"
-        />
-        <.icon_button
-          :if={@admin}
-          navigate={Paths.settings(@vault.id)}
-          id="vault-settings"
-          icon="hero-cog-6-tooth"
-          label="Vault settings"
-        />
-        <.icon_button
-          :if={@current_scope}
-          id="account-link"
-          navigate={~p"/account?#{[from: @vault.id]}"}
-          icon="hero-user-circle"
-          label="Your settings"
-        />
-      </div>
     </aside>
     """
   end

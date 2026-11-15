@@ -37,15 +37,18 @@ defmodule BabelSyncWeb.Layouts do
   def app(assigns) do
     ~H"""
     <main class={[
-      not @wide &&
-        "px-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] sm:px-6 lg:px-8"
+      not @wide && "px-4 pb-[env(safe-area-inset-bottom)] sm:px-6 lg:px-8",
+      (not @wide and not @masthead) && "pt-[env(safe-area-inset-top)]"
     ]}>
       <div
         :if={not @wide and @masthead}
-        class={["mx-auto flex items-center justify-between gap-4 pt-4 md:pt-7", @column]}
+        id="masthead"
+        class="sticky top-0 z-10 -mx-4 bg-page px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] sm:-mx-6 sm:px-6 md:pt-[calc(env(safe-area-inset-top)+1.75rem)] lg:-mx-8 lg:px-8"
       >
-        <.brand />
-        <.account_link :if={@current_scope && @account_link} class="-mr-2" />
+        <div class={["mx-auto flex items-center justify-between gap-4", @column]}>
+          <.brand />
+          <.account_link :if={@current_scope && @account_link} class="-mr-2" />
+        </div>
       </div>
       {render_slot(@inner_block)}
     </main>

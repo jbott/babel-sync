@@ -674,7 +674,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
     <Layouts.app flash={@flash} current_scope={@current_scope} wide>
       <div
         id="vault"
-        class="flex h-dvh pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+        class={[
+          "flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:h-dvh md:flex-row",
+          if(@entry, do: "h-dvh", else: "min-h-dvh")
+        ]}
       >
         <Sidebar.sidebar
           entry={@entry}
@@ -691,7 +694,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
         />
 
         <section class={[
-          "min-w-0 flex-1 flex-col bg-surface pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:flex",
+          "min-h-0 min-w-0 flex-1 flex-col bg-surface pb-[env(safe-area-inset-bottom)] md:flex md:pt-[env(safe-area-inset-top)]",
           if(@entry, do: "flex", else: "hidden")
         ]}>
           <Reader.welcome entry={@entry} vault={@vault} empty={@entries == []} />
