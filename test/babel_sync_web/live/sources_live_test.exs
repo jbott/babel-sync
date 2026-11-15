@@ -186,4 +186,42 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     refute has_element?(settings, "#source-#{entry.id}")
     assert has_element?(settings, "#sources-empty")
   end
+
+  test "the notes page lists what a source keeps and restores a deleted note", %{
+    conn: conn,
+    vault: vault,
+    entry: entry,
+    owner: owner
+  } do
+    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
+    view |> element("#approve-#{entry.id}") |> render_click()
+    [source] = Sources.list(vault.id)
+    Sources.enqueue(source, "manual")
+    [{run, claimed}] = Sources.Scheduler.claim(DateTime.utc_now())
+    Sources.Scheduler.carry_out(run, claimed)
+
+    assert has_element?(view, "#source-notes", "1")
+
+    {:ok, notes, _html} =
+      view |> element("#source-notes") |> render_click() |> follow_redirect(conn)
+
+    assert has_element?(notes, "#count-current", "1")
+    assert has_element?(notes, "#count-deleted", "0")
+    assert has_element?(notes, "#notes [id^=note-]", "One")
+    refute has_element?(notes, "[id^=reinstate-]")
+
+    {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Data/Things/One.md")
+    notes |> element("#tab-deleted") |> render_click()
+
+    assert has_element?(notes, "#count-deleted", "1")
+    notes |> element("[id^=reinstate-]") |> render_click()
+
+    assert has_element?(notes, "#count-deleted", "0")
+    assert has_element?(notes, "#notes-empty")
+    refute has_element?(notes, "#notes [id^=note-]")
+    assert Vaults.get_entry_by_path(vault.id, "Data/Things/One.md")
+
+    notes |> form("#note-filter", %{q: "nothing like it"}) |> render_change()
+    assert has_element?(notes, "#count-all", "0")
+  end
 end

@@ -5,7 +5,7 @@ defmodule BabelSyncWeb.VaultLive.Source do
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Sources, Vaults}
-  alias BabelSync.Sources.{Script, Secrets, Source}
+  alias BabelSync.Sources.{Items, Script, Secrets, Source}
   alias BabelSync.Vaults.{Entry, Vault}
   alias BabelSyncWeb.Paths
 
@@ -112,7 +112,8 @@ defmodule BabelSyncWeb.VaultLive.Source do
         draft ->
           Map.merge(draft, %{
             runs: if(draft.source, do: Sources.runs(draft.source, 20), else: []),
-            saved: if(draft.source, do: Secrets.names(draft.source), else: [])
+            saved: if(draft.source, do: Secrets.names(draft.source), else: []),
+            current: if(draft.source, do: Items.counts(draft.source, "").current, else: 0)
           })
       end
 
@@ -140,6 +141,16 @@ defmodule BabelSyncWeb.VaultLive.Source do
             </.link>
             in {@vault.name}. The server runs it to bring outside data into the folder beside it.
           </:subtitle>
+          <:actions :if={@item && @item.source}>
+            <.button
+              id="source-notes"
+              size="sm"
+              navigate={~p"/v/#{@vault.id}/sources/#{@entry_id}/notes"}
+            >
+              <.icon name="hero-document-text-mini" class="size-4" /> Notes
+              <span class="tabular-nums text-faint">{@item.current}</span>
+            </.button>
+          </:actions>
         </.header>
 
         <p

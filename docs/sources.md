@@ -130,7 +130,8 @@ source's own folder.
 - The body is written when the note is made and never again.
 - If nothing would change, nothing is written: no new version, and no
   device is told.
-- A note that was deleted is not made again.
+- A note that was deleted is not made again. Restoring it from the trash
+  puts it back in the source's care, and the next run brings it up to date.
 
 The answer is `{ outcome, path }`, where `outcome` is `created`, `changed`,
 `unchanged` or `gone`.
@@ -139,6 +140,15 @@ Because every device fetches a note each time it changes, a script should
 avoid writing values that change for no reason a person cares about: a
 "last synced" time belongs in `state`, and a count that drifts daily is
 better rounded.
+
+### The notes a source keeps
+
+**Notes**, at the top of a source's page, lists every note the source
+keeps, with tabs for the ones still in the vault and the ones deleted.
+A deleted note that is still in the trash can be restored from there as
+it was, with whatever was written in it by hand. One that has left the
+trash can be made again: the source forgets it was deleted, and the next
+run makes it anew.
 
 ## Sharing code between sources
 
