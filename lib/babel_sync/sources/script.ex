@@ -2,12 +2,18 @@ defmodule BabelSync.Sources.Script do
   @moduledoc """
   Reads a source out of a note.
 
-  The note's properties say what the script may do: `schedule` how often
+  A source is written one of two ways. As a Markdown note, its
+  properties say what the script may do and its first `js` code block
+  is the script, which suits writing it in Obsidian. As a file whose
+  name ends in `.source.js`, the whole file is the script and it opens
+  with a comment, `/* source` to `*/`, holding the same properties as
+  YAML, which suits a code editor or an agent.
+
+  The properties say what the script may do: `schedule` how often
   it runs, `hosts` where it may fetch from, `secrets` which secret goes
   to which host in which header, `writes` and `reads` the folders it may
   change and look in, `params` whatever the script wants to be told. The
-  first `js` code block is the script. Anything else in the note is for
-  people.
+  Anything else in a note is for people.
 
   What is read here is what an admin approves, so nothing is guessed or
   let through half understood: a property that is not one of these in
@@ -38,14 +44,25 @@ defmodule BabelSync.Sources.Script do
   @host ~r/^(\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
   @header ~r/^([A-Za-z0-9-]+):\s*(.*\{\}.*)$/
   @known ~w(type schedule hosts secrets writes reads params)
+  @suffix ".source.js"
+  @opening ~r/\A\s*\/\*\s*source[ \t]*\n(.*?)\n[ \t]*\*\//s
 
-  @spec source?(String.t()) :: boolean()
-  def source?(text), do: match?({:ok, %{"type" => "source"}}, FrontMatter.read(text))
+  @spec file?(String.t()) :: boolean()
+  def file?(path), do: path |> String.downcase() |> String.ends_with?(@suffix)
 
-  @spec parse(String.t()) :: {:ok, t()} | {:error, [String.t()]}
-  def parse(text) do
-    with {:ok, properties} <- properties(text),
-         {:ok, code} <- code(text) do
+  @spec name(String.t()) :: String.t()
+  def name(path) do
+    base = Path.basename(path)
+
+    if file?(path),
+      do: String.slice(base, 0, String.length(base) - String.length(@suffix)),
+      else: Path.rootname(base)
+  end
+
+  @spec parse(String.t(), String.t()) :: {:ok, t()} | {:error, [String.t()]}
+  def parse(text, path) do
+    with {:ok, properties, code} <- if(file?(path), do: file(text), else: note(text)),
+         {:ok, properties} <- known(properties) do
       fields = [
         schedule: schedule(properties["schedule"]),
         hosts: hosts(properties["hosts"]),
@@ -100,26 +117,31 @@ defmodule BabelSync.Sources.Script do
     :crypto.hash(:sha256, [manifest(script), 0, script.code]) |> Base.encode16(case: :lower)
   end
 
-  defp properties(text) do
-    case FrontMatter.read(text) do
-      {:ok, %{"type" => "source"} = properties} ->
-        case Map.keys(properties) -- @known do
-          [] -> {:ok, properties}
-          unknown -> {:error, Enum.map(unknown, &"#{&1} is not something a source can be given")}
-        end
-
-      {:ok, _other} ->
-        {:error, ["the note's properties do not say type: source"]}
-
-      {:error, :invalid_front_matter} ->
-        {:error, ["the note's properties cannot be read"]}
+  defp note(text) do
+    with {:ok, %{"type" => "source"} = properties} <- FrontMatter.read(text),
+         [_, code] <- Regex.run(@fence, text) do
+      {:ok, properties, code}
+    else
+      {:ok, _other} -> {:error, ["the note's properties do not say type: source"]}
+      {:error, :invalid_front_matter} -> {:error, ["the note's properties cannot be read"]}
+      nil -> {:error, ["the note has no js code block"]}
     end
   end
 
-  defp code(text) do
-    case Regex.run(@fence, text) do
-      [_, code] -> {:ok, code}
-      nil -> {:error, ["the note has no js code block"]}
+  defp file(text) do
+    with [_, yaml] <- Regex.run(@opening, text),
+         {:ok, properties} when is_map(properties) <- YamlElixir.read_from_string(yaml) do
+      {:ok, Map.new(properties, fn {name, value} -> {to_string(name), value} end), text}
+    else
+      nil -> {:error, ["the file does not open with a /* source ... */ comment"]}
+      _unreadable -> {:error, ["the properties in the opening comment cannot be read"]}
+    end
+  end
+
+  defp known(properties) do
+    case Map.keys(properties) -- @known do
+      [] -> {:ok, properties}
+      unknown -> {:error, Enum.map(unknown, &"#{&1} is not something a source can be given")}
     end
   end
 

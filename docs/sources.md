@@ -51,6 +51,27 @@ for (const repo of res.json()) {
 A property that is not in this table is refused, so a misspelt one is not
 quietly ignored.
 
+### As a JavaScript file
+
+A source can instead be a file whose name ends in `.source.js`, which is
+easier to work on in a code editor or to hand to an agent. The whole file
+is the script, and it opens with a comment holding the same properties as
+YAML:
+
+```js
+/* source
+schedule: every 6h
+hosts: [api.github.com]
+writes: [Github/Stars]
+params:
+  user: octocat
+*/
+const res = http.get(`https://api.github.com/users/${params.user}/starred`)
+```
+
+Everything else is the same either way, and line numbers in an error are
+the file's own.
+
 ## Approving
 
 Vault settings, Sources lists every source note in the vault with what it

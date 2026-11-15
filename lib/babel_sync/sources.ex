@@ -18,7 +18,7 @@ defmodule BabelSync.Sources do
   import Ecto.Query
 
   alias BabelSync.Accounts.Scope
-  alias BabelSync.{Bases, Repo, Sync, Vaults}
+  alias BabelSync.{Bases, Blobs, Repo, Sync, Vaults}
   alias BabelSync.Sources.{Run, Script, Secrets, Source}
   alias BabelSync.Vaults.Entry
 
@@ -29,6 +29,8 @@ defmodule BabelSync.Sources do
           source: Source.t() | nil,
           status: :new | :approved | :changed | :invalid
         }
+
+  @largest 200_000
 
   @spec enabled?() :: boolean()
   def enabled?, do: limits()[:enabled]
@@ -58,20 +60,47 @@ defmodule BabelSync.Sources do
 
   @spec drafts(Ecto.UUID.t()) :: [draft()]
   def drafts(vault_id) do
-    entries =
-      for %Entry{kind: :doc} = entry <- Vaults.list_entries(vault_id),
-          into: %{},
-          do: {entry.path, entry}
+    every =
+      for %Entry{kind: kind} = entry <- Vaults.list_entries(vault_id), kind != :folder, do: entry
+
+    entries = for %Entry{kind: :doc} = entry <- every, into: %{}, do: {entry.path, entry}
 
     approved = Map.new(list(vault_id), &{&1.entry_id, &1})
 
-    for %Bases.Note{path: path, properties: %{"type" => "source"}} <-
-          Bases.Index.notes(Map.values(entries)) do
-      entry = entries[path]
-      draft(entry, Script.parse(Sync.text(entry.id)), approved[entry.id])
+    notes =
+      for %Bases.Note{path: path, properties: %{"type" => "source"}} <-
+            Bases.Index.notes(Map.values(entries)),
+          do: entries[path]
+
+    files = for %Entry{path: path} = entry <- every, Script.file?(path), do: entry
+
+    for entry <- notes ++ files do
+      draft(entry, parsed(entry), approved[entry.id])
     end
     |> Enum.sort_by(& &1.name)
   end
+
+  defp parsed(%Entry{} = entry) do
+    case text(entry) do
+      {:ok, text} -> Script.parse(text, entry.path)
+      :error -> {:error, ["the file is not text, or is too large to be a script"]}
+    end
+  end
+
+  defp text(%Entry{kind: :doc, id: id}), do: {:ok, Sync.text(id)}
+
+  defp text(%Entry{kind: :blob, size: size, blob_hash: hash, vault_id: vault_id})
+       when size <= @largest and is_binary(hash) do
+    with %Blobs.Blob{} = blob <- Blobs.get(vault_id, hash),
+         bytes = Blobs.read(blob),
+         true <- String.valid?(bytes) do
+      {:ok, Sync.normalize(bytes)}
+    else
+      _unreadable -> :error
+    end
+  end
+
+  defp text(%Entry{}), do: :error
 
   defp draft(entry, script, source) do
     status =
@@ -89,7 +118,7 @@ defmodule BabelSync.Sources do
     %{entry: entry, name: name(entry), script: script, source: source, status: status}
   end
 
-  defp name(%Entry{path: path}), do: path |> Path.basename() |> Path.rootname()
+  defp name(%Entry{path: path}), do: Script.name(path)
 
   @spec list(Ecto.UUID.t()) :: [Source.t()]
   def list(vault_id), do: Repo.all(from s in Source, where: s.vault_id == ^vault_id)
@@ -100,9 +129,9 @@ defmodule BabelSync.Sources do
   @spec approve(Scope.t(), Ecto.UUID.t(), String.t()) ::
           {:ok, Source.t()} | {:error, :forbidden | :not_found | :changed | [String.t()]}
   def approve(%Scope{} = scope, entry_id, seen_hash) do
-    with %Entry{kind: :doc, deleted_at: nil} = entry <- Vaults.get_entry(entry_id),
+    with %Entry{deleted_at: nil} = entry <- Vaults.get_entry(entry_id),
          true <- browser_admin?(scope, entry.vault_id) || {:error, :forbidden},
-         {:ok, script} <- Script.parse(Sync.text(entry.id)),
+         {:ok, script} <- parsed(entry),
          true <- Script.hash(script) == seen_hash || {:error, :changed} do
       now = DateTime.utc_now()
 

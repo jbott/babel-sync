@@ -416,4 +416,39 @@ defmodule BabelSync.SourcesTest do
       assert [{_run, _source}] = Scheduler.claim(later)
     end
   end
+
+  describe "a source kept as a .source.js file" do
+    test "is found, approved and run like a note", %{
+      vault: vault,
+      owner: owner,
+      admin: admin,
+      site: site
+    } do
+      file = """
+      /* source
+      hosts: ["127.0.0.1"]
+      writes: [Stars]
+      params:
+        site: #{site}
+      */
+      for (const repo of http.get(params.site + "/stars").json()) {
+        vault.item(repo.url, { path: `Stars/${repo.name}.md`, properties: { stars: repo.stars } })
+      }
+      """
+
+      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Sources/Stars.md")
+
+      {:ok, _} =
+        Agent.write_file(Scope.for_user(owner), vault.id, "Sources/stars.source.js", file)
+
+      assert [%{status: :new, name: "stars", entry: entry, script: {:ok, script}}] =
+               Sources.drafts(vault.id)
+
+      {:ok, source} = Sources.approve(admin, entry.id, Sources.Script.hash(script))
+      stars([star("one", 4)])
+
+      assert %{status: :done, created: 1} = run(source)
+      assert text(vault, "Stars/one.md") == "---\nstars: 4\n---\n"
+    end
+  end
 end
