@@ -113,8 +113,10 @@ export default class BabelSyncPlugin extends Plugin {
     this.registerDomEvent(document, "visibilitychange", () => {
       if (!this.visible()) {
         this.hiddenAt = Date.now();
+        this.record("app hidden");
         return this.scanConfig();
       }
+      this.record(this.hiddenAt ? `app shown after ${Math.round((Date.now() - this.hiddenAt) / 1000)} s hidden` : "app shown");
       void this.accessToken().catch(() => {});
       void this.store?.probe().then(() => this.engine?.resume());
       if (this.hiddenAt && Date.now() - this.hiddenAt > AWAY_MS) {
@@ -514,6 +516,7 @@ export default class BabelSyncPlugin extends Plugin {
     return this.serial(async () => {
       const wanted = this.fingerprint();
       if (!force && wanted === this.running) return;
+      this.record(force ? "reconnecting because it was asked for" : "reconnecting because the settings changed");
       await this.halt();
       await this.launch();
     });
