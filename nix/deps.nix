@@ -1266,6 +1266,28 @@ let
         in
         drv;
 
+      wasmex =
+        let
+          version = "0.16.0";
+          drv = buildMix {
+            inherit version;
+            name = "wasmex";
+            appConfigPath = ../config;
+
+            src = fetchHex {
+              inherit version;
+              pkg = "wasmex";
+              sha256 = "80818435de82651162923d173f7ee01c2b96203b1a6b83c2816aa0bc2b861fda";
+            };
+
+            beamDeps = [
+              rustler
+              rustler_precompiled
+            ];
+          };
+        in
+        drv.override (workarounds.rustlerPrecompiled { } drv);
+
       wax_ =
         let
           version = "0.7.0";

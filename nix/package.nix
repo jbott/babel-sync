@@ -11,6 +11,7 @@
   tailwindcss_4,
   esbuild,
   removeReferencesTo,
+  sandboxGuest,
   revision ? "unknown",
 }:
 
@@ -94,6 +95,13 @@ let
         env.MDEX_NATIVE_BUILD = "1";
       } previous.mdex_native;
 
+      wasmex = builtFromVendoredCrates {
+        inherit (final) jason;
+        crate = "wasmex";
+        hash = "sha256-OSXyno+SQGN94ovGQzV6ZkH2/I5cRdC54RojkelmRXU=";
+        env.WASMEX_BUILD = "1";
+      } previous.wasmex;
+
       exqlite = previous.exqlite.override {
         env.EXQLITE_FORCE_BUILD = "1";
         buildInputs = [ ];
@@ -106,6 +114,7 @@ let
     esbuild
     mixNixDeps.y_ex.crates
     mixNixDeps.mdex_native.crates
+    mixNixDeps.wasmex.crates
   ];
 in
 beamPackages.mixRelease {
@@ -147,6 +156,11 @@ beamPackages.mixRelease {
     MIX_TAILWIND_PATH = lib.getExe tailwindcss_4;
     MIX_ESBUILD_PATH = lib.getExe esbuild;
   };
+
+  preBuild = ''
+    mkdir -p priv/sandbox
+    cp ${sandboxGuest}/guest.wasm priv/sandbox/guest.wasm
+  '';
 
   postBuild = ''
     mix do deps.loadpaths --no-deps-check + assets.deploy

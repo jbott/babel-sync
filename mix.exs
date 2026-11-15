@@ -48,6 +48,7 @@ defmodule BabelSync.MixProject do
       {:ecto_sqlite3, "~> 0.26"},
       {:y_ex, "~> 0.13"},
       {:mdex, "~> 0.9"},
+      {:wasmex, "~> 0.16"},
       {:anubis_mcp, "~> 2.2"},
       {:oidcc, "~> 3.9"},
       {:wax_, "~> 0.7"},

@@ -23,9 +23,12 @@
         pkgs = import nixpkgs { inherit system; };
         beam = pkgs.beam28Packages;
 
+        sandboxGuest = pkgs.callPackage ./nix/sandbox-guest.nix { };
+
         release =
           packages: beamPackages:
           packages.callPackage ./nix/package.nix {
+            inherit sandboxGuest;
             revision = self.shortRev or self.dirtyShortRev or "unknown";
             beamPackages = beamPackages.overrideScope (
               final: previous: { elixir = previous.elixir_1_20; }
@@ -37,6 +40,7 @@
       {
         packages = {
           default = release pkgs pkgs.beam28Packages;
+          sandbox-guest = sandboxGuest;
 
           container = pkgs.callPackage ./nix/container.nix {
             inherit (nix2container.packages.${system}) nix2container;
@@ -77,6 +81,7 @@
             export ERL_AFLAGS="-kernel shell_history enabled"
             export LANG="''${LANG:-en_US.UTF-8}"
 
+            export BABELSYNC_SANDBOX_GUEST="${sandboxGuest}/guest.wasm"
             export PGPORT="''${PGPORT:-54329}"
 
             if [ -d .git ] && [ "$(git config --local core.hooksPath)" != ".githooks" ]; then

@@ -124,6 +124,7 @@ end
 if storage == :local, do: File.mkdir_p!(data_dir)
 
 config :babel_sync,
+  sandbox_guest: System.get_env("BABELSYNC_SANDBOX_GUEST"),
   mode: mode,
   auth: auth,
   storage: storage,
