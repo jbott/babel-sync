@@ -230,9 +230,10 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert has_element?(view, "#all-folders[aria-expanded=true]")
 
       render_hook(view, "toggle_folder", %{"path" => "Recipes", "open" => false})
-      assert has_element?(view, "#all-folders[aria-expanded=false]")
+      assert has_element?(view, "#all-folders[aria-expanded=true]")
 
       render_hook(view, "all_folders", %{"open" => false})
+      assert has_element?(view, "#all-folders[aria-expanded=false]")
       refute has_element?(view, "#tree details[open]")
 
       {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/f/Trips/Lisbon/plan.md")

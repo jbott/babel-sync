@@ -166,7 +166,7 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
           icon="hero-magnifying-glass-mini"
           label="Find a file or search in notes"
         />
-        <.all_folders open={all_open?(@tree, @open_folders)} />
+        <.all_folders open={any_open?(@tree, @open_folders)} />
       </div>
 
       <nav
@@ -297,10 +297,5 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
     """
   end
 
-  defp all_open?(tree, open) do
-    case Tree.folders(tree) do
-      [] -> false
-      folders -> Enum.all?(folders, &MapSet.member?(open, &1))
-    end
-  end
+  defp any_open?(tree, open), do: Enum.any?(Tree.folders(tree), &MapSet.member?(open, &1))
 end
