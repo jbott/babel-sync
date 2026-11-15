@@ -288,6 +288,9 @@ defmodule BabelSyncWeb.VaultLive.Settings do
                     id={"last-run-#{item.entry.id}"}
                     at={item.last.finished_at || item.last.started_at || item.last.inserted_at}
                   />
+                  <span :if={item.last.status == :done} id={"last-outcome-#{item.entry.id}"}>
+                    {outcome(item.last)}
+                  </span>
                 </span>
                 <span :if={item.source && is_nil(item.last)} class="basis-full text-sm text-faint">
                   Has not run yet.

@@ -55,7 +55,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     [{run, claimed}] = Sources.Scheduler.claim(DateTime.utc_now())
     Sources.Scheduler.carry_out(run, claimed)
 
-    assert has_element?(view, "[id^=outcome-]", "Looked at 1 note: 1 new")
+    assert has_element?(view, "[id^=outcome-]", "1 new, 0 edited")
     assert has_element?(view, "[id^=run-time-]")
     assert Vaults.get_entry_by_path(vault.id, "Data/Things/One.md")
   end
@@ -136,6 +136,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
 
     _ = render(settings)
     assert has_element?(settings, "#last-run-#{entry.id}")
+    assert has_element?(settings, "#last-outcome-#{entry.id}", "1 new, 0 edited")
   end
 
   test "a source whose file is gone says so", %{

@@ -28,31 +28,16 @@ defmodule BabelSyncWeb.SourceComponents do
 
   def run_label(%{status: :queued}), do: "Waiting to run"
   def run_label(%{status: :running}), do: "Running"
-  def run_label(%{status: :done, trigger: trigger}), do: "Ran #{started_by(trigger)}"
-  def run_label(%{status: :failed, trigger: trigger}), do: "Failed #{started_by(trigger)}"
+  def run_label(%{status: :done, trigger: trigger}), do: "#{started_by(trigger)} run"
+  def run_label(%{status: :failed, trigger: trigger}), do: "#{started_by(trigger)} run failed"
 
-  defp started_by("schedule"), do: "on schedule"
-  defp started_by("manual"), do: "by hand"
-  defp started_by(other), do: "(#{other})"
+  defp started_by("schedule"), do: "Scheduled"
+  defp started_by("manual"), do: "Manual"
+  defp started_by(other), do: String.capitalize(other)
 
   def logged?(run), do: is_binary(run.error) or run.log != ""
 
-  def outcome(%{created: 0, changed: 0, unchanged: 0}), do: "Looked at no notes."
-
-  def outcome(%{created: created, changed: changed, unchanged: unchanged}) do
-    looked = created + changed + unchanged
-
-    changes =
-      for {count, what} <- [{created, "new"}, {changed, "updated"}],
-          count > 0,
-          do: "#{count} #{what}"
-
-    "Looked at #{looked} #{if looked == 1, do: "note", else: "notes"}: " <>
-      case changes do
-        [] -> "nothing to change."
-        some -> Enum.join(some, ", ") <> ", #{unchanged} left as they were."
-      end
-  end
+  def outcome(%{created: created, changed: changed}), do: "#{created} new, #{changed} edited"
 
   attr :id, :string, required: true
   attr :at, DateTime, required: true

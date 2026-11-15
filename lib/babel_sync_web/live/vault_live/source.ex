@@ -361,11 +361,7 @@ defmodule BabelSyncWeb.VaultLive.Source do
                             class="size-4 transition group-open:rotate-180"
                           />
                         </span>
-                        <span
-                          :if={run.status == :done}
-                          id={"outcome-#{run.id}"}
-                          class="basis-full text-muted"
-                        >
+                        <span :if={run.status == :done} id={"outcome-#{run.id}"} class="text-muted">
                           {outcome(run)}
                         </span>
                         <span :if={run.error} class="min-w-0 basis-full truncate text-danger">
