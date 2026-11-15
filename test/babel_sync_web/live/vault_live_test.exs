@@ -242,6 +242,29 @@ defmodule BabelSyncWeb.VaultLiveTest do
       refute has_element?(view, ~s(#tree details[open][data-path="Recipes"]))
     end
 
+    test "are led to from the path of the open note", %{conn: conn, vault: vault} do
+      entry(vault, "Trips/Lisbon/plan.md")
+      entry(vault, "Recipes/Soups/leek.md")
+
+      {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/f/Trips/Lisbon/plan.md")
+      assert has_element?(view, "#entry-path", "Trips/Lisbon/plan.md")
+
+      view |> element("#entry-path-folder-0") |> render_click()
+      assert_push_event(view, "reveal_folder", %{path: "Trips", open: ["Trips"]})
+
+      files = "/v/#{vault.id}?folder=Trips%2FLisbon"
+      assert has_element?(view, ~s(#note-trail-path-folder-1[href="#{files}"]))
+
+      {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}?folder=Recipes/Soups")
+
+      assert_push_event(view, "reveal_folder", %{
+        path: "Recipes/Soups",
+        open: ["Recipes", "Recipes/Soups"]
+      })
+
+      assert has_element?(view, ~s(#tree details[data-path="Recipes/Soups"] a), "leek")
+    end
+
     test "only send what is inside them once they are opened", %{conn: conn, vault: vault} do
       entry(vault, "Trips/Lisbon/plan.md")
       entry(vault, "Recipes/soup.md")

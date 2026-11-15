@@ -76,7 +76,12 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
             {@vault.name}
           </.link>
           <span aria-hidden="true" class="text-faint">/</span>
-          <.file_trail id="note-trail-path" path={@entry.path} class="px-1" />
+          <.file_trail
+            id="note-trail-path"
+            path={@entry.path}
+            files={Paths.vault(@vault.id)}
+            class="px-1"
+          />
         </nav>
         <Layouts.account_link :if={@current_scope} from={@vault.id} class="-mr-2" />
       </header>

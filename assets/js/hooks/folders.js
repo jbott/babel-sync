@@ -41,6 +41,14 @@ export const Folders = {
     };
     this.el.addEventListener("babelsync:folders", this.onAll);
 
+    this.handleEvent("reveal_folder", ({ path, open }) => {
+      for (const above of open) this.open.add(above);
+      save(this.vaultId, this.open);
+      this.announce();
+      this.revealing = path;
+      this.apply();
+    });
+
     this.announce();
     this.apply();
   },
@@ -68,6 +76,14 @@ export const Folders = {
     this.el.removeEventListener("babelsync:folders", this.onAll);
   },
 
+  reveal() {
+    if (!this.revealing) return;
+    const folder = this.folders().find((folder) => folder.dataset.path === this.revealing);
+    if (!folder) return;
+    this.revealing = null;
+    (folder.querySelector("summary") ?? folder).scrollIntoView({ block: "center" });
+  },
+
   folders() {
     return [...this.el.querySelectorAll("details[data-path]")];
   },
@@ -86,6 +102,7 @@ export const Folders = {
       if (folder.open !== wanted && (wanted || !folder.dataset.seen)) this.set(folder, wanted);
       folder.dataset.seen = "true";
     }
+    this.reveal();
     if (!found) return;
     save(this.vaultId, this.open);
     this.announce();

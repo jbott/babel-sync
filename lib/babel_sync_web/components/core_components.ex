@@ -385,13 +385,22 @@ defmodule BabelSyncWeb.CoreComponents do
   @doc """
   Renders the path of a file as its folders and then its name. When there
   is no room for all of it, the folders are cut short before the name is.
+
+  A folder leads to itself in the list of files: by going to `files`, the
+  page that lists them, when that is given, and otherwise by asking the
+  page it is on to show it.
   """
   attr :id, :string, required: true
   attr :path, :string, required: true
+  attr :files, :string, default: nil
   attr :class, :any, default: nil
 
   def file_trail(assigns) do
-    {folders, [name]} = assigns.path |> String.split("/") |> Enum.split(-1)
+    {names, [name]} = assigns.path |> String.split("/") |> Enum.split(-1)
+
+    folders =
+      names |> Enum.scan(&(&2 <> "/" <> &1)) |> Enum.zip(names) |> Enum.with_index()
+
     assigns = assign(assigns, folders: folders, name: name)
 
     ~H"""
@@ -399,7 +408,7 @@ defmodule BabelSyncWeb.CoreComponents do
       id={@id}
       class={["flex min-w-0 items-center text-sm font-medium", @class]}
       phx-no-format
-    ><span :for={folder <- @folders} class="flex min-w-8 shrink-[1000] items-center overflow-hidden text-muted"><span class="min-w-0 truncate">{folder}</span><span class="mx-1.5 shrink-0 text-faint">/</span></span><span class="min-w-0 truncate text-ink">{@name}</span></span>
+    ><span :for={{{path, folder}, at} <- @folders} class="flex min-w-8 shrink-[1000] items-center overflow-hidden text-muted"><.link :if={@files} id={"#{@id}-folder-#{at}"} patch={@files <> "?" <> URI.encode_query(folder: path)} class="min-w-0 truncate transition-colors duration-150 hover:text-ink">{folder}</.link><button :if={!@files} id={"#{@id}-folder-#{at}"} type="button" phx-click="reveal_folder" phx-value-path={path} class="min-w-0 cursor-pointer truncate transition-colors duration-150 hover:text-ink">{folder}</button><span class="mx-1.5 shrink-0 text-faint">/</span></span><span class="min-w-0 truncate text-ink">{@name}</span></span>
     """
   end
 

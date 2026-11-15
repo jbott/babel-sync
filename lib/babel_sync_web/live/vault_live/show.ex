@@ -80,8 +80,18 @@ defmodule BabelSyncWeb.VaultLive.Show do
         do: put_flash(socket, :error, "#{path} does not exist."),
         else: socket
 
-    {:noreply, socket |> close_finder() |> select(entry)}
+    {:noreply, socket |> close_finder() |> select(entry) |> reveal(params["folder"])}
   end
+
+  defp reveal(socket, folder) when is_binary(folder) and folder != "" do
+    above = folder |> String.split("/") |> Enum.scan(&(&2 <> "/" <> &1))
+
+    socket
+    |> update(:open_folders, &MapSet.union(&1, MapSet.new(above)))
+    |> push_event("reveal_folder", %{path: folder, open: above})
+  end
+
+  defp reveal(socket, _none), do: socket
 
   defp ensure_known(socket, path) do
     known = Enum.find(socket.assigns.entries, &(&1.path == path))
@@ -137,6 +147,10 @@ defmodule BabelSyncWeb.VaultLive.Show do
       when is_binary(path) do
     change = if open? == true, do: &MapSet.put/2, else: &MapSet.delete/2
     {:noreply, update(socket, :open_folders, &change.(&1, path))}
+  end
+
+  def handle_event("reveal_folder", %{"path" => path}, socket) when is_binary(path) do
+    {:noreply, reveal(socket, path)}
   end
 
   def handle_event("all_folders", %{"open" => open?}, socket) do
