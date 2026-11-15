@@ -179,6 +179,35 @@ if (phase === "write") {
 
     assert.deepEqual(changes, ["final.md:false", "doomed.md:true"]);
   });
+
+  test("a connection that does not answer a probe is replaced, and one that replaced it is left alone", async () => {
+    const device = client();
+    const vault = device.vault(vaultId);
+    await vault.whenJoined();
+
+    const socket = device.socket;
+    const push = socket.push.bind(socket);
+    const deaf = (message: Parameters<typeof push>[0]) => {
+      if (message.event !== "heartbeat") push(message);
+    };
+    let opened = 0;
+    socket.onOpen(() => opened++);
+
+    socket.push = deaf;
+    device.probe(50);
+    await eventually(() => opened === 1 && socket.isConnected(), "the unanswered connection to be replaced");
+
+    device.probe(200);
+    await new Promise<void>((resolve) => socket.disconnect(() => resolve()));
+    socket.connect();
+    await eventually(() => opened === 2 && socket.isConnected(), "the connection to be replaced by hand");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    socket.push = push;
+
+    assert.equal(opened, 2);
+    assert.equal(socket.isConnected(), true);
+    await vault.create("Shared/after-probe.md", { text: "still here\n" });
+  });
 }
 
 if (phase === "verify") {

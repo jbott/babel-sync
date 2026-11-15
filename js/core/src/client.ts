@@ -38,6 +38,7 @@ export class BabelSyncClient {
     const socket = this.socket;
     if (!socket.isConnected()) return void socket.connect();
 
+    const probed = this.connection();
     const ref = socket.makeRef();
     let answered = false;
     const listening = socket.onMessage((message: { ref?: string | null }) => {
@@ -47,8 +48,13 @@ export class BabelSyncClient {
 
     setTimeout(() => {
       socket.off([listening]);
-      if (!answered) (socket as unknown as { connection?: { close(code: number, reason: string): void } }).connection?.close(4000, "no answer");
+      if (answered || this.connection() !== probed) return;
+      socket.disconnect(() => socket.connect());
     }, timeoutMs);
+  }
+
+  private connection(): unknown {
+    return (this.socket as unknown as { connection?: unknown }).connection;
   }
 
   disconnect(): Promise<void> {
