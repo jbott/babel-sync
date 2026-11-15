@@ -45,6 +45,7 @@ export default class BabelSyncPlugin extends Plugin {
   updated = false;
   private fetching = false;
   private lastFetched = 0;
+  private lastFetchProblem = "";
   private hiddenAt = 0;
   lastError = "";
   lastSynced: number | null = null;
@@ -84,6 +85,7 @@ export default class BabelSyncPlugin extends Plugin {
     this.addHistory();
     this.addCommand({ id: "verify", name: "Verify this vault against the server", callback: () => this.verify() });
     this.addCommand({ id: "reconnect", name: "Reconnect", callback: () => this.restart(true) });
+    this.addCommand({ id: "check-for-update", name: "Check for updates", callback: () => void this.checkForUpdate() });
     this.registerInterval(window.setInterval(() => void this.fetchUpdate(), UPDATE_FETCH_MS));
     void this.fingerprintOnDisk().then((build) => (this.build = build));
 
@@ -201,10 +203,25 @@ export default class BabelSyncPlugin extends Plugin {
       }
       await this.noticeUpdate();
     } catch (error) {
-      this.record(`could not fetch the plugin: ${error instanceof Error ? error.message : String(error)}`);
+      this.lastFetchProblem = error instanceof Error ? error.message : String(error);
+      this.record(`could not fetch the plugin: ${this.lastFetchProblem}`);
     } finally {
       this.fetching = false;
     }
+  }
+
+  async checkForUpdate(): Promise<void> {
+    if (this.updated) return void this.notify("Babel Sync: an update is ready. Reload to use it.");
+    if (!this.settings.serverUrl) return void this.notify("Babel Sync: connect to the server first.");
+    if (this.fetching) return void this.notify("Babel Sync is already checking for an update.");
+
+    const before = this.lastFetchProblem;
+    this.lastFetchProblem = "";
+    await this.fetchUpdate();
+    if (this.updated) return;
+    if (this.lastFetchProblem) this.notify(`Babel Sync could not check for an update: ${this.lastFetchProblem}`);
+    else this.notify("Babel Sync is up to date.");
+    this.lastFetchProblem ||= before;
   }
 
   private async noticeUpdate(): Promise<void> {

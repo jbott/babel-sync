@@ -125,6 +125,11 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("Updates")
+      .setDesc("Babel Sync updates itself from your server. It looks when it connects and once an hour.")
+      .addButton((button) => button.setButtonText("Check for updates").onClick(() => this.plugin.checkForUpdate()));
+
+    new Setting(containerEl)
       .setName("Debug log")
       .setDesc("For bug reports. Includes file names, never passwords.")
       .addButton((button) =>
