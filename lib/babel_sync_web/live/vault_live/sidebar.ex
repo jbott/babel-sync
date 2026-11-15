@@ -36,7 +36,6 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
         class="sticky top-0 z-10 box-content flex h-9 items-center gap-2 bg-sunken px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] md:static md:pb-0 md:pt-3"
       >
         <Layouts.brand wordmark={false} />
-        <span aria-hidden="true" class="-mx-0.5 text-faint">/</span>
         <form
           id="vault-switcher-form"
           phx-change="switch_vault"

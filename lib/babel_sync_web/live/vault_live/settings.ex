@@ -189,12 +189,7 @@ defmodule BabelSyncWeb.VaultLive.Settings do
       current_scope={@current_scope}
       trail={[{@vault.name, Paths.vault(@vault.id)}, {"Settings", nil}]}
     >
-      <div class="mx-auto max-w-2xl space-y-10 pb-12 pt-7 md:pb-20 md:pt-10">
-        <.header>
-          {@vault.name}
-          <:subtitle>Vault settings</:subtitle>
-        </.header>
-
+      <div class="mx-auto max-w-2xl space-y-10 pb-12 pt-5 md:pb-20 md:pt-8">
         <.panel title="Name">
           <.form
             for={@name_form}

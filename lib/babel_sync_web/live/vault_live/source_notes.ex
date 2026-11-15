@@ -129,7 +129,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
       trail={[
         {@vault.name, Paths.vault(@vault.id)},
         {"Settings", Paths.settings(@vault.id)},
-        {@name, ~p"/v/#{@vault.id}/sources/#{@entry.id}"},
+        {"Source: #{@name}", ~p"/v/#{@vault.id}/sources/#{@entry.id}"},
         {"Notes", nil}
       ]}
     >

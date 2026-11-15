@@ -307,8 +307,12 @@ defmodule BabelSyncWeb.VaultLiveTest do
     end
   end
 
-  describe "the way back from settings" do
-    test "returns to the vault the person came from", %{conn: conn, owner: owner, vault: vault} do
+  describe "the header of the settings page" do
+    test "names only the page, and the vaults are listed under it", %{
+      conn: conn,
+      owner: owner,
+      vault: vault
+    } do
       journal = vault(owner, %{name: "Journal"})
       {:ok, view, _html} = live(conn, Paths.vault(journal.id))
 
@@ -316,9 +320,9 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
       {:ok, account, _html} = live(conn, ~p"/account?from=#{journal.id}")
 
-      assert has_element?(account, "#crumbs a[href='#{Paths.vault(journal.id)}']", "Journal")
-
-      refute has_element?(account, "#crumbs a[href='#{Paths.vault(vault.id)}']")
+      assert has_element?(account, "#crumbs [aria-current=page]", "Settings")
+      assert has_element?(account, "#vaults a[href='#{Paths.vault(journal.id)}']")
+      assert has_element?(account, "#vaults a[href='#{Paths.vault(vault.id)}']")
     end
 
     test "names no vault that is unknown or someone else's", %{conn: conn} do
@@ -335,7 +339,7 @@ defmodule BabelSyncWeb.VaultLiveTest do
       refute has_element?(account, "#crumbs a")
     end
 
-    test "is left out for someone without a vault", %{anonymous: conn} do
+    test "links to no vault for someone without one", %{anonymous: conn} do
       conn = sign_in(conn, user())
       {:ok, account, _html} = live(conn, ~p"/account?from=#{Ecto.UUID.generate()}")
 

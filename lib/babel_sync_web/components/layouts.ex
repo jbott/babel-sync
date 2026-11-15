@@ -36,6 +36,7 @@ defmodule BabelSyncWeb.Layouts do
     default: [],
     doc: "the pages above this one and then this one, each as {label, path} with a nil path last"
 
+  slot :aside, doc: "what sits at the right of the masthead for someone not signed in"
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -53,6 +54,7 @@ defmodule BabelSyncWeb.Layouts do
           <.brand wordmark={@trail == []} />
           <.crumbs trail={@trail} />
           <.account_link :if={@current_scope} active={@on_account} class="-mr-2 ml-auto" />
+          <div :if={@aside != []} class="ml-auto">{render_slot(@aside)}</div>
         </div>
       </div>
       {render_slot(@inner_block)}
@@ -101,7 +103,7 @@ defmodule BabelSyncWeb.Layouts do
       class="flex min-w-0 items-center gap-1 text-sm"
     >
       <%= for {{label, path}, at} <- Enum.with_index(@trail) do %>
-        <span aria-hidden="true" class="text-faint">/</span>
+        <span :if={at > 0} aria-hidden="true" class="text-faint">/</span>
         <.link
           :if={path}
           id={"crumb-#{at}"}

@@ -132,7 +132,7 @@ defmodule BabelSyncWeb.VaultLive.Source do
       trail={[
         {@vault.name, Paths.vault(@vault.id)},
         {"Settings", Paths.settings(@vault.id)},
-        {if(@item, do: @item.name, else: "Source"), nil}
+        {if(@item, do: "Source: #{@item.name}", else: "Source"), nil}
       ]}
     >
       <div class="mx-auto max-w-3xl space-y-8 pb-12 pt-7 md:pb-20 md:pt-10">

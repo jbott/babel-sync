@@ -16,7 +16,6 @@ defmodule BabelSyncWeb.AuthLive.Account do
     {:ok,
      socket
      |> assign(:page_title, "Settings")
-     |> assign(:trail, trail(vaults, params["from"]))
      |> assign(
        :connect_vault,
        Enum.find(vaults, &(&1.id == params["from"])) || List.first(vaults)
@@ -33,13 +32,6 @@ defmodule BabelSyncWeb.AuthLive.Account do
      |> assign(:roles, roles(user, vaults, multi?))
      |> stream(:vaults, vaults)
      |> load()}
-  end
-
-  defp trail(vaults, from) do
-    case Enum.find(vaults, &(&1.id == from)) do
-      nil -> [{"Your settings", nil}]
-      vault -> [{vault.name, Paths.vault(vault.id)}, {"Your settings", nil}]
-    end
   end
 
   defp reach(vault_ids, names) do
@@ -211,15 +203,11 @@ defmodule BabelSyncWeb.AuthLive.Account do
       flash={@flash}
       current_scope={@current_scope}
       on_account
-      trail={@trail}
+      trail={[{"Settings", nil}]}
       column="max-w-4xl"
     >
-      <div class="mx-auto max-w-4xl pb-12 pt-7 md:pb-20 md:pt-10">
-        <.header>
-          Settings
-        </.header>
-
-        <div class="mt-7 lg:mt-9 lg:grid lg:grid-cols-[10rem_minmax(0,1fr)] lg:gap-12">
+      <div class="mx-auto max-w-4xl pb-12 pt-5 md:pb-20 md:pt-8">
+        <div class="lg:grid lg:grid-cols-[10rem_minmax(0,1fr)] lg:gap-12">
           <nav
             id="settings-sections"
             aria-label="Sections"
@@ -235,31 +223,6 @@ defmodule BabelSyncWeb.AuthLive.Account do
           </nav>
 
           <div class="min-w-0 space-y-9">
-            <.group id="identity">
-              <div class="flex items-center gap-3.5 px-4 py-3.5">
-                <span
-                  aria-hidden="true"
-                  class="grid size-11 shrink-0 place-items-center rounded-full bg-accent/12 font-serif text-xl font-bold text-accent"
-                >
-                  {initial(@current_scope.user)}
-                </span>
-                <div class="min-w-0 flex-1">
-                  <div class="truncate font-serif text-lg font-bold leading-tight tracking-tight text-ink">
-                    {display_name(@current_scope.user)}
-                  </div>
-                  <div class="flex flex-wrap gap-x-1.5 text-sm text-muted">
-                    <span :for={part <- standing(assigns)} class="min-w-0 truncate">{part}</span>
-                  </div>
-                </div>
-              </div>
-              <p :if={not @signed_in?} id="open-mode" class="px-4 py-3 text-sm text-muted">
-                Sign-in is off on this server, so anyone who can reach it reads and edits as the
-                owner. Set
-                <code class="rounded border border-line bg-sunken px-1 py-px font-mono text-xs text-ink">BABELSYNC_AUTH</code>
-                to require a passkey or an emailed link.
-              </p>
-            </.group>
-
             <.panel id="your-vaults" title="Vaults" class="scroll-mt-8">
               <.group>
                 <ul id="vaults" phx-update="stream" class="divide-y divide-line">
@@ -330,6 +293,12 @@ defmodule BabelSyncWeb.AuthLive.Account do
             </.panel>
 
             <.panel id="profile" title="Profile" class="scroll-mt-8">
+              <p :if={not @signed_in?} id="open-mode" class="text-sm text-muted">
+                Sign-in is off on this server, so anyone who can reach it reads and edits as the
+                owner. Set
+                <code class="rounded border border-line bg-sunken px-1 py-px font-mono text-xs text-ink">BABELSYNC_AUTH</code>
+                to require a passkey or an emailed link.
+              </p>
               <.group>
                 <.form for={@profile} id="profile-form" phx-submit="save_profile">
                   <.setting label="Name" for={@profile[:name].id} stack>
@@ -630,19 +599,6 @@ defmodule BabelSyncWeb.AuthLive.Account do
       assigns.multi? && assigns.signed_in? && {"delete-account", "Delete account"}
     ]
     |> Enum.filter(& &1)
-  end
-
-  defp display_name(%{name: name}) when is_binary(name) and name != "", do: name
-  defp display_name(%{email: email}) when is_binary(email), do: email
-  defp display_name(_user), do: "Owner"
-
-  defp initial(user), do: user |> display_name() |> String.first() |> String.upcase()
-
-  defp standing(%{signed_in?: false}), do: ["Owner of this server"]
-
-  defp standing(%{multi?: multi?, current_scope: %{user: user}}) do
-    role = if multi?, do: "Member of this server", else: "Owner of this server"
-    if display_name(user) == user.email, do: [role], else: Enum.filter([user.email, role], & &1)
   end
 
   defp admin?(%{multi?: false}, _vault), do: true
