@@ -129,7 +129,16 @@ defmodule BabelSyncWeb.AuthLive.Login do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} masthead={false}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} column="max-w-6xl">
+      <:aside :if={@stage == :sign_in}>
+        <a
+          id="header-log-in"
+          href="#sign-in"
+          class="inline-flex h-8 items-center rounded-lg border border-line-strong bg-surface px-3 text-sm font-semibold text-ink shadow-raise transition duration-150 hover:border-accent hover:text-accent active:translate-y-px"
+        >
+          Log in
+        </a>
+      </:aside>
       <div :if={@stage != :sign_in} class="mx-auto max-w-sm py-12 md:py-24">
         <.entry {shown(assigns)} />
         <p class="mt-6 text-center text-xs text-faint">
@@ -138,20 +147,6 @@ defmodule BabelSyncWeb.AuthLive.Login do
       </div>
 
       <div :if={@stage == :sign_in} id="landing" class="mx-auto max-w-6xl">
-        <header class="flex items-center justify-between gap-4 pt-4 md:pt-7">
-          <span class="flex items-center gap-2 text-muted">
-            <.logo class="size-5 text-accent" />
-            <span class="font-serif text-base font-semibold tracking-tight">Babel Sync</span>
-          </span>
-          <a
-            id="header-log-in"
-            href="#sign-in"
-            class="inline-flex h-9 items-center rounded-lg border border-line-strong bg-surface px-3.5 text-sm font-semibold text-ink shadow-raise transition duration-150 hover:border-accent hover:text-accent active:translate-y-px"
-          >
-            Log in
-          </a>
-        </header>
-
         <section class="grid items-start gap-9 pb-14 pt-9 lg:grid-cols-12 lg:gap-14 lg:pb-20 lg:pt-16">
           <div class="animate-rise lg:col-span-7 lg:pt-6">
             <h1 class="font-serif text-[2.25rem] font-bold leading-[1.08] tracking-tight text-ink sm:text-[3rem] lg:text-[3.75rem]">
@@ -461,7 +456,7 @@ defmodule BabelSyncWeb.AuthLive.Login do
     ~H"""
     <div
       id="sign-in"
-      class="animate-rise scroll-mt-6 space-y-6 rounded-2xl border border-line bg-surface p-6 shadow-float sm:p-8"
+      class="animate-rise scroll-mt-20 space-y-6 rounded-2xl border border-line bg-surface p-6 shadow-float sm:p-8"
     >
       <div class="space-y-4 text-center">
         <span
