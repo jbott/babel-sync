@@ -469,4 +469,76 @@ defmodule BabelSync.SourcesTest do
       assert [{_run, _source}] = Scheduler.claim(later)
     end
   end
+
+  describe "importing" do
+    defp lib(%{owner: owner, vault: vault}, path, code) do
+      {:ok, _} = Agent.write_file(Scope.for_user(owner), vault.id, path, code)
+    end
+
+    test "a source uses other files in the sources folder",
+         %{vault: vault, site: site} = context do
+      lib(context, "Data/lib/names.js", ~s|export { tidy } from "./tidy.js"\n|)
+      lib(context, "Data/lib/tidy.js", ~s|export const tidy = (name) => name.toUpperCase()\n|)
+
+      code = """
+      import { tidy } from "./lib/names.js"
+      vault.item("one", { path: tidy("one") + ".md", body: "!" })
+      """
+
+      %{status: :new, entry: entry, script: {:ok, script}} = rewritten(context, note(site, code))
+      {:ok, source} = Sources.approve(context.admin, entry.id, Sources.Script.hash(script))
+
+      assert %{status: :done, created: 1, error: nil} = run(source)
+      assert Vaults.get_entry_by_path(vault.id, "Data/Stars/ONE.md")
+    end
+
+    test "only from the sources folder, and never another source",
+         %{vault: vault, owner: owner, site: site} = context do
+      {:ok, _} = Agent.write_file(Scope.for_user(owner), vault.id, "Private/keys.js", "1\n")
+      lib(context, "Data/Zed.js", "/* source\n*/\nlog(1)\n")
+
+      code = """
+      const tried = async (name) => { try { await import(name); log(name, "allowed") } catch (error) { log(error.message) } }
+      await tried("../Private/keys.js")
+      await tried("./Zed.js")
+      await tried("./missing.js")
+      await tried("https://example.com/x.js")
+      """
+
+      %{entry: entry, script: {:ok, script}} = rewritten(context, note(site, code))
+      {:ok, source} = Sources.approve(context.admin, entry.id, Sources.Script.hash(script))
+
+      assert %{status: :done, log: log} = run(source)
+      refute log =~ "allowed"
+      assert log =~ "Private/keys.js is not a .js file in the vault's sources folder"
+      assert log =~ "Data/Zed.js is a source"
+      assert log =~ "Data/missing.js is not a file in the vault"
+      assert length(String.split(log, "\n", trim: true)) == 4
+    end
+
+    test "a source given a secret cannot import", %{site: site} = context do
+      lib(context, "Data/lib.js", "export const one = 1\n")
+      extra = ~s|secrets:\n  token: { host: "127.0.0.1", header: "Authorization: Bearer {}" }\n|
+      code = ~s|import { one } from "./lib.js"\nlog(one)\n|
+
+      %{entry: entry, script: {:ok, script}} = rewritten(context, note(site, code, extra))
+      {:ok, source} = Sources.approve(context.admin, entry.id, Sources.Script.hash(script))
+
+      assert %{status: :failed, error: error} = run(source)
+      assert error =~ "given a secret cannot import"
+    end
+
+    test "an error names the file and line it came from", %{site: site} = context do
+      lib(context, "Data/lib.js", "export const fail = () => {\n  throw new Error('deep')\n}\n")
+      code = ~s|import { fail } from "./lib.js"\nfail()\n|
+
+      %{entry: entry, script: {:ok, script}} = rewritten(context, note(site, code))
+      {:ok, source} = Sources.approve(context.admin, entry.id, Sources.Script.hash(script))
+
+      assert %{status: :failed, error: error} = run(source)
+      assert error =~ "deep"
+      assert error =~ "Data/lib.js:2"
+      assert error =~ "Data/Stars.js:8"
+    end
+  end
 end

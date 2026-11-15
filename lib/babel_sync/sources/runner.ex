@@ -33,12 +33,17 @@ defmodule BabelSync.Sources.Runner do
           source: source,
           script: script,
           scope: scope,
+          folder: Vaults.get_vault(source.vault_id).sources_folder,
           kept: kept,
           limits: Sources.limits(),
           secrets: secrets(source, script)
         }
 
-        Sandbox.run(Host.program(script, state, run.trigger), Host.handler(held),
+        Sandbox.run_module(
+          Host.setup(script, state, run.trigger),
+          Host.file(script),
+          script.code,
+          Host.handler(held),
           deadline: Sources.limits()[:deadline]
         )
       end

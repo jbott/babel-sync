@@ -115,6 +115,18 @@ defmodule BabelSync.Sources do
 
   defp followed(%Source{} = source, {:error, _problems}), do: source
 
+  @doc """
+  The text of a file in a vault that a script may hold, or `:error` when
+  there is none at that path, or it is not text, or is too large.
+  """
+  @spec read(Ecto.UUID.t(), String.t()) :: {:ok, String.t()} | :error
+  def read(vault_id, path) do
+    case Vaults.get_entry_by_path(vault_id, path) do
+      %Entry{deleted_at: nil} = entry -> text(entry)
+      _none -> :error
+    end
+  end
+
   defp parsed(%Entry{} = entry) do
     case text(entry) do
       {:ok, text} -> Script.parse(text, entry.path)

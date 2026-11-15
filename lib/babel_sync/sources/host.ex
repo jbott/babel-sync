@@ -18,13 +18,14 @@ defmodule BabelSync.Sources.Host do
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.Sources.{Fetch, Items, Script, Source}
-  alias BabelSync.{Sync, Vaults}
+  alias BabelSync.{Sources, Sync, Vaults}
   alias BabelSync.Vaults.Entry
 
   @type run :: %{
           source: Source.t(),
           script: Script.t(),
           scope: Scope.t(),
+          folder: String.t(),
           secrets: [Fetch.secret()],
           kept: :ets.tid(),
           limits: keyword()
@@ -45,29 +46,64 @@ defmodule BabelSync.Sources.Host do
            |> String.replace("\\\n", " ")
            |> String.trim()
 
-  @spec program(Script.t(), map(), String.t()) :: String.t()
-  def program(%Script{} = script, state, trigger) do
-    prelude =
-      @prelude
-      |> String.replace("__PARAMS__", Jason.encode!(script.params))
-      |> String.replace("__TRIGGER__", Jason.encode!(trigger))
-      |> String.replace("__FOLDER__", Jason.encode!(List.first(script.writes)))
-      |> String.replace("__STATE__", Jason.encode!(state))
-
-    "(function () { #{prelude} #{script.code}\n})(); \"\""
+  @doc """
+  The script that puts in place what a source's script finds when it
+  runs: `http`, `vault`, `state` and the rest.
+  """
+  @spec setup(Script.t(), map(), String.t()) :: String.t()
+  def setup(%Script{} = script, state, trigger) do
+    @prelude
+    |> String.replace("__PARAMS__", Jason.encode!(script.params))
+    |> String.replace("__TRIGGER__", Jason.encode!(trigger))
+    |> String.replace("__FOLDER__", Jason.encode!(List.first(script.writes)))
+    |> String.replace("__STATE__", Jason.encode!(state))
   end
+
+  @spec file(Script.t()) :: String.t()
+  def file(%Script{writes: [folder | _]}), do: folder <> ".js"
 
   @spec handler(run()) :: BabelSync.Sandbox.handler()
   def handler(run) do
-    fn op, payload ->
-      with {:ok, asked} <- Jason.decode(payload, objects: :ordered_objects),
-           {:ok, answer} <- handle(op, asked, run) do
-        {:ok, Jason.encode!(answer)}
-      else
-        {:error, %Jason.DecodeError{}} -> {:error, "#{op} was not given JSON"}
-        {:error, message} when is_binary(message) -> {:error, message}
-      end
+    fn
+      "module", name -> imported(name, run)
+      op, payload -> answer(op, payload, run)
     end
+  end
+
+  defp answer(op, payload, run) do
+    with {:ok, asked} <- Jason.decode(payload, objects: :ordered_objects),
+         {:ok, answer} <- handle(op, asked, run) do
+      {:ok, Jason.encode!(answer)}
+    else
+      {:error, %Jason.DecodeError{}} -> {:error, "#{op} was not given JSON"}
+      {:error, message} when is_binary(message) -> {:error, message}
+    end
+  end
+
+  defp imported(name, run) do
+    with :ok <- may_import(run.script),
+         :ok <- spend(run, :imports, "this run has imported all the files it may"),
+         :ok <- importable(name, run.folder),
+         {:ok, code} <- Sources.read(run.source.vault_id, name) do
+      if Script.source?(code),
+        do: {:error, "#{name} is a source, which runs by itself and cannot be imported"},
+        else: {:ok, code}
+    else
+      :error -> {:error, "#{name} is not a file in the vault that can be imported"}
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  defp may_import(%Script{} = script) do
+    if Script.gated?(script),
+      do: {:error, "a source that is given a secret cannot import other files"},
+      else: :ok
+  end
+
+  defp importable(name, folder) do
+    if Script.file?(name, folder) and Vaults.Path.valid?(name),
+      do: :ok,
+      else: {:error, "#{name} is not a .js file in the vault's sources folder"}
   end
 
   defp handle("http", %Jason.OrderedObject{} = asked, run) do

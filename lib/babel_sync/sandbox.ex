@@ -3,10 +3,11 @@ defmodule BabelSync.Sandbox do
   Runs a script that nobody has reason to trust.
 
   The script is JavaScript, interpreted by QuickJS compiled to
-  WebAssembly. It has no clock to wait on, no files, no network and no
-  way to load code: the one thing it can do besides compute is call
-  `__host(op, payload)`, which hands two strings to the `handler` given
-  here and returns the string it answers with, or throws the error.
+  WebAssembly. It has no clock to wait on, no files and no network: the
+  one thing it can do besides compute is call `__host(op, payload)`,
+  which hands two strings to the `handler` given here and returns the
+  string it answers with, or throws the error. Code it imports is asked
+  of the same handler.
 
   Three things stop a script that will not stop by itself. The
   interpreter is given a budget of instructions and a ceiling on memory;
@@ -29,12 +30,28 @@ defmodule BabelSync.Sandbox do
   @no_such_file 8
 
   @spec run(String.t(), handler(), keyword()) :: {:ok, String.t()} | {:error, refusal()}
-  def run(source, handler, limits \\ []) do
+  def run(source, handler, limits \\ []), do: within(limits, &evaluate([source], handler, &1))
+
+  @doc """
+  Runs `code` as a module called `name`, after `setup` has run as a plain
+  script to put in place whatever the module is to find.
+
+  A module may import others. Each is asked of the handler as the op
+  `module`, with the name it resolves to as the payload: a name that
+  starts with a dot is taken from beside the module importing it. The
+  handler answers with that module's code.
+  """
+  @spec run_module(String.t(), String.t(), String.t(), handler(), keyword()) ::
+          {:ok, String.t()} | {:error, refusal()}
+  def run_module(setup, name, code, handler, limits \\ []),
+    do: within(limits, &evaluate([setup, {name, code}], handler, &1))
+
+  defp within(limits, work) do
     limits = Keyword.merge(@defaults, limits)
     caller = self()
 
     {runner, monitor} =
-      spawn_monitor(fn -> send(caller, {:ran, self(), evaluate(source, handler, limits)}) end)
+      spawn_monitor(fn -> send(caller, {:ran, self(), work.(limits)}) end)
 
     receive do
       {:ran, ^runner, outcome} ->
@@ -53,7 +70,7 @@ defmodule BabelSync.Sandbox do
     end
   end
 
-  defp evaluate(source, handler, limits) do
+  defp evaluate(steps, handler, limits) do
     Process.flag(:trap_exit, true)
     {engine, module} = Guest.compiled()
 
@@ -66,17 +83,16 @@ defmodule BabelSync.Sandbox do
     :ok = Wasmex.StoreOrCaller.set_fuel(store, limits[:fuel])
     {:ok, guest} = Wasmex.start_link(%{store: store, module: module, imports: imports(handler)})
     {:ok, memory} = Wasmex.memory(guest)
+    held = %{guest: guest, store: store, memory: memory, deadline: limits[:deadline]}
 
     with {:ok, []} <- Wasmex.call_function(guest, "_initialize", []),
-         {:ok, [0]} <- Wasmex.call_function(guest, "sb_init", [0, @stack]),
-         {:ok, [at]} <- Wasmex.call_function(guest, "sb_alloc", [byte_size(source)]),
-         :ok <- Wasmex.Memory.write_binary(store, memory, at, source),
-         {:ok, [status]} <-
-           Wasmex.call_function(guest, "sb_eval", [at, byte_size(source)], limits[:deadline]) do
-      {:ok, [result]} = Wasmex.call_function(guest, "sb_result_ptr", [])
-      {:ok, [length]} = Wasmex.call_function(guest, "sb_result_len", [])
-      text = Wasmex.Memory.read_binary(store, memory, result, length)
-      if status == 0, do: {:ok, text}, else: {:error, {:script, text}}
+         {:ok, [0]} <- Wasmex.call_function(guest, "sb_init", [0, @stack]) do
+      Enum.reduce_while(steps, {:ok, ""}, fn step, _done ->
+        case step(held, step) do
+          {:ok, text} -> {:cont, {:ok, text}}
+          stopped -> {:halt, stopped}
+        end
+      end)
     else
       {:error, reason} -> {:error, trapped(reason)}
       other -> {:error, {:crashed, other}}
@@ -84,6 +100,39 @@ defmodule BabelSync.Sandbox do
   catch
     :exit, {:timeout, _call} -> {:error, :out_of_time}
     :exit, reason -> {:error, {:crashed, reason}}
+  end
+
+  defp step(held, source) when is_binary(source) do
+    with {:ok, at} <- placed(held, source),
+         do: finished(held, "sb_eval", [at, byte_size(source)])
+  end
+
+  defp step(held, {name, code}) do
+    with {:ok, name_at} <- placed(held, name),
+         {:ok, code_at} <- placed(held, code),
+         do: finished(held, "sb_module", [name_at, byte_size(name), code_at, byte_size(code)])
+  end
+
+  defp placed(%{guest: guest, store: store, memory: memory}, text) do
+    with {:ok, [at]} <- Wasmex.call_function(guest, "sb_alloc", [byte_size(text)]),
+         :ok <- Wasmex.Memory.write_binary(store, memory, at, text) do
+      {:ok, at}
+    else
+      {:error, reason} -> {:error, trapped(reason)}
+    end
+  end
+
+  defp finished(%{guest: guest, store: store, memory: memory, deadline: deadline}, call, given) do
+    case Wasmex.call_function(guest, call, given, deadline) do
+      {:ok, [status]} ->
+        {:ok, [result]} = Wasmex.call_function(guest, "sb_result_ptr", [])
+        {:ok, [length]} = Wasmex.call_function(guest, "sb_result_len", [])
+        text = Wasmex.Memory.read_binary(store, memory, result, length)
+        if status == 0, do: {:ok, text}, else: {:error, {:script, text}}
+
+      {:error, reason} ->
+        {:error, trapped(reason)}
+    end
   end
 
   defp trapped(reason) when is_binary(reason) do

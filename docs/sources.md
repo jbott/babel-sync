@@ -23,8 +23,8 @@ Data/
       octocat-hello-world.md
 ```
 
-A `.js` file under `Data` without the opening comment is not a source and
-is left alone.
+A `.js` file under `Data` without the opening comment is not a source. It
+is a file sources can import; see below.
 
 ## Writing one
 
@@ -91,9 +91,10 @@ server's `SECRET_KEY_BASE` and never shown again.
 
 ## What a script can do
 
-The script is JavaScript run by QuickJS inside WebAssembly. It has the
-language and the following, and nothing else: no files, no sockets, no
-timers, no modules.
+The script is JavaScript run by QuickJS inside WebAssembly, as a module:
+it is in strict mode, may use `await` at the top, and cannot `return`
+from the top. It has the language and the following, and nothing else:
+no files, no sockets, no timers.
 
 | | |
 |---|---|
@@ -138,13 +139,32 @@ avoid writing values that change for no reason a person cares about: a
 "last synced" time belongs in `state`, and a count that drifts daily is
 better rounded.
 
+## Sharing code between sources
+
+A source can import other `.js` files from the vault's sources folder:
+
+```js
+import { pages } from "./lib/github.js"
+import { slug } from "../shared/names.js"
+```
+
+A name that starts with `.` is taken from beside the file importing it.
+What can be imported is a `.js` file under the sources folder that is not
+itself a source; nothing outside the folder, and nothing from the web. An
+imported file sees the same `http`, `vault` and the rest as the source
+that imported it, and can do no more than that source was approved for.
+
+Imported files are read as they are when the run starts, like the script
+itself. For that reason a source that is given a secret cannot import:
+its script runs only as approved, and an imported file would not be.
+
 ## Limits
 
 A run is stopped after three minutes, after a fixed amount of computation,
-or at 64 MB of memory. It may make 50 requests of at most 5 MB each and
-write 2,000 notes. A source runs once at a time. A run that fails, or is
-cut short by a restart, is simply run again at its next time; `vault.item`
-does nothing the second time, so that is safe.
+or at 64 MB of memory. It may make 50 requests of at most 5 MB each,
+write 2,000 notes and import 50 files. A source runs once at a time. A
+run that fails, or is cut short by a restart, is simply run again at its
+next time; `vault.item` does nothing the second time, so that is safe.
 
 Requests go only to the source's hosts, over https, and only when the host
 is on the open internet. The operator can name hosts on the server's own
