@@ -383,6 +383,27 @@ defmodule BabelSyncWeb.CoreComponents do
   end
 
   @doc """
+  Renders the path of a file as its folders and then its name. When there
+  is no room for all of it, the name is what stays.
+  """
+  attr :id, :string, required: true
+  attr :path, :string, required: true
+  attr :class, :any, default: nil
+
+  def file_trail(assigns) do
+    {folders, [name]} = assigns.path |> String.split("/") |> Enum.split(-1)
+    assigns = assign(assigns, folders: folders, name: name)
+
+    ~H"""
+    <span
+      id={@id}
+      class={["path-tail min-w-0 truncate text-sm font-medium text-ink", @class]}
+      phx-no-format
+    ><bdi><span :for={folder <- @folders} class="text-muted">{folder}<span class="mx-1.5 text-faint">/</span></span>{@name}</bdi></span>
+    """
+  end
+
+  @doc """
   Renders a titled section of a settings-like page.
   """
   attr :title, :string, required: true

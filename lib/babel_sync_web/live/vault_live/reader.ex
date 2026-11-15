@@ -58,17 +58,8 @@ defmodule BabelSyncWeb.VaultLive.Reader do
       id="toolbar"
       class="flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-1.5 pr-1.5 md:gap-1 md:pl-5 md:pr-3"
     >
-      <.icon_button
-        patch={Paths.vault(@vault.id)}
-        id="back-to-files"
-        icon="hero-chevron-left"
-        label="All files"
-        class="md:hidden"
-      />
-      <span
-        id="entry-path"
-        class="path-tail min-w-0 flex-1 truncate pr-2 text-sm font-medium text-ink"
-      ><bdi>{@entry.path}</bdi></span>
+      <.file_trail id="entry-path" path={@entry.path} class="hidden flex-1 pr-2 md:block" />
+      <span class="flex-1 md:hidden"></span>
       <div
         :if={@entry.kind == :doc}
         class="mr-1 flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunken p-0.5"

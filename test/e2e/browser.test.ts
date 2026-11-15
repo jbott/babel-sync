@@ -276,10 +276,7 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     await two.keyboard.press("Enter");
     await waitForText(two, "#entry-path", "Notes/renamed.md");
     await two.waitForFunction(() => document.querySelector("#finder-dialog") === null);
-    await two
-      .locator("#back-to-files, #find-button")
-      .filter((el) => el.id === "find-button")
-      .click();
+    await two.locator("#find-button").click();
     await two.waitForSelector("#finder-input:focus");
     await two.keyboard.type("after the mov");
     await waitForText(two, "#finder-results", "after the move");

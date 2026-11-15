@@ -40,7 +40,7 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
           id="vault-switcher-form"
           phx-change="switch_vault"
           phx-auto-recover="ignore"
-          class="relative mr-auto min-w-0"
+          class={["relative mr-auto min-w-0", @entry && "hidden md:block"]}
         >
           <select
             id="vault-switcher"
@@ -61,6 +61,23 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
             class="pointer-events-none absolute right-1.5 top-1/2 size-4 -translate-y-1/2 text-faint"
           />
         </form>
+        <nav
+          :if={@entry}
+          id="note-trail"
+          aria-label="Where this file is"
+          class="mr-auto flex min-w-0 items-center gap-1 text-sm md:hidden"
+        >
+          <.link
+            id="back-to-files"
+            patch={Paths.vault(@vault.id)}
+            title="All files"
+            class="max-w-[35%] shrink-0 truncate rounded-md px-1 py-0.5 font-medium text-muted transition-colors duration-150 hover:bg-ink/7 hover:text-ink"
+          >
+            {@vault.name}
+          </.link>
+          <span aria-hidden="true" class="text-faint">/</span>
+          <.file_trail id="note-trail-path" path={@entry.path} class="px-1" />
+        </nav>
         <Layouts.account_link :if={@current_scope} from={@vault.id} class="-mr-2" />
       </header>
 
