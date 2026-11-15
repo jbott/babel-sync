@@ -117,17 +117,19 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName("Troubleshooting").setHeading();
 
     new Setting(containerEl)
+      .setName("Updates")
+      .setDesc(
+        `This is version ${this.plugin.manifest.version}, build ${this.plugin.build || "unknown"}. Babel Sync updates itself from your server; it looks when it connects and once an hour.`,
+      )
+      .addButton((button) => button.setButtonText("Check for updates").onClick(() => this.plugin.checkForUpdate()));
+
+    new Setting(containerEl)
       .setName(this.plugin.updated ? "Update ready" : "Reload")
       .setDesc(this.plugin.updated ? "Reload to start using it." : "Restart Babel Sync without restarting Obsidian.")
       .addButton((button) => {
         button.setButtonText(this.plugin.updated ? "Update" : "Reload").onClick(() => this.plugin.reload());
         if (this.plugin.updated) button.setCta();
       });
-
-    new Setting(containerEl)
-      .setName("Updates")
-      .setDesc("Babel Sync updates itself from your server. It looks when it connects and once an hour.")
-      .addButton((button) => button.setButtonText("Check for updates").onClick(() => this.plugin.checkForUpdate()));
 
     new Setting(containerEl)
       .setName("Debug log")
