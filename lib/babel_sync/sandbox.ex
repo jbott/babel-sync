@@ -78,7 +78,7 @@ defmodule BabelSync.Sandbox do
       text = Wasmex.Memory.read_binary(store, memory, result, length)
       if status == 0, do: {:ok, text}, else: {:error, {:script, text}}
     else
-      {:error, reason} -> {:error, trapped(reason, store)}
+      {:error, reason} -> {:error, trapped(reason)}
       other -> {:error, {:crashed, other}}
     end
   catch
@@ -86,14 +86,16 @@ defmodule BabelSync.Sandbox do
     :exit, reason -> {:error, {:crashed, reason}}
   end
 
-  defp trapped(reason, store) do
+  defp trapped(reason) when is_binary(reason) do
     cond do
-      Wasmex.StoreOrCaller.get_fuel(store) == {:ok, 0} -> :out_of_fuel
-      is_binary(reason) and reason =~ "interrupt" -> :out_of_time
-      is_binary(reason) and reason =~ "call stack exhausted" -> {:script, "too much recursion"}
+      reason =~ "fuel" -> :out_of_fuel
+      reason =~ "interrupt" -> :out_of_time
+      reason =~ "call stack exhausted" -> {:script, "too much recursion"}
       true -> {:crashed, reason}
     end
   end
+
+  defp trapped(reason), do: {:crashed, reason}
 
   defp imports(handler) do
     %{

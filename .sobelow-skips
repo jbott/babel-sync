@@ -28,6 +28,7 @@ Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.e
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.ex:317,406106F
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/agent.ex:320,1BD71B6
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/obsidian/plugin.ex:95,608A612
+Traversal.FileModule: Directory Traversal in `File.read!`,lib/babel_sync/sandbox/guest.ex:27,126A236
 Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:28,37FC872
 Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:38,596F766
 Traversal.FileModule: Directory Traversal in `File.read`,lib/babel_sync/obsidian/plugin.ex:49,2B395AD
