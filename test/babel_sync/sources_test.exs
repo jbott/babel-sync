@@ -30,7 +30,7 @@ defmodule BabelSync.SourcesTest do
   log("token", res.headers["x-token"])
   for (const repo of res.json()) {
     vault.item(repo.url, {
-      path: `Stars/${vault.name(repo.name)}.md`,
+      path: `${vault.name(repo.name)}.md`,
       match: { url: repo.url },
       properties: { url: repo.url, stars: repo.stars, tags: ["type/star", ...repo.topics] },
       body: `# ${repo.name}\\n`,
@@ -40,16 +40,13 @@ defmodule BabelSync.SourcesTest do
 
   defp note(site, code \\ @script, extra \\ "") do
     """
-    ---
-    type: source
+    /* source
     schedule: every 1h
     hosts: ["127.0.0.1"]
-    writes: [Stars]
     params:
       site: #{site}
-    #{extra}---
-    ```js
-    #{code}```
+    #{extra}*/
+    #{code}
     """
   end
 
@@ -71,10 +68,10 @@ defmodule BabelSync.SourcesTest do
     end)
 
     owner = user()
-    vault = vault(owner)
+    {:ok, vault} = Vaults.update_vault(vault(owner), %{sources_folder: "Data"})
     admin = Scope.for_user(owner, session_id: Ecto.UUID.generate())
     site = "http://127.0.0.1:#{port}"
-    {:ok, _} = Agent.write_file(Scope.for_user(owner), vault.id, "Sources/Stars.md", note(site))
+    {:ok, _} = Agent.write_file(Scope.for_user(owner), vault.id, "Data/Stars.js", note(site))
 
     %{owner: owner, vault: vault, admin: admin, site: site}
   end
@@ -88,7 +85,7 @@ defmodule BabelSync.SourcesTest do
   end
 
   defp rewritten(%{owner: owner, vault: vault}, text) do
-    entry = Vaults.get_entry_by_path(vault.id, "Sources/Stars.md")
+    entry = Vaults.get_entry_by_path(vault.id, "Data/Stars.js")
 
     {:ok, _} =
       Agent.write_file(Scope.for_user(owner), vault.id, entry.path, text, overwrite: true)
@@ -143,38 +140,80 @@ defmodule BabelSync.SourcesTest do
       assert {:error, :changed} = Sources.approve(admin, entry.id, "something else")
     end
 
-    test "a changed note runs what was approved until approved again",
-         %{vault: vault, owner: owner, site: site} = context do
+    test "an edited script runs as edited, with no more than was approved",
+         %{vault: vault, site: site} = context do
       source = approved(context)
-      stars([star("one", 1)])
 
-      {:ok, _} =
-        Agent.write_file(
-          Scope.for_user(owner, grant_id: Ecto.UUID.generate()),
-          vault.id,
-          "Sources/Stars.md",
-          note(site, ~s|vault.item("x", { path: "Stars/hijacked.md", body: "!" })\n|),
-          overwrite: true
-        )
+      code = """
+      vault.item("x", { path: "edited.md", body: "!" })
+      try { http.get("https://example.com/") } catch (error) { log(error.message) }
+      """
 
-      assert %{status: :changed} = draft(vault)
-      assert %{status: :done, created: 1} = run(source)
-      assert Vaults.get_entry_by_path(vault.id, "Stars/one.md")
-      refute Vaults.get_entry_by_path(vault.id, "Stars/hijacked.md")
+      assert %{status: :approved} = rewritten(context, note(site, code))
+      assert %{status: :done, created: 1, log: log} = run(source)
+      assert log =~ "not a host this source may reach"
+      assert Vaults.get_entry_by_path(vault.id, "Data/Stars/edited.md")
     end
 
-    test "a renamed source note keeps its approval", %{vault: vault, owner: owner} = context do
+    test "a script that asks for more runs as it was until approved again",
+         %{vault: vault, site: site} = context do
+      source = approved(context)
+      stars([star("one", 1)])
+      code = ~s|vault.item("x", { path: "more.md", body: "!" })\n|
+
+      assert %{status: :changed} = rewritten(context, note(site, code, "reads: [Private]\n"))
+      assert %{status: :done, created: 1} = run(source)
+      assert Vaults.get_entry_by_path(vault.id, "Data/Stars/one.md")
+      refute Vaults.get_entry_by_path(vault.id, "Data/Stars/more.md")
+    end
+
+    test "a script given a secret runs only as approved",
+         %{vault: vault, site: site, admin: admin} = context do
+      extra = ~s|secrets:\n  token: { host: "127.0.0.1", header: "Authorization: Bearer {}" }\n|
+      %{entry: entry, script: {:ok, script}} = rewritten(context, note(site, @script, extra))
+      {:ok, source} = Sources.approve(admin, entry.id, Sources.Script.hash(script))
+      stars([star("one", 1)])
+      code = ~s|vault.item("x", { path: "edited.md", body: "!" })\n|
+
+      assert %{status: :changed} = rewritten(context, note(site, code, extra))
+      assert %{status: :done, created: 1} = run(source)
+      assert Vaults.get_entry_by_path(vault.id, "Data/Stars/one.md")
+      refute Vaults.get_entry_by_path(vault.id, "Data/Stars/edited.md")
+    end
+
+    test "a source moved to another name asks again, for where it now writes",
+         %{vault: vault, owner: owner} = context do
       approved(context)
+      {:ok, _} = Agent.move_file(Scope.for_user(owner), vault.id, "Data/Stars.js", "Data/Mine.js")
+
+      assert %{status: :changed, name: "Mine", script: {:ok, %{writes: ["Data/Mine"]}}} =
+               draft(vault)
+    end
+
+    test "a source moved out of the sources folder does not run",
+         %{vault: vault, owner: owner} = context do
+      source = approved(context)
 
       {:ok, _} =
-        Agent.move_file(
-          Scope.for_user(owner),
-          vault.id,
-          "Sources/Stars.md",
-          "Sources/My stars.md"
-        )
+        Agent.move_file(Scope.for_user(owner), vault.id, "Data/Stars.js", "Other/Stars.js")
 
-      assert %{status: :approved, name: "My stars"} = draft(vault)
+      assert Sources.drafts(vault.id) == []
+      assert %{status: :failed, error: error} = run(source)
+      assert error =~ "sources folder"
+      assert Scheduler.queue_due(DateTime.add(DateTime.utc_now(), 2, :hour)) == []
+    end
+
+    test "a .js file without the opening comment is not a source",
+         %{vault: vault, owner: owner} do
+      {:ok, _} = Agent.write_file(Scope.for_user(owner), vault.id, "Data/lib.js", "log(1)\n")
+
+      assert [%{name: "Stars"}] = Sources.drafts(vault.id)
+    end
+
+    test "a vault with no sources folder has no sources", %{vault: vault} do
+      {:ok, vault} = Vaults.update_vault(vault, %{sources_folder: nil})
+
+      assert Sources.drafts(vault.id) == []
     end
   end
 
@@ -186,28 +225,10 @@ defmodule BabelSync.SourcesTest do
       assert %{status: :done, created: 2, changed: 0, error: nil, log: "token none\n"} =
                run(source)
 
-      assert text(vault, "Stars/one.md") ==
+      assert text(vault, "Data/Stars/one.md") ==
                "---\nurl: https://example.com/one\nstars: 1\ntags:\n  - type/star\n  - topic/a\n---\n# one\n"
 
       assert Jason.decode!(Sources.get(source.id).state) == %{"runs" => 1}
-    end
-
-    test "a note a source brought in is not taken for a source", %{vault: vault} = context do
-      code = """
-      vault.item("made", {
-        path: "Stars/made.md",
-        properties: { type: "source", schedule: "every 1h" },
-        body: "made",
-      })
-      """
-
-      %{entry: entry, script: {:ok, script}} =
-        rewritten(context, note(context.site, code))
-
-      {:ok, source} = Sources.approve(context.admin, entry.id, Sources.Script.hash(script))
-      assert %{status: :done, created: 1} = run(source)
-      assert text(vault, "Stars/made.md") =~ "type: source"
-      assert [%{entry: %{path: "Sources/Stars.md"}}] = Sources.drafts(vault.id)
     end
 
     test "run again with nothing new, writes nothing", %{vault: vault} = context do
@@ -227,7 +248,7 @@ defmodule BabelSync.SourcesTest do
       run(source)
 
       {:ok, _} =
-        Agent.edit_file(Scope.for_user(owner), vault.id, "Stars/one.md", [
+        Agent.edit_file(Scope.for_user(owner), vault.id, "Data/Stars/one.md", [
           %{old_text: "  - topic/a\n", new_text: "  - topic/a\n  - mine\nrating: 5\n"},
           %{old_text: "# one\n", new_text: "# one\n\nMy notes.\n"}
         ])
@@ -236,7 +257,7 @@ defmodule BabelSync.SourcesTest do
 
       assert %{status: :done, changed: 1} = run(source)
 
-      assert text(vault, "Stars/one.md") ==
+      assert text(vault, "Data/Stars/one.md") ==
                "---\nurl: https://example.com/one\nstars: 7\ntags:\n  - type/star\n  - topic/b\n  - mine\nrating: 5\n---\n# one\n\nMy notes.\n"
     end
 
@@ -246,24 +267,29 @@ defmodule BabelSync.SourcesTest do
       run(source)
 
       {:ok, _} =
-        Agent.move_file(Scope.for_user(owner), vault.id, "Stars/one.md", "Stars/Kept/first.md")
+        Agent.move_file(
+          Scope.for_user(owner),
+          vault.id,
+          "Data/Stars/one.md",
+          "Data/Stars/Kept/first.md"
+        )
 
       stars([star("one", 2)])
 
       assert %{changed: 1, created: 0} = run(source)
-      assert text(vault, "Stars/Kept/first.md") =~ "stars: 2"
-      refute Vaults.get_entry_by_path(vault.id, "Stars/one.md")
+      assert text(vault, "Data/Stars/Kept/first.md") =~ "stars: 2"
+      refute Vaults.get_entry_by_path(vault.id, "Data/Stars/one.md")
     end
 
     test "does not bring back a note that was deleted", %{vault: vault, owner: owner} = context do
       source = approved(context)
       stars([star("one", 1)])
       run(source)
-      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Stars/one.md")
+      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Data/Stars/one.md")
 
       assert %{status: :done, created: 0, changed: 0} = run(source)
       assert %{status: :done, created: 0} = run(source)
-      refute Vaults.get_entry_by_path(vault.id, "Stars/one.md")
+      refute Vaults.get_entry_by_path(vault.id, "Data/Stars/one.md")
       assert Repo.get_by(Item, source_id: source.id).gone
     end
 
@@ -275,7 +301,7 @@ defmodule BabelSync.SourcesTest do
         Agent.write_file(
           Scope.for_user(owner),
           vault.id,
-          "Stars/Old name.md",
+          "Data/Stars/Old name.md",
           "---\nurl: https://example.com/one\nstars: 0\nmine: yes\n---\nKept body.\n"
         )
 
@@ -283,7 +309,7 @@ defmodule BabelSync.SourcesTest do
 
       assert %{created: 0, changed: 1} = run(source)
 
-      assert text(vault, "Stars/Old name.md") ==
+      assert text(vault, "Data/Stars/Old name.md") ==
                "---\nurl: https://example.com/one\nstars: 3\nmine: yes\ntags:\n  - type/star\n---\nKept body.\n"
     end
 
@@ -298,7 +324,7 @@ defmodule BabelSync.SourcesTest do
         Agent.write_file(
           Scope.for_user(owner),
           vault.id,
-          "Sources/Stars.md",
+          "Data/Stars.js",
           note(site, code, extra),
           overwrite: true
         )
@@ -319,15 +345,15 @@ defmodule BabelSync.SourcesTest do
       code = """
       const tried = (name, attempt) => { try { attempt(); log(name, "allowed") } catch (error) { log(name, error.message) } }
       tried("host", () => http.get("https://example.com/"))
-      tried("folder", () => vault.item("k", { path: "Elsewhere/x.md" }))
-      tried("config", () => vault.item("k", { path: "Stars/../.obsidian/plugins/x/main.md" }))
-      tried("read", () => vault.read("Sources/Stars.md"))
+      tried("folder", () => vault.item("k", { path: "../Elsewhere/x.md" }))
+      tried("config", () => vault.item("k", { path: "../../.obsidian/plugins/x/main.md" }))
+      tried("read", () => vault.read("Data/Stars.js"))
       tried("link", () => attention("look", { url: "https://evil.example/" }))
       tried("unknown", () => __host("shell", "\\"rm\\""))
       """
 
       {:ok, _} =
-        Agent.write_file(Scope.for_user(owner), vault.id, "Sources/Stars.md", note(site, code),
+        Agent.write_file(Scope.for_user(owner), vault.id, "Data/Stars.js", note(site, code),
           overwrite: true
         )
 
@@ -344,7 +370,7 @@ defmodule BabelSync.SourcesTest do
       code = ~s|state.set("runs", 99); throw new Error("no good")\n|
 
       {:ok, _} =
-        Agent.write_file(Scope.for_user(owner), vault.id, "Sources/Stars.md", note(site, code),
+        Agent.write_file(Scope.for_user(owner), vault.id, "Data/Stars.js", note(site, code),
           overwrite: true
         )
 
@@ -365,7 +391,7 @@ defmodule BabelSync.SourcesTest do
 
       assert %{status: :failed, error: error} = run(source)
       assert error =~ "approved"
-      refute Vaults.get_entry_by_path(vault.id, "Stars/one.md")
+      refute Vaults.get_entry_by_path(vault.id, "Data/Stars/one.md")
     end
 
     test "records a request for attention and clears it on the next clean run",
@@ -374,7 +400,7 @@ defmodule BabelSync.SourcesTest do
         ~s|if (!state.get("asked")) { state.set("asked", true); attention("Sign in again", { url: "https://127.0.0.1/login" }) }\n|
 
       {:ok, _} =
-        Agent.write_file(Scope.for_user(owner), vault.id, "Sources/Stars.md", note(site, code),
+        Agent.write_file(Scope.for_user(owner), vault.id, "Data/Stars.js", note(site, code),
           overwrite: true
         )
 
@@ -412,7 +438,7 @@ defmodule BabelSync.SourcesTest do
     test "a source whose note was deleted is not queued",
          %{vault: vault, owner: owner} = context do
       approved(context)
-      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Sources/Stars.md")
+      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Data/Stars.js")
 
       assert Scheduler.queue_due(DateTime.utc_now()) == []
     end
@@ -441,41 +467,6 @@ defmodule BabelSync.SourcesTest do
 
       Sources.enqueue(source, "manual")
       assert [{_run, _source}] = Scheduler.claim(later)
-    end
-  end
-
-  describe "a source kept as a .source.js file" do
-    test "is found, approved and run like a note", %{
-      vault: vault,
-      owner: owner,
-      admin: admin,
-      site: site
-    } do
-      file = """
-      /* source
-      hosts: ["127.0.0.1"]
-      writes: [Stars]
-      params:
-        site: #{site}
-      */
-      for (const repo of http.get(params.site + "/stars").json()) {
-        vault.item(repo.url, { path: `Stars/${repo.name}.md`, properties: { stars: repo.stars } })
-      }
-      """
-
-      {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Sources/Stars.md")
-
-      {:ok, _} =
-        Agent.write_file(Scope.for_user(owner), vault.id, "Sources/stars.source.js", file)
-
-      assert [%{status: :new, name: "stars", entry: entry, script: {:ok, script}}] =
-               Sources.drafts(vault.id)
-
-      {:ok, source} = Sources.approve(admin, entry.id, Sources.Script.hash(script))
-      stars([star("one", 4)])
-
-      assert %{status: :done, created: 1} = run(source)
-      assert text(vault, "Stars/one.md") == "---\nstars: 4\n---\n"
     end
   end
 end

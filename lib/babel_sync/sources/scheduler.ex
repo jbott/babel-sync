@@ -23,8 +23,8 @@ defmodule BabelSync.Sources.Scheduler do
   require Logger
 
   alias BabelSync.{Repo, Sources}
-  alias BabelSync.Sources.{Run, Runner, Source}
-  alias BabelSync.Vaults.Entry
+  alias BabelSync.Sources.{Run, Runner, Script, Source}
+  alias BabelSync.Vaults.{Entry, Vault}
 
   @slack 60_000
   @kept_runs 50
@@ -82,11 +82,17 @@ defmodule BabelSync.Sources.Scheduler do
         from s in Source,
           join: e in Entry,
           on: e.id == s.entry_id,
+          join: v in Vault,
+          on: v.id == s.vault_id,
           where: s.enabled and not is_nil(s.next_run_at) and s.next_run_at <= ^now,
-          where: is_nil(e.deleted_at)
+          where: is_nil(e.deleted_at),
+          select: {s, e.path, v.sources_folder}
       )
 
-    for source <- due, moved_on?(source, now), not queued?(source) do
+    for {source, path, folder} <- due,
+        Script.file?(path, folder),
+        moved_on?(source, now),
+        not queued?(source) do
       Sources.enqueue(source, "schedule")
     end
   end

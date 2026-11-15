@@ -1,26 +1,23 @@
 defmodule BabelSync.Sources.Script do
   @moduledoc """
-  Reads a source out of a note.
+  Reads a source out of a JavaScript file.
 
-  A source is written one of two ways. As a Markdown note, its
-  properties say what the script may do and its first `js` code block
-  is the script, which suits writing it in Obsidian. As a file whose
-  name ends in `.source.js`, the whole file is the script and it opens
-  with a comment, `/* source` to `*/`, holding the same properties as
-  YAML, which suits a code editor or an agent.
+  A vault names one folder for its sources. A `.js` file in it that
+  opens with a comment, `/* source` to `*/`, is a source: the whole file
+  is the script and the comment holds, as YAML, what the script may do.
+  `schedule` is how often it runs, `hosts` where it may fetch from,
+  `secrets` which secret goes to which host in which header, `reads` the
+  folders it may look in, `params` whatever the script wants to be told.
 
-  The properties say what the script may do: `schedule` how often
-  it runs, `hosts` where it may fetch from, `secrets` which secret goes
-  to which host in which header, `writes` and `reads` the folders it may
-  change and look in, `params` whatever the script wants to be told. The
-  Anything else in a note is for people.
+  Where it writes is not something it says. A source makes notes in the
+  folder beside it that has its name, and nowhere else: `Data/Stars.js`
+  writes in `Data/Stars`.
 
   What is read here is what an admin approves, so nothing is guessed or
   let through half understood: a property that is not one of these in
   the right shape is a problem to fix, listed with the rest.
   """
 
-  alias BabelSync.Markdown.FrontMatter
   alias BabelSync.Vaults
 
   @enforce_keys [:code]
@@ -37,47 +34,56 @@ defmodule BabelSync.Sources.Script do
           params: map()
         }
 
-  @fence ~r/^```(?:js|javascript)[ \t]*\n(.*?)^```[ \t]*$/ms
   @every ~r/^every\s+(\d+)\s*(m|h|d)$/
   @unit %{"m" => 60, "h" => 3600, "d" => 86_400}
   @shortest 300
   @host ~r/^(\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
   @header ~r/^([A-Za-z0-9-]+):\s*(.*\{\}.*)$/
-  @known ~w(type schedule hosts secrets writes reads params)
-  @suffix ".source.js"
+  @known ~w(schedule hosts secrets reads params)
+  @suffix ".js"
   @opening ~r/\A\s*\/\*\s*source[ \t]*\n(.*?)\n[ \t]*\*\//s
+  @opens ~r/\A\s*\/\*\s*source\b/
 
-  @spec file?(String.t()) :: boolean()
-  def file?(path), do: path |> String.downcase() |> String.ends_with?(@suffix)
+  @spec file?(String.t(), String.t() | nil) :: boolean()
+  def file?(_path, nil), do: false
 
-  @spec name(String.t()) :: String.t()
-  def name(path) do
-    base = Path.basename(path)
+  def file?(path, folder) do
+    folded = Vaults.Path.fold(path)
 
-    if file?(path),
-      do: String.slice(base, 0, String.length(base) - String.length(@suffix)),
-      else: Path.rootname(base)
+    String.starts_with?(folded, Vaults.Path.fold(folder) <> "/") and
+      String.ends_with?(folded, @suffix)
   end
+
+  @spec source?(String.t()) :: boolean()
+  def source?(text), do: Regex.match?(@opens, text)
+
+  @spec folder(String.t()) :: String.t()
+  def folder(path), do: String.slice(path, 0, String.length(path) - String.length(@suffix))
+
+  @spec name(String.t(), String.t()) :: String.t()
+  def name(path, folder), do: path |> folder() |> String.slice((String.length(folder) + 1)..-1//1)
 
   @spec parse(String.t(), String.t()) :: {:ok, t()} | {:error, [String.t()]}
   def parse(text, path) do
-    with {:ok, properties, code} <- if(file?(path), do: file(text), else: note(text)),
+    with {:ok, properties} <- opening(text),
          {:ok, properties} <- known(properties) do
       fields = [
         schedule: schedule(properties["schedule"]),
         hosts: hosts(properties["hosts"]),
         secrets: secrets(properties["secrets"]),
-        writes: folders("writes", properties["writes"]),
         reads: folders("reads", properties["reads"]),
         params: params(properties["params"])
       ]
 
       case for {_field, {:error, problem}} <- fields, do: problem do
-        [] -> checked(struct!(__MODULE__, [code: code] ++ values(fields)))
+        [] -> checked(struct!(__MODULE__, [code: text, writes: [folder(path)]] ++ values(fields)))
         problems -> {:error, problems}
       end
     end
   end
+
+  @spec gated?(t()) :: boolean()
+  def gated?(%__MODULE__{secrets: secrets}), do: map_size(secrets) > 0
 
   @spec manifest(t()) :: String.t()
   def manifest(%__MODULE__{} = script) do
@@ -117,21 +123,10 @@ defmodule BabelSync.Sources.Script do
     :crypto.hash(:sha256, [manifest(script), 0, script.code]) |> Base.encode16(case: :lower)
   end
 
-  defp note(text) do
-    with {:ok, %{"type" => "source"} = properties} <- FrontMatter.read(text),
-         [_, code] <- Regex.run(@fence, text) do
-      {:ok, properties, code}
-    else
-      {:ok, _other} -> {:error, ["the note's properties do not say type: source"]}
-      {:error, :invalid_front_matter} -> {:error, ["the note's properties cannot be read"]}
-      nil -> {:error, ["the note has no js code block"]}
-    end
-  end
-
-  defp file(text) do
+  defp opening(text) do
     with [_, yaml] <- Regex.run(@opening, text),
          {:ok, properties} when is_map(properties) <- YamlElixir.read_from_string(yaml) do
-      {:ok, Map.new(properties, fn {name, value} -> {to_string(name), value} end), text}
+      {:ok, Map.new(properties, fn {name, value} -> {to_string(name), value} end)}
     else
       nil -> {:error, ["the file does not open with a /* source ... */ comment"]}
       _unreadable -> {:error, ["the properties in the opening comment cannot be read"]}
@@ -141,9 +136,14 @@ defmodule BabelSync.Sources.Script do
   defp known(properties) do
     case Map.keys(properties) -- @known do
       [] -> {:ok, properties}
-      unknown -> {:error, Enum.map(unknown, &"#{&1} is not something a source can be given")}
+      unknown -> {:error, Enum.map(unknown, &unknown/1)}
     end
   end
+
+  defp unknown("writes"),
+    do: "writes is not given: a source writes in the folder beside it that has its name"
+
+  defp unknown(name), do: "#{name} is not something a source can be given"
 
   defp values(fields), do: for({field, {:ok, value}} <- fields, do: {field, value})
 

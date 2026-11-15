@@ -39,7 +39,7 @@ defmodule BabelSync.Sources.Host do
            const __answer = (got) => ({ status: got.status, ok: got.status >= 200 && got.status < 300, url: got.url, headers: got.headers, next: __next(got.headers.link), text: () => got.body, json: () => JSON.parse(got.body) });\
            const __ask = (method) => (url, options = {}) => __answer(__call("http", { method, url, headers: options.headers || {}, body: options.body === undefined || options.body === null ? null : typeof options.body === "string" ? options.body : JSON.stringify(options.body) }));\
            const http = { get: __ask("GET"), post: __ask("POST"), put: __ask("PUT"), patch: __ask("PATCH"), delete: __ask("DELETE"), head: __ask("HEAD") };\
-           const vault = { item: (key, item) => __call("item", { key, ...item }), read: (path) => __call("read", path), list: (folder) => __call("list", folder), name: (text) => String(text).replace(/[\\\\/:*?"<>|#^\\[\\]]+/g, " ").replace(/\\s+/g, " ").trim().slice(0, 120) };\
+           const vault = { folder: __FOLDER__, item: (key, item) => __call("item", { key, ...item }), read: (path) => __call("read", path), list: (folder) => __call("list", folder), name: (text) => String(text).replace(/[\\\\/:*?"<>|#^\\[\\]]+/g, " ").replace(/\\s+/g, " ").trim().slice(0, 120) };\
            const attention = (message, options = {}) => { __call("attention", { message, url: options.url || null }); };\
            """
            |> String.replace("\\\n", " ")
@@ -51,6 +51,7 @@ defmodule BabelSync.Sources.Host do
       @prelude
       |> String.replace("__PARAMS__", Jason.encode!(script.params))
       |> String.replace("__TRIGGER__", Jason.encode!(trigger))
+      |> String.replace("__FOLDER__", Jason.encode!(List.first(script.writes)))
       |> String.replace("__STATE__", Jason.encode!(state))
 
     "(function () { #{prelude} #{script.code}\n})(); \"\""
@@ -100,6 +101,7 @@ defmodule BabelSync.Sources.Host do
     with :ok <- spend(run, :writes, "this run has written all the notes it may"),
          {:ok, key} <- text(fields["key"], "an item needs a key"),
          {:ok, path} <- text(fields["path"], "an item needs a path"),
+         path = Enum.join(Enum.take(folders, 1) ++ [path], "/"),
          {:ok, properties} <- properties(fields["properties"]),
          {:ok, match} <- match(fields["match"]),
          wanted = %{

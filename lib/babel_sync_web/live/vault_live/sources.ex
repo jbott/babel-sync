@@ -45,7 +45,7 @@ defmodule BabelSyncWeb.VaultLive.Sources do
          socket
          |> put_flash(
            :error,
-           "The note changed while you were reading it. Look again, then approve."
+           "The file changed while you were reading it. Look again, then approve."
          )
          |> load()}
 
@@ -126,11 +126,13 @@ defmodule BabelSyncWeb.VaultLive.Sources do
           </:trail>
           Sources
           <:subtitle>
-            Scripts kept as notes in {@vault.name} that the server runs to bring outside data in.
-            A note whose properties say
-            <code class="font-mono text-[0.9em] text-ink">type: source</code>
-            shows up here. Nothing runs until you approve it, and a change to the note runs
-            nothing new until you approve that.
+            Scripts in {@vault.name} that the server runs to bring outside data in. A
+            <code class="font-mono text-[0.9em] text-ink">.js</code>
+            file in the sources folder that opens with a
+            <code class="font-mono text-[0.9em] text-ink">/* source</code>
+            comment shows up here, and writes in the folder beside it that has its name. Nothing
+            runs until you approve what it asks for. After that the script can be edited freely,
+            unless it is given a secret.
           </:subtitle>
         </.header>
 
@@ -147,8 +149,16 @@ defmodule BabelSyncWeb.VaultLive.Sources do
           id="sources-empty"
           class="rounded-xl border border-dashed border-line-strong p-8 text-center text-sm text-muted"
         >
-          No note in this vault says <code class="font-mono text-[0.9em] text-ink">type: source</code>
-          yet.
+          <%= if @vault.sources_folder do %>
+            No file in <span class="text-ink">{@vault.sources_folder}</span>
+            opens with a <code class="font-mono text-[0.9em] text-ink">/* source</code>
+            comment yet.
+          <% else %>
+            This vault has no sources folder yet.
+            <.link navigate={~p"/v/#{@vault.id}/settings#sources"} class="text-ink underline">
+              Pick one in settings
+            </.link>
+          <% end %>
         </p>
 
         <div id="sources" phx-update="stream" class="space-y-6">
@@ -239,7 +249,7 @@ defmodule BabelSyncWeb.VaultLive.Sources do
                 {if item.status == :new,
                   do: "This script has not been approved. It asks for:",
                   else:
-                    "The note differs from what you approved. Until you approve this, the approved script keeps running. It now asks for:"}
+                    "This differs from what you approved. Until you approve it, the script keeps running as it was. It now asks for:"}
               </p>
               <.asks script={elem(item.script, 1)} />
               <pre

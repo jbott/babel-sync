@@ -1,14 +1,19 @@
 defmodule BabelSync.Sources do
   @moduledoc """
-  Scripts kept as notes in a vault that the server runs to bring outside
+  Scripts kept as files in a vault that the server runs to bring outside
   data into it.
 
-  A note whose properties say `type: source` is a draft: anyone who can
-  write to the vault, and any agent or device acting for them, can
-  change it. What runs is the copy an admin approved, held here. A
-  changed note runs nothing new until it is approved again, and
-  approving takes an admin signed in through a browser, which no agent
-  grant or device is, however much of the vault it may write.
+  A vault names a folder for its sources. A `.js` file there that opens
+  with a `/* source` comment is one, and it makes notes in the folder
+  beside it that has its name. The file is a draft: anyone who can write
+  to the vault, and any agent or device acting for them, can change it.
+
+  What the comment says the script may do, and where the file is, are
+  what an admin approves. Approving takes an admin signed in through a
+  browser, which no agent grant or device is, however much of the vault
+  it may write. Within what was approved the script itself may be
+  edited freely and the next run uses it as it then is, unless the
+  source is given a secret: then the script too runs only as approved.
 
   Whether sources run at all is the operator's choice, `BABELSYNC_SOURCES`.
   They are on where one person runs the server for themselves and off
@@ -18,9 +23,9 @@ defmodule BabelSync.Sources do
   import Ecto.Query
 
   alias BabelSync.Accounts.Scope
-  alias BabelSync.{Bases, Blobs, Repo, Sync, Vaults}
-  alias BabelSync.Sources.{Items, Run, Script, Secrets, Source}
-  alias BabelSync.Vaults.Entry
+  alias BabelSync.{Blobs, Repo, Sync, Vaults}
+  alias BabelSync.Sources.{Run, Script, Secrets, Source}
+  alias BabelSync.Vaults.{Entry, Vault}
 
   @type draft :: %{
           entry: Entry.t(),
@@ -60,31 +65,55 @@ defmodule BabelSync.Sources do
 
   @spec drafts(Ecto.UUID.t()) :: [draft()]
   def drafts(vault_id) do
-    every =
-      for %Entry{kind: kind} = entry <- Vaults.list_entries(vault_id), kind != :folder, do: entry
+    case Vaults.get_vault(vault_id) do
+      %Vault{sources_folder: folder} when is_binary(folder) ->
+        approved = Map.new(list(vault_id), &{&1.entry_id, &1})
 
-    entries = for %Entry{kind: :doc} = entry <- every, into: %{}, do: {entry.path, entry}
+        for %Entry{kind: kind, path: path} = entry <- Vaults.list_entries(vault_id),
+            kind != :folder,
+            Script.file?(path, folder),
+            {:ok, text} <- [text(entry)],
+            Script.source?(text) do
+          draft(entry, Script.name(path, folder), Script.parse(text, path), approved[entry.id])
+        end
+        |> Enum.sort_by(& &1.name)
 
-    approved = Map.new(list(vault_id), &{&1.entry_id, &1})
-    brought_in = Items.entry_ids(vault_id)
-
-    candidates =
-      for {_path, entry} <- entries,
-          is_map_key(approved, entry.id) or entry.id not in brought_in,
-          do: entry
-
-    notes =
-      for %Bases.Note{path: path, properties: %{"type" => "source"}} <-
-            Bases.Index.notes(candidates),
-          do: entries[path]
-
-    files = for %Entry{path: path} = entry <- every, Script.file?(path), do: entry
-
-    for entry <- notes ++ files do
-      draft(entry, parsed(entry), approved[entry.id])
+      _none ->
+        []
     end
-    |> Enum.sort_by(& &1.name)
   end
+
+  @doc """
+  The source as its next run should have it: with the script as the file
+  now has it, where that is allowed without asking, and otherwise as it
+  was approved. A source whose file has left the sources folder does not
+  run.
+  """
+  @spec current(Source.t()) :: {:ok, Source.t()} | {:error, String.t()}
+  def current(%Source{} = source) do
+    with %Entry{deleted_at: nil} = entry <- Vaults.get_entry(source.entry_id),
+         %Vault{sources_folder: folder} <- Vaults.get_vault(source.vault_id),
+         true <- Script.file?(entry.path, folder) do
+      {:ok, followed(source, parsed(entry))}
+    else
+      _moved -> {:error, "this source's file is no longer in the vault's sources folder"}
+    end
+  end
+
+  defp followed(%Source{} = source, {:ok, %Script{} = script}) do
+    if not Script.gated?(script) and Script.manifest(script) == source.manifest and
+         script.code != source.code do
+      Repo.update_all(from(s in Source, where: s.id == ^source.id),
+        set: [code: script.code, updated_at: DateTime.utc_now()]
+      )
+
+      %{source | code: script.code}
+    else
+      source
+    end
+  end
+
+  defp followed(%Source{} = source, {:error, _problems}), do: source
 
   defp parsed(%Entry{} = entry) do
     case text(entry) do
@@ -108,7 +137,7 @@ defmodule BabelSync.Sources do
 
   defp text(%Entry{}), do: :error
 
-  defp draft(entry, script, source) do
+  defp draft(entry, name, script, source) do
     status =
       case {script, source} do
         {{:error, _problems}, _source} ->
@@ -117,14 +146,17 @@ defmodule BabelSync.Sources do
         {{:ok, _script}, nil} ->
           :new
 
-        {{:ok, script}, %Source{approved_hash: hash}} ->
-          if(Script.hash(script) == hash, do: :approved, else: :changed)
+        {{:ok, script}, %Source{} = source} ->
+          if(as_approved?(script, source), do: :approved, else: :changed)
       end
 
-    %{entry: entry, name: name(entry), script: script, source: source, status: status}
+    %{entry: entry, name: name, script: script, source: source, status: status}
   end
 
-  defp name(%Entry{path: path}), do: Script.name(path)
+  defp as_approved?(%Script{} = script, %Source{} = source) do
+    Script.manifest(script) == source.manifest and
+      (not Script.gated?(script) or script.code == source.code)
+  end
 
   @spec list(Ecto.UUID.t()) :: [Source.t()]
   def list(vault_id), do: Repo.all(from s in Source, where: s.vault_id == ^vault_id)
@@ -137,12 +169,14 @@ defmodule BabelSync.Sources do
   def approve(%Scope{} = scope, entry_id, seen_hash) do
     with %Entry{deleted_at: nil} = entry <- Vaults.get_entry(entry_id),
          true <- browser_admin?(scope, entry.vault_id) || {:error, :forbidden},
+         %Vault{sources_folder: folder} <- Vaults.get_vault(entry.vault_id),
+         true <- Script.file?(entry.path, folder) || {:error, :not_found},
          {:ok, script} <- parsed(entry),
          true <- Script.hash(script) == seen_hash || {:error, :changed} do
       now = DateTime.utc_now()
 
       approved = [
-        name: name(entry),
+        name: Script.name(entry.path, folder),
         manifest: Script.manifest(script),
         code: script.code,
         approved_hash: Script.hash(script),

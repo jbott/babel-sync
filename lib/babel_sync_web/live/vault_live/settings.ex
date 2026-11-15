@@ -18,6 +18,7 @@ defmodule BabelSyncWeb.VaultLive.Settings do
        |> assign(:sharing, BabelSync.mode() == :multi)
        |> assign(:vault, vault)
        |> assign(:name_form, to_form(Vault.changeset(vault, %{})))
+       |> assign(:sources_form, to_form(Vault.changeset(vault, %{})))
        |> assign(:member_form, to_form(%{"email" => "", "role" => "editor"}, as: :member))
        |> assign(:members, Vaults.list_members(vault))
        |> assign(:invitations, Vaults.list_invitations(vault))}
@@ -42,6 +43,20 @@ defmodule BabelSyncWeb.VaultLive.Settings do
 
       {:error, changeset} ->
         {:noreply, assign(socket, :name_form, to_form(changeset))}
+    end
+  end
+
+  def handle_event("set_sources_folder", %{"vault" => params}, socket) do
+    case Vaults.update_vault(socket.assigns.vault, Map.take(params, ["sources_folder"])) do
+      {:ok, vault} ->
+        {:noreply,
+         socket
+         |> assign(:vault, vault)
+         |> assign(:sources_form, to_form(Vault.changeset(vault, %{})))
+         |> put_flash(:info, "Sources folder saved.")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :sources_form, to_form(changeset))}
     end
   end
 
@@ -173,14 +188,32 @@ defmodule BabelSyncWeb.VaultLive.Settings do
         </.panel>
 
         <.panel :if={BabelSync.Sources.enabled?()} id="sources" title="Sources">
-          <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface p-4">
-            <p class="min-w-0 flex-1 basis-64 text-sm text-muted">
-              Scripts kept as notes that the server runs to bring outside data into the vault,
-              each only once you have approved it.
-            </p>
-            <.button id="open-sources" navigate={~p"/v/#{@vault.id}/sources"}>
-              <.icon name="hero-arrow-path-rounded-square" class="size-4" /> Sources
-            </.button>
+          <div class="space-y-4 rounded-xl border border-line bg-surface p-4">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <p class="min-w-0 flex-1 basis-64 text-sm text-muted">
+                Scripts the server runs to bring outside data into the vault, each only once you
+                have approved it. They live in one folder, and each writes in the folder beside
+                it that has its name.
+              </p>
+              <.button id="open-sources" navigate={~p"/v/#{@vault.id}/sources"}>
+                <.icon name="hero-arrow-path-rounded-square" class="size-4" /> Sources
+              </.button>
+            </div>
+            <.form
+              for={@sources_form}
+              id="sources-folder"
+              phx-submit="set_sources_folder"
+              class="flex items-start gap-2.5"
+            >
+              <div class="flex-1">
+                <.input
+                  field={@sources_form[:sources_folder]}
+                  aria-label="Sources folder"
+                  placeholder="Folder for sources, such as Data"
+                />
+              </div>
+              <.button>Save</.button>
+            </.form>
           </div>
         </.panel>
 

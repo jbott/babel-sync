@@ -1,6 +1,7 @@
 defmodule BabelSync.Sources.Runner do
   @moduledoc """
-  Runs a source's approved script once and records how it went.
+  Runs a source's script once, within what was approved, and records
+  how it went.
 
   The script writes with the authority of whoever approved it and no
   more: should that person leave the vault, the source stops being able
@@ -22,7 +23,8 @@ defmodule BabelSync.Sources.Runner do
     kept = :ets.new(__MODULE__, [:public])
 
     outcome =
-      with {:ok, scope} <- scope(source) do
+      with {:ok, source} <- current(source),
+           {:ok, scope} <- scope(source) do
         script = Script.from_manifest(source.manifest, source.code)
         state = Jason.decode!(source.state)
         :ets.insert(kept, {:state, state})
@@ -44,6 +46,10 @@ defmodule BabelSync.Sources.Runner do
     seen = Map.new(:ets.tab2list(kept))
     :ets.delete(kept)
     finish(run, source, outcome, seen)
+  end
+
+  defp current(%Source{} = source) do
+    with {:error, message} <- Sources.current(source), do: {:error, {:script, message}}
   end
 
   defp scope(%Source{approved_by_id: approver, vault_id: vault_id, name: name}) do

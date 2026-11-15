@@ -61,23 +61,6 @@ defmodule BabelSync.Sources.Items do
     end
   end
 
-  @doc """
-  The notes that sources brought into a vault. Such a note is what a
-  source made, so it is not looked at as a source to approve.
-  """
-  @spec entry_ids(Ecto.UUID.t()) :: MapSet.t(Ecto.UUID.t())
-  def entry_ids(vault_id) do
-    MapSet.new(
-      Repo.all(
-        from i in Item,
-          join: s in Source,
-          on: s.id == i.source_id,
-          where: s.vault_id == ^vault_id and not is_nil(i.entry_id),
-          select: i.entry_id
-      )
-    )
-  end
-
   @spec within(String.t(), [String.t()]) :: :ok | {:error, String.t()}
   def within(path, folders) do
     folded = Vaults.Path.fold(path)

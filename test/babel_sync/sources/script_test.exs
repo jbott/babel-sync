@@ -3,36 +3,28 @@ defmodule BabelSync.Sources.ScriptTest do
 
   alias BabelSync.Sources.Script
 
-  @note """
-  ---
-  type: source
+  @source """
+  /* source
   schedule: every 6h
   hosts:
     - api.github.com
   secrets:
     github: { host: api.github.com, header: "Authorization: Bearer {}" }
-  writes:
-    - Github/Stars
+  reads: [People]
   params:
     user: jbott
-  ---
-  Keeps one note per star.
-
-  ```js
+  */
   log("hello")
-  ```
-
-  ```js
-  log("not this one")
-  ```
   """
 
-  test "reads the manifest and the first js block" do
-    assert {:ok, script} = Script.parse(@note, "S.md")
-    assert script.code == ~s|log("hello")\n|
+  @path "Data/Github/Stars.js"
+
+  test "is the file whole, with what it may do in the opening comment" do
+    assert {:ok, script} = Script.parse(@source, @path)
+    assert script.code == @source
     assert script.schedule == 21_600
     assert script.hosts == ["api.github.com"]
-    assert script.writes == ["Github/Stars"]
+    assert script.reads == ["People"]
     assert script.params == %{"user" => "jbott"}
 
     assert script.secrets == %{
@@ -40,104 +32,91 @@ defmodule BabelSync.Sources.ScriptTest do
            }
   end
 
+  test "writes in the folder beside it that has its name" do
+    assert {:ok, %Script{writes: ["Data/Github/Stars"]}} = Script.parse(@source, @path)
+    assert Script.name(@path, "Data") == "Github/Stars"
+  end
+
+  test "is a file in the sources folder whose name ends in .js" do
+    assert Script.file?("Data/Github/Stars.js", "Data")
+    assert Script.file?("data/Stars.JS", "Data")
+    refute Script.file?("Data/Github/Stars.md", "Data")
+    refute Script.file?("Database/Stars.js", "Data")
+    refute Script.file?("Data.js", "Data")
+    refute Script.file?("Data/Stars.js", nil)
+  end
+
+  test "is told from a file to import by how it opens" do
+    assert Script.source?(@source)
+    assert Script.source?("\n/* source */")
+    refute Script.source?("export const one = 1\n")
+    refute Script.source?("/* sources of truth */\n")
+  end
+
   test "comes back the same from the manifest it is stored as" do
-    {:ok, script} = Script.parse(@note, "S.md")
+    {:ok, script} = Script.parse(@source, @path)
 
     assert Script.from_manifest(Script.manifest(script), script.code) == script
   end
 
-  test "its hash changes with the code and with what it may do, not with the prose" do
-    {:ok, script} = Script.parse(@note, "S.md")
+  test "what it may do changes with the comment and with where it is, not with the code" do
+    {:ok, script} = Script.parse(@source, @path)
+    {:ok, recoded} = Script.parse(String.replace(@source, "hello", "goodbye"), @path)
+    {:ok, regranted} = Script.parse(String.replace(@source, "People", "Places"), @path)
+    {:ok, moved} = Script.parse(@source, "Data/Github/Mine.js")
 
-    {:ok, reworded} =
-      Script.parse(String.replace(@note, "Keeps one note", "Makes a note"), "S.md")
-
-    {:ok, recoded} = Script.parse(String.replace(@note, "hello", "goodbye"), "S.md")
-    {:ok, regranted} = Script.parse(String.replace(@note, "Github/Stars", "Places"), "S.md")
-
-    assert Script.hash(reworded) == Script.hash(script)
+    assert Script.manifest(recoded) == Script.manifest(script)
     refute Script.hash(recoded) == Script.hash(script)
-    refute Script.hash(regranted) == Script.hash(script)
+    refute Script.manifest(regranted) == Script.manifest(script)
+    refute Script.manifest(moved) == Script.manifest(script)
   end
 
-  test "a note that is not a source is told so" do
-    assert {:error, [_problem]} = Script.parse("---\ntype: recipe\n---\n```js\n1\n```\n", "S.md")
+  test "is gated when it is given a secret" do
+    {:ok, script} = Script.parse(@source, @path)
+    {:ok, open} = Script.parse("/* source\nhosts: [api.github.com]\n*/\n", @path)
+
+    assert Script.gated?(script)
+    refute Script.gated?(open)
   end
 
-  test "lists everything wrong with a manifest" do
-    note = """
-    ---
-    type: source
+  test "without the comment is a problem" do
+    assert {:error, [problem]} = Script.parse("log(1)\n", @path)
+    assert problem =~ "/* source"
+  end
+
+  test "lists everything wrong with what it asks for" do
+    source = """
+    /* source
     schedule: every 10s
     hosts: [GitHub.com, "https://x.com/path"]
-    writes: [".obsidian/plugins", "../up"]
-    ---
-    ```js
-    1
-    ```
+    reads: [".obsidian/plugins", "../up"]
+    */
     """
 
-    assert {:error, problems} = Script.parse(note, "S.md")
+    assert {:error, problems} = Script.parse(source, @path)
     assert length(problems) == 3
   end
 
   test "refuses a property it does not know rather than ignore it" do
-    note = "---\ntype: source\nhost: api.github.com\n---\n```js\n1\n```\n"
+    assert {:error, ["host is not something a source can be given"]} =
+             Script.parse("/* source\nhost: x\n*/\n", @path)
+  end
 
-    assert {:error, ["host is not something a source can be given"]} = Script.parse(note, "S.md")
+  test "says where a source writes when it is told where to" do
+    assert {:error, [problem]} = Script.parse("/* source\nwrites: [Stars]\n*/\n", @path)
+    assert problem =~ "folder beside it"
   end
 
   test "refuses a secret for a host the source may not reach" do
-    note = """
-    ---
-    type: source
+    source = """
+    /* source
     hosts: [api.github.com]
     secrets:
       token: { host: evil.example, header: "Authorization: {}" }
-    ---
-    ```js
-    1
-    ```
-    """
-
-    assert {:error, [problem]} = Script.parse(note, "S.md")
-    assert problem =~ "evil.example"
-  end
-
-  test "a note without code is a problem" do
-    assert {:error, ["the note has no js code block"]} =
-             Script.parse("---\ntype: source\n---\n", "S.md")
-  end
-
-  describe "a .source.js file" do
-    @script_file """
-    /* source
-    schedule: every 6h
-    hosts: [api.github.com]
-    writes: [Github/Stars]
-    params:
-      user: jbott
     */
-    log("hello")
     """
 
-    test "is the script whole, with its properties in the opening comment" do
-      assert {:ok, script} = Script.parse(@script_file, "Sources/GitHub stars.source.js")
-      assert script.code == @script_file
-      assert script.schedule == 21_600
-      assert script.hosts == ["api.github.com"]
-      assert script.params == %{"user" => "jbott"}
-      assert Script.name("Sources/GitHub stars.source.js") == "GitHub stars"
-    end
-
-    test "without the comment is a problem" do
-      assert {:error, [problem]} = Script.parse("log(1)\n", "x.source.js")
-      assert problem =~ "/* source"
-    end
-
-    test "is held to the same properties as a note" do
-      assert {:error, ["host is not something a source can be given"]} =
-               Script.parse("/* source\nhost: x\n*/\n", "x.source.js")
-    end
+    assert {:error, [problem]} = Script.parse(source, @path)
+    assert problem =~ "evil.example"
   end
 end
