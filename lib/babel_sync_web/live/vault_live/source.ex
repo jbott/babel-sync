@@ -129,7 +129,7 @@ defmodule BabelSyncWeb.VaultLive.Source do
       <div class="mx-auto max-w-3xl space-y-8 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
           <:trail>
-            <.back_link navigate={~p"/v/#{@vault.id}/settings"}>Back to settings</.back_link>
+            <.back_link navigate={~p"/v/#{@vault.id}/settings"} />
           </:trail>
           {if @item, do: @item.name, else: "Source"}
           <:subtitle :if={@item}>

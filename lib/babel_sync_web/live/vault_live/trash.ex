@@ -86,7 +86,7 @@ defmodule BabelSyncWeb.VaultLive.Trash do
       <div class="mx-auto max-w-2xl space-y-7 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
           <:trail>
-            <.back_link navigate={Paths.vault(@vault.id)}>{@vault.name}</.back_link>
+            <.back_link navigate={Paths.vault(@vault.id)} />
           </:trail>
           Trash
           <:subtitle :if={@retention_days}>

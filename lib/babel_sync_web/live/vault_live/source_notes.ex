@@ -126,9 +126,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
       <div class="mx-auto max-w-3xl space-y-6 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
           <:trail>
-            <.back_link navigate={~p"/v/#{@vault.id}/sources/#{@entry.id}"}>
-              Back to {@name}
-            </.back_link>
+            <.back_link navigate={~p"/v/#{@vault.id}/sources/#{@entry.id}"} />
           </:trail>
           {@name} notes
           <:subtitle>

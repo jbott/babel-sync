@@ -316,11 +316,7 @@ defmodule BabelSyncWeb.VaultLiveTest do
 
       {:ok, account, _html} = live(conn, ~p"/account?from=#{journal.id}")
 
-      assert has_element?(
-               account,
-               "#account-back[href='#{Paths.vault(journal.id)}']",
-               "Back to Journal"
-             )
+      assert has_element?(account, "#account-back[href='#{Paths.vault(journal.id)}']")
 
       refute has_element?(account, "#account-back[href='#{Paths.vault(vault.id)}']")
     end
@@ -331,12 +327,11 @@ defmodule BabelSyncWeb.VaultLiveTest do
       for from <- [foreign.id, "nonsense", ""] do
         {:ok, account, _html} = live(conn, ~p"/account?from=#{from}")
 
-        assert has_element?(account, "#account-back[href='/']", "Back to notes")
-        refute has_element?(account, "#account-back", "Someone else")
+        assert has_element?(account, "#account-back[href='/']")
       end
 
       {:ok, account, _html} = live(conn, ~p"/account")
-      assert has_element?(account, "#account-back[href='/']", "Back to notes")
+      assert has_element?(account, "#account-back[href='/']")
     end
 
     test "is left out for someone without a vault", %{anonymous: conn} do

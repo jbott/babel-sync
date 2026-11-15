@@ -39,8 +39,8 @@ defmodule BabelSyncWeb.AuthLive.Account do
 
   defp back(vaults, from) do
     case Enum.find(vaults, &(&1.id == from)) do
-      nil -> %{to: ~p"/", label: "Back to notes"}
-      vault -> %{to: Paths.vault(vault.id), label: "Back to #{vault.name}"}
+      nil -> ~p"/"
+      vault -> Paths.vault(vault.id)
     end
   end
 
@@ -212,13 +212,13 @@ defmodule BabelSyncWeb.AuthLive.Account do
     <Layouts.app
       flash={@flash}
       current_scope={@current_scope}
-      account_link={false}
+      on_account
       column="max-w-4xl"
     >
-      <div class="mx-auto max-w-4xl pb-12 pt-6 md:pb-20 md:pt-9">
+      <div class="mx-auto max-w-4xl pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
           <:trail :if={@back}>
-            <.back_link id="account-back" navigate={@back.to}>{@back.label}</.back_link>
+            <.back_link id="account-back" navigate={@back} />
           </:trail>
           Settings
         </.header>

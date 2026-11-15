@@ -188,7 +188,7 @@ defmodule BabelSyncWeb.VaultLive.Settings do
       <div class="mx-auto max-w-2xl space-y-10 pb-12 pt-7 md:pb-20 md:pt-10">
         <.header>
           <:trail>
-            <.back_link navigate={Paths.vault(@vault.id)}>Back to the vault</.back_link>
+            <.back_link navigate={Paths.vault(@vault.id)} />
           </:trail>
           {@vault.name}
           <:subtitle>Vault settings</:subtitle>

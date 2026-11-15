@@ -30,7 +30,7 @@ defmodule BabelSyncWeb.Layouts do
   attr :wide, :boolean, default: false, doc: "let the content fill the window"
   attr :masthead, :boolean, default: true, doc: "show the brand and account links above the page"
   attr :column, :string, default: "max-w-2xl", doc: "the width the masthead lines up with"
-  attr :account_link, :boolean, default: true, doc: "show the account link in the masthead"
+  attr :on_account, :boolean, default: false, doc: "mark the account link as the page shown"
 
   slot :inner_block, required: true
 
@@ -45,9 +45,9 @@ defmodule BabelSyncWeb.Layouts do
         id="masthead"
         class="sticky top-0 z-10 -mx-4 bg-page px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] sm:-mx-6 sm:px-6 md:pt-[calc(env(safe-area-inset-top)+1.75rem)] lg:-mx-8 lg:px-8"
       >
-        <div class={["mx-auto flex items-center justify-between gap-4", @column]}>
+        <div class={["mx-auto flex h-9 items-center justify-between gap-4", @column]}>
           <.brand />
-          <.account_link :if={@current_scope && @account_link} class="-mr-2" />
+          <.account_link :if={@current_scope} active={@on_account} class="-mr-2" />
         </div>
       </div>
       {render_slot(@inner_block)}
@@ -83,19 +83,19 @@ defmodule BabelSyncWeb.Layouts do
   connected apps and the theme live.
   """
   attr :class, :any, default: nil
+  attr :from, :string, default: nil, doc: "the vault to go back to from the account page"
+  attr :active, :boolean, default: false
 
   def account_link(assigns) do
     ~H"""
-    <.link
+    <.icon_button
       id="account-link"
-      navigate={~p"/account"}
-      class={[
-        "inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-muted transition duration-150 hover:bg-ink/7 hover:text-ink md:h-8",
-        @class
-      ]}
-    >
-      <.icon name="hero-user-circle" class="size-[1.125rem]" /> Settings
-    </.link>
+      navigate={if @from, do: ~p"/account?#{[from: @from]}", else: ~p"/account"}
+      icon={if @active, do: "hero-user-circle-solid", else: "hero-user-circle"}
+      label="Your settings"
+      aria-current={@active && "page"}
+      class={[@active && "bg-accent/14 text-accent!", @class]}
+    />
     """
   end
 

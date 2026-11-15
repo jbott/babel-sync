@@ -33,64 +33,60 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
     >
       <header
         id="vault-bar"
-        class="sticky top-0 z-10 flex items-center gap-2 bg-sunken px-2 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] md:contents"
+        class="sticky top-0 z-10 box-content flex h-9 items-center justify-between gap-2 bg-sunken px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.625rem)] md:static md:pb-0 md:pt-3"
       >
-        <div class="shrink-0 pl-2 md:px-4 md:pt-3">
-          <Layouts.brand />
-        </div>
-        <div
-          id="vault-controls"
-          class="flex min-w-0 flex-1 items-center gap-0.5 md:order-last md:flex-none md:border-t md:border-line md:px-2 md:pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pt-2"
-        >
-          <form
-            id="vault-switcher-form"
-            phx-change="switch_vault"
-            phx-auto-recover="ignore"
-            class="relative mr-1 min-w-0 flex-1"
-          >
-            <select
-              id="vault-switcher"
-              name="vault"
-              aria-label="Vault"
-              title="Switch vault"
-              class="block h-9 w-full min-w-0 cursor-pointer appearance-none truncate rounded-lg bg-ink/5 pl-3 pr-8 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus-visible:ring-2 focus-visible:ring-accent/60 md:h-8"
-            >
-              <option :for={vault <- @vaults} value={vault.id} selected={vault.id == @vault.id}>
-                {vault.name}
-              </option>
-              <hr />
-              <option value="connect">Connect Obsidian…</option>
-              <option value="manage">Manage vaults…</option>
-            </select>
-            <.icon
-              name="hero-chevron-up-down-mini"
-              class="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-faint"
-            />
-          </form>
-          <.icon_button
-            navigate={Paths.trash(@vault.id)}
-            id="vault-trash"
-            icon="hero-trash"
-            label="Trash"
-          />
-          <.icon_button
-            :if={@admin}
-            navigate={Paths.settings(@vault.id)}
-            id="vault-settings"
-            icon="hero-cog-6-tooth"
-            label="Vault settings"
-          />
-          <.icon_button
-            :if={@current_scope}
-            id="account-link"
-            navigate={~p"/account?#{[from: @vault.id]}"}
-            icon="hero-user-circle"
-            label="Your settings"
-          />
-        </div>
+        <Layouts.brand />
+        <Layouts.account_link :if={@current_scope} from={@vault.id} class="-mr-2" />
       </header>
 
-      <div :if={@writable} class={["px-2 pt-0.5 md:pt-2.5", @entry && "hidden md:block"]}>
+      <div
+        id="vault-controls"
+        class={[
+          "items-center gap-0.5 px-2 pt-0.5 md:pt-2.5",
+          if(@entry, do: "hidden md:flex", else: "flex")
+        ]}
+      >
+        <form
+          id="vault-switcher-form"
+          phx-change="switch_vault"
+          phx-auto-recover="ignore"
+          class="relative mr-1 min-w-0 flex-1"
+        >
+          <select
+            id="vault-switcher"
+            name="vault"
+            aria-label="Vault"
+            title="Switch vault"
+            class="block h-9 w-full min-w-0 cursor-pointer appearance-none truncate rounded-lg bg-ink/5 pl-3 pr-8 text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:bg-ink/8 focus-visible:ring-2 focus-visible:ring-accent/60 md:h-8"
+          >
+            <option :for={vault <- @vaults} value={vault.id} selected={vault.id == @vault.id}>
+              {vault.name}
+            </option>
+            <hr />
+            <option value="connect">Connect Obsidian…</option>
+            <option value="manage">Manage vaults…</option>
+          </select>
+          <.icon
+            name="hero-chevron-up-down-mini"
+            class="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-faint"
+          />
+        </form>
+        <.icon_button
+          navigate={Paths.trash(@vault.id)}
+          id="vault-trash"
+          icon="hero-trash"
+          label="Trash"
+        />
+        <.icon_button
+          :if={@admin}
+          navigate={Paths.settings(@vault.id)}
+          id="vault-settings"
+          icon="hero-cog-6-tooth"
+          label="Vault settings"
+        />
+      </div>
+
+      <div :if={@writable} class={["px-2 pt-2", @entry && "hidden md:block"]}>
         <div class="flex items-center gap-1">
           <.form
             for={@new_form}

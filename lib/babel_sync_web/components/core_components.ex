@@ -389,20 +389,18 @@ defmodule BabelSyncWeb.CoreComponents do
   """
   attr :navigate, :string, required: true
   attr :id, :string, default: nil
-  slot :inner_block, required: true
 
   def back_link(assigns) do
     ~H"""
     <.link
       id={@id}
       navigate={@navigate}
-      class="group -ml-1 inline-flex max-w-full items-center gap-1 rounded-md px-1 py-0.5 text-muted transition hover:text-ink"
+      class="group -ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-muted transition hover:text-ink"
     >
       <.icon
         name="hero-arrow-left-mini"
         class="size-4 shrink-0"
-      />
-      <span class="truncate">{render_slot(@inner_block)}</span>
+      /> Back
     </.link>
     """
   end
