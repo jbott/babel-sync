@@ -86,7 +86,10 @@ defmodule BabelSyncWeb.VaultLive.Sidebar do
         <Layouts.account_link :if={@current_scope} from={@vault.id} class="-mr-2" />
       </header>
 
-      <div class={["px-2 pt-0.5 md:pt-2.5", @entry && "hidden md:block"]}>
+      <div class={[
+        "sticky top-[calc(env(safe-area-inset-top)+3.375rem)] z-10 border-b border-line bg-sunken px-2 pb-2 pt-0.5 md:static md:border-b-0 md:pb-0 md:pt-2.5",
+        @entry && "hidden md:block"
+      ]}>
         <div id="vault-controls" class="flex items-center justify-end gap-0.5">
           <.form
             :if={@writable}
