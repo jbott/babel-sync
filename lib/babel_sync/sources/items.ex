@@ -91,7 +91,7 @@ defmodule BabelSync.Sources.Items do
 
   defp create(source, scope, wanted) do
     with :ok <- markdown(wanted.path),
-         {:ok, text} <- FrontMatter.set(wanted.body, wanted.properties),
+         {:ok, text} <- FrontMatter.merge(wanted.body, wanted.properties, %{}),
          {:ok, %{path: path}} <-
            written(Agent.write_file(scope, source.vault_id, wanted.path, text)) do
       %Entry{id: entry_id} = Vaults.get_entry_by_path(source.vault_id, path)

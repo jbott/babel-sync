@@ -107,6 +107,14 @@ defmodule BabelSync.Markdown.FrontMatterTest do
     assert text =~ "stars: 12"
   end
 
+  test "set replaces a value outright, whatever was there" do
+    assert {:ok, text} = FrontMatter.set("---\nkind: note\n---\n", [{"kind", ["a", "b"]}])
+    assert FrontMatter.read(text) == {:ok, %{"kind" => ["a", "b"]}}
+
+    assert {:ok, text} = FrontMatter.set(text, [{"kind", ["c"]}])
+    assert FrontMatter.read(text) == {:ok, %{"kind" => ["c"]}}
+  end
+
   test "refuses front matter it cannot read" do
     assert {:error, :invalid_front_matter} =
              FrontMatter.set("---\nkey: [unclosed\n---\nbody", [{"stars", 1}])

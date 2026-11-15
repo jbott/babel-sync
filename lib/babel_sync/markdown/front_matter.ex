@@ -29,17 +29,23 @@ defmodule BabelSync.Markdown.FrontMatter do
 
   @spec set(String.t(), [{String.t(), value()}]) ::
           {:ok, String.t()} | {:error, :invalid_front_matter}
-  def set(text, changes), do: merge(text, changes, %{})
+  def set(text, changes), do: change(text, changes, fn _key, _current, wanted -> wanted end)
 
   @spec merge(String.t(), [{String.t(), value()}], %{String.t() => value()}) ::
           {:ok, String.t()} | {:error, :invalid_front_matter}
   def merge(text, changes, written) do
+    change(text, changes, fn key, current, wanted ->
+      combine(current, wanted, Map.get(written, key))
+    end)
+  end
+
+  defp change(text, changes, resolve) do
     {lines, body} = split(text)
 
     with {:ok, current} <- parse(Enum.join(lines || [], "\n")) do
       wanted =
         Enum.flat_map(changes, fn {key, value} ->
-          merged = combine(Map.get(current, key), value, Map.get(written, key))
+          merged = resolve.(key, Map.get(current, key), value)
           if merged == Map.get(current, key), do: [], else: [{key, merged}]
         end)
 
