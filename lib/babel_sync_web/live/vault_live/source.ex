@@ -1,5 +1,7 @@
-defmodule BabelSyncWeb.VaultLive.Sources do
+defmodule BabelSyncWeb.VaultLive.Source do
   use BabelSyncWeb, :live_view
+
+  import BabelSyncWeb.SourceComponents
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Sources, Vaults}
@@ -8,8 +10,9 @@ defmodule BabelSyncWeb.VaultLive.Sources do
   alias BabelSyncWeb.Paths
 
   @impl true
-  def mount(%{"vault_id" => vault_id}, _session, socket) do
+  def mount(%{"vault_id" => vault_id, "entry_id" => entry_id}, _session, socket) do
     with {:ok, vault_id} <- Ecto.UUID.cast(vault_id),
+         {:ok, entry_id} <- Ecto.UUID.cast(entry_id),
          true <- Sources.enabled?(),
          :ok <- Scope.authorize(socket.assigns.current_scope, vault_id, :admin),
          %Vault{} = vault <- Vaults.get_vault(vault_id) do
@@ -20,10 +23,9 @@ defmodule BabelSyncWeb.VaultLive.Sources do
 
       {:ok,
        socket
-       |> assign(:page_title, "#{vault.name} sources")
        |> assign(:vault, vault)
+       |> assign(:entry_id, entry_id)
        |> assign(:may_approve, Sources.browser_admin?(socket.assigns.current_scope, vault.id))
-       |> stream_configure(:sources, dom_id: &"source-#{&1.entry.id}")
        |> load()}
     else
       _denied ->
@@ -78,8 +80,8 @@ defmodule BabelSyncWeb.VaultLive.Sources do
     do: change(socket, id, &Sources.delete_secret(socket.assigns.current_scope, &1, name))
 
   defp change(socket, id, change) do
-    with %Source{vault_id: vault_id} = source <- Sources.get(id),
-         true <- vault_id == socket.assigns.vault.id,
+    with %Source{vault_id: vault_id, entry_id: entry_id} = source <- Sources.get(id),
+         true <- vault_id == socket.assigns.vault.id and entry_id == socket.assigns.entry_id,
          :ok <- change.(source) do
       {:noreply, load(socket)}
     else
@@ -93,26 +95,30 @@ defmodule BabelSyncWeb.VaultLive.Sources do
   def handle_info({:source_changed, _id}, socket), do: {:noreply, load(socket)}
 
   def handle_info({:entry_changed, %Entry{id: id}}, socket) do
-    if MapSet.member?(socket.assigns.shown, id),
-      do: {:noreply, load(socket)},
-      else: {:noreply, socket}
+    if id == socket.assigns.entry_id, do: {:noreply, load(socket)}, else: {:noreply, socket}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
   defp load(socket) do
-    sources =
-      for draft <- Sources.drafts(socket.assigns.vault.id) do
-        Map.merge(draft, %{
-          runs: if(draft.source, do: Sources.runs(draft.source, 5), else: []),
-          saved: if(draft.source, do: Secrets.names(draft.source), else: [])
-        })
+    item =
+      case Enum.find(
+             Sources.drafts(socket.assigns.vault.id),
+             &(&1.entry.id == socket.assigns.entry_id)
+           ) do
+        nil ->
+          nil
+
+        draft ->
+          Map.merge(draft, %{
+            runs: if(draft.source, do: Sources.runs(draft.source, 20), else: []),
+            saved: if(draft.source, do: Secrets.names(draft.source), else: [])
+          })
       end
 
     socket
-    |> assign(:shown, MapSet.new(sources, & &1.entry.id))
-    |> assign(:none, sources == [])
-    |> stream(:sources, sources, reset: true)
+    |> assign(:item, item)
+    |> assign(:page_title, if(item, do: item.name, else: "#{socket.assigns.vault.name} sources"))
   end
 
   @impl true
@@ -124,15 +130,15 @@ defmodule BabelSyncWeb.VaultLive.Sources do
           <:trail>
             <.back_link navigate={~p"/v/#{@vault.id}/settings"}>Back to settings</.back_link>
           </:trail>
-          Sources
-          <:subtitle>
-            Scripts in {@vault.name} that the server runs to bring outside data in. A
-            <code class="font-mono text-[0.9em] text-ink">.js</code>
-            file in the sources folder that opens with a
-            <code class="font-mono text-[0.9em] text-ink">/* source</code>
-            comment shows up here, and writes in the folder beside it that has its name. Nothing
-            runs until you approve what it asks for. After that the script can be edited freely,
-            unless it is given a secret.
+          {if @item, do: @item.name, else: "Source"}
+          <:subtitle :if={@item}>
+            <.link
+              navigate={Paths.vault(@vault.id) <> "/f/" <> @item.entry.path}
+              class="text-ink hover:underline"
+            >
+              {@item.entry.path}
+            </.link>
+            in {@vault.name}. The server runs it to bring outside data into the folder beside it.
           </:subtitle>
         </.header>
 
@@ -145,74 +151,60 @@ defmodule BabelSyncWeb.VaultLive.Sources do
         </p>
 
         <p
-          :if={@none}
-          id="sources-empty"
+          :if={is_nil(@item)}
+          id="source-gone"
           class="rounded-xl border border-dashed border-line-strong p-8 text-center text-sm text-muted"
         >
-          <%= if @vault.sources_folder do %>
-            No file in <span class="text-ink">{@vault.sources_folder}</span>
-            opens with a <code class="font-mono text-[0.9em] text-ink">/* source</code>
-            comment yet.
-          <% else %>
-            This vault has no sources folder yet.
-            <.link navigate={~p"/v/#{@vault.id}/settings#sources"} class="text-ink underline">
-              Pick one in settings
-            </.link>
-          <% end %>
+          There is no source here any more. Its file was deleted, moved out of the sources
+          folder, or no longer opens with a
+          <code class="font-mono text-[0.9em] text-ink">/* source</code>
+          comment.
         </p>
 
-        <div id="sources" phx-update="stream" class="space-y-6">
+        <div :if={@item} id="sources" class="space-y-6">
           <article
-            :for={{id, item} <- @streams.sources}
-            id={id}
+            id={"source-#{@item.entry.id}"}
             class="overflow-hidden rounded-xl border border-line bg-surface shadow-raise"
           >
             <header class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3">
-              <h2 class="min-w-0 flex-1 basis-full break-words font-medium text-ink sm:basis-0">
-                <.link
-                  navigate={Paths.vault(@vault.id) <> "/f/" <> item.entry.path}
-                  class="hover:underline"
-                >
-                  {item.name}
-                </.link>
-              </h2>
-              <.badge class={status_class(item)}>{status_label(item)}</.badge>
-              <div :if={item.source && @may_approve} class="flex items-center gap-1.5">
+              <.badge class={status_class(@item)}>{status_label(@item)}</.badge>
+              <span class="flex-1"></span>
+              <div :if={@item.source && @may_approve} class="flex items-center gap-1.5">
                 <.button
-                  id={"run-#{item.entry.id}"}
+                  id={"run-#{@item.entry.id}"}
                   size="sm"
                   phx-click="run"
-                  phx-value-source={item.source.id}
+                  phx-value-source={@item.source.id}
                 >
                   <.icon name="hero-play-mini" class="size-4" /> Run now
                 </.button>
                 <.button
-                  :if={item.source.enabled}
-                  id={"pause-#{item.entry.id}"}
+                  :if={@item.source.enabled}
+                  id={"pause-#{@item.entry.id}"}
                   size="sm"
                   variant="ghost"
                   phx-click="pause"
-                  phx-value-source={item.source.id}
+                  phx-value-source={@item.source.id}
                 >
                   Pause
                 </.button>
                 <.button
-                  :if={not item.source.enabled}
-                  id={"resume-#{item.entry.id}"}
+                  :if={not @item.source.enabled}
+                  id={"resume-#{@item.entry.id}"}
                   size="sm"
                   variant="ghost"
                   phx-click="resume"
-                  phx-value-source={item.source.id}
+                  phx-value-source={@item.source.id}
                 >
                   Resume
                 </.button>
                 <.button
-                  id={"revoke-#{item.entry.id}"}
+                  id={"revoke-#{@item.entry.id}"}
                   size="sm"
                   variant="danger-ghost"
                   phx-click="revoke"
-                  phx-value-source={item.source.id}
-                  data-confirm={"Stop running #{item.name} and forget its secrets and which notes are its own?"}
+                  phx-value-source={@item.source.id}
+                  data-confirm={"Stop running #{@item.name} and forget its secrets and which notes are its own?"}
                 >
                   Revoke
                 </.button>
@@ -220,8 +212,8 @@ defmodule BabelSyncWeb.VaultLive.Sources do
             </header>
 
             <div
-              :if={attention = item.source && attention(item.source)}
-              id={"attention-#{item.entry.id}"}
+              :if={attention = @item.source && attention(@item.source)}
+              id={"attention-#{@item.entry.id}"}
               class="flex flex-wrap items-center gap-3 border-b border-line bg-warn/10 px-4 py-3 text-sm text-ink"
             >
               <.icon name="hero-bell-alert-mini" class="size-4 text-warn" />
@@ -237,78 +229,95 @@ defmodule BabelSyncWeb.VaultLive.Sources do
               </a>
             </div>
 
-            <ul :if={match?({:error, _}, item.script)} class="space-y-1 px-4 py-3 text-sm text-danger">
-              <li :for={problem <- elem(item.script, 1)}>{problem}</li>
+            <ul
+              :if={match?({:error, _}, @item.script)}
+              class="space-y-1 px-4 py-3 text-sm text-danger"
+            >
+              <li :for={problem <- elem(@item.script, 1)}>{problem}</li>
             </ul>
 
             <div
-              :if={item.status in [:new, :changed]}
+              :if={@item.status in [:new, :changed]}
               class="space-y-3 border-b border-line px-4 py-4"
             >
               <p class="text-sm text-muted">
-                {if item.status == :new,
+                {if @item.status == :new,
                   do: "This script has not been approved. It asks for:",
                   else:
                     "This differs from what you approved. Until you approve it, the script keeps running as it was. It now asks for:"}
               </p>
-              <.asks script={elem(item.script, 1)} />
+              <.asks script={elem(@item.script, 1)} />
               <pre
-                id={"code-#{item.entry.id}"}
+                id={"code-#{@item.entry.id}"}
                 class="max-h-96 overflow-auto rounded-lg border border-line bg-sunken p-3 font-mono text-xs leading-relaxed"
                 phx-no-curly-interpolation
-              ><%= for {kind, line} <- lines(item) do %><span class={line_class(kind)}><%= mark(kind) %><%= line %>
+              ><%= for {kind, line} <- lines(@item) do %><span class={line_class(kind)}><%= mark(kind) %><%= line %>
     </span><% end %></pre>
               <.button
                 :if={@may_approve}
-                id={"approve-#{item.entry.id}"}
+                id={"approve-#{@item.entry.id}"}
                 variant="primary"
                 phx-click="approve"
-                phx-value-entry={item.entry.id}
-                phx-value-hash={Script.hash(elem(item.script, 1))}
+                phx-value-entry={@item.entry.id}
+                phx-value-hash={Script.hash(elem(@item.script, 1))}
               >
                 Approve what is shown
               </.button>
             </div>
 
-            <div :if={item.source} class="divide-y divide-line">
-              <div :if={item.status == :approved} class="px-4 py-3">
-                <.asks script={elem(item.script, 1)} />
+            <div :if={@item.source} class="divide-y divide-line">
+              <div :if={@item.status == :approved} class="space-y-3 px-4 py-3">
+                <.asks script={elem(@item.script, 1)} />
+                <details class="group">
+                  <summary class="inline-flex cursor-pointer list-none items-center gap-1 text-sm text-muted transition hover:text-ink [&::-webkit-details-marker]:hidden">
+                    Script
+                    <.icon
+                      name="hero-chevron-down-mini"
+                      class="size-4 transition group-open:rotate-180"
+                    />
+                  </summary>
+                  <pre
+                    id={"code-#{@item.entry.id}"}
+                    class="mt-2 max-h-96 overflow-auto rounded-lg border border-line bg-sunken p-3 font-mono text-xs leading-relaxed"
+                    phx-no-curly-interpolation
+                  ><%= elem(@item.script, 1).code %></pre>
+                </details>
               </div>
 
               <div
-                :for={{name, secret} <- secrets(item)}
+                :for={{name, secret} <- secrets(@item)}
                 class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
               >
                 <div class="min-w-0 flex-1 basis-48">
                   <p class="text-sm font-medium text-ink">Secret: {name}</p>
                   <p class="text-xs text-faint">
-                    Sent to {secret.host} as {secret.header}. {if name in item.saved,
+                    Sent to {secret.host} as {secret.header}. {if name in @item.saved,
                       do: "Saved; it cannot be shown again.",
                       else: "Not saved yet."}
                   </p>
                 </div>
                 <form
                   :if={@may_approve}
-                  id={"secret-#{item.entry.id}-#{name}"}
+                  id={"secret-#{@item.entry.id}-#{name}"}
                   phx-submit="save_secret"
                   class="flex items-center gap-2"
                 >
-                  <input type="hidden" name="source" value={item.source.id} />
+                  <input type="hidden" name="source" value={@item.source.id} />
                   <input type="hidden" name="name" value={name} />
                   <input
                     type="password"
                     name="value"
                     autocomplete="off"
                     aria-label={"Secret #{name}"}
-                    placeholder={if name in item.saved, do: "Replace", else: "Paste it here"}
+                    placeholder={if name in @item.saved, do: "Replace", else: "Paste it here"}
                     class={[field_class(), "h-8 w-44 px-2.5 text-sm"]}
                   />
                   <.button size="sm">Save</.button>
                   <.icon_button
-                    :if={name in item.saved}
+                    :if={name in @item.saved}
                     type="button"
                     phx-click="forget_secret"
-                    phx-value-source={item.source.id}
+                    phx-value-source={@item.source.id}
                     phx-value-name={name}
                     icon="hero-x-mark"
                     label="Forget"
@@ -319,13 +328,18 @@ defmodule BabelSyncWeb.VaultLive.Sources do
 
               <div class="px-4 py-3">
                 <p class="text-xs font-semibold uppercase tracking-[0.1em] text-muted">Runs</p>
-                <p :if={item.runs == []} class="mt-2 text-sm text-faint">
-                  {if item.source.next_run_at,
-                    do: "First run due #{at(item.source.next_run_at)}.",
-                    else: "Has not run. It has no schedule; use Run now."}
+                <p :if={@item.runs == [] and @item.source.next_run_at} class="mt-2 text-sm text-faint">
+                  First run due
+                  <.local_time id={"first-run-#{@item.entry.id}"} at={@item.source.next_run_at} />.
+                </p>
+                <p
+                  :if={@item.runs == [] and is_nil(@item.source.next_run_at)}
+                  class="mt-2 text-sm text-faint"
+                >
+                  Has not run. It has no schedule; use Run now.
                 </p>
                 <ul class="mt-2 space-y-2">
-                  <li :for={run <- item.runs} id={"run-#{run.id}"} class="text-sm">
+                  <li :for={run <- @item.runs} id={"run-#{run.id}"} class="text-sm">
                     <details class="group">
                       <summary class={[
                         "flex list-none flex-wrap items-center gap-x-3 gap-y-1 [&::-webkit-details-marker]:hidden",
@@ -367,11 +381,11 @@ defmodule BabelSyncWeb.VaultLive.Sources do
                   </li>
                 </ul>
                 <p
-                  :if={item.runs != [] and item.source.enabled and item.source.next_run_at}
+                  :if={@item.runs != [] and @item.source.enabled and @item.source.next_run_at}
                   class="mt-2 text-xs text-faint"
                 >
                   Next run
-                  <.local_time id={"next-run-#{item.entry.id}"} at={item.source.next_run_at} />.
+                  <.local_time id={"next-run-#{@item.entry.id}"} at={@item.source.next_run_at} />.
                 </p>
               </div>
             </div>
@@ -443,77 +457,5 @@ defmodule BabelSyncWeb.VaultLive.Sources do
   defp line_class(:del), do: "block bg-danger/10 text-danger"
   defp line_class(:eq), do: "block text-muted"
 
-  defp status_label(%{status: :invalid}), do: "Cannot be read"
-  defp status_label(%{status: :new}), do: "Not approved"
-  defp status_label(%{status: :changed}), do: "Changed since approval"
-  defp status_label(%{source: %Source{enabled: false}}), do: "Paused"
-  defp status_label(%{status: :approved}), do: "Approved"
-
-  defp status_class(%{status: :invalid}), do: "border-danger/50 text-danger"
-
-  defp status_class(%{status: status}) when status in [:new, :changed],
-    do: "border-warn/60 text-ink"
-
-  defp status_class(%{source: %Source{enabled: false}}), do: nil
-  defp status_class(_approved), do: "border-added/60 text-ink"
-
-  defp run_dot(:done), do: "bg-added"
-  defp run_dot(:failed), do: "bg-danger"
-  defp run_dot(_waiting), do: "animate-pulse bg-warn"
-
-  defp run_label(%{status: :queued}), do: "Waiting to run"
-  defp run_label(%{status: :running}), do: "Running"
-  defp run_label(%{status: :done, trigger: trigger}), do: "Ran #{started_by(trigger)}"
-  defp run_label(%{status: :failed, trigger: trigger}), do: "Failed #{started_by(trigger)}"
-
-  defp started_by("schedule"), do: "on schedule"
-  defp started_by("manual"), do: "by hand"
-  defp started_by(other), do: "(#{other})"
-
-  defp logged?(run), do: is_binary(run.error) or run.log != ""
-
-  defp outcome(%{created: 0, changed: 0, unchanged: 0}), do: "Looked at no notes."
-
-  defp outcome(%{created: created, changed: changed, unchanged: unchanged}) do
-    looked = created + changed + unchanged
-
-    changes =
-      for {count, what} <- [{created, "new"}, {changed, "updated"}],
-          count > 0,
-          do: "#{count} #{what}"
-
-    "Looked at #{looked} #{if looked == 1, do: "note", else: "notes"}: " <>
-      case changes do
-        [] -> "nothing to change."
-        some -> Enum.join(some, ", ") <> ", #{unchanged} left as they were."
-      end
-  end
-
-  attr :id, :string, required: true
-  attr :at, DateTime, required: true
-
-  defp local_time(assigns) do
-    ~H"""
-    <time id={@id} datetime={DateTime.to_iso8601(@at)} phx-hook=".LocalTime" class="text-faint">
-      {at(@at)}
-    </time>
-    <script :type={Phoenix.LiveView.ColocatedHook} name=".LocalTime">
-      export default {
-        mounted() { this.show() },
-        updated() { this.show() },
-        show() {
-          const at = new Date(this.el.dateTime)
-          if (Number.isNaN(at.getTime())) return
-          this.el.textContent = at.toLocaleString(undefined, {
-            day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
-          })
-        }
-      }
-    </script>
-    """
-  end
-
   defp first_line(text), do: text |> String.split("\n", parts: 2) |> hd()
-
-  defp at(%DateTime{} = time), do: Calendar.strftime(time, "%-d %b %H:%M UTC")
 end

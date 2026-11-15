@@ -1,10 +1,14 @@
 defmodule BabelSyncWeb.VaultLive.Settings do
   use BabelSyncWeb, :live_view
 
+  import BabelSyncWeb.SourceComponents
+
   alias BabelSync.Accounts.Scope
   alias BabelSync.Auth.MagicLink
+  alias BabelSync.Sources
+  alias BabelSync.Sources.Script
   alias BabelSync.Vaults
-  alias BabelSync.Vaults.Vault
+  alias BabelSync.Vaults.{Entry, Vault}
   alias BabelSyncWeb.Paths
 
   @impl true
@@ -21,7 +25,10 @@ defmodule BabelSyncWeb.VaultLive.Settings do
        |> assign(:sources_form, to_form(Vault.changeset(vault, %{})))
        |> assign(:member_form, to_form(%{"email" => "", "role" => "editor"}, as: :member))
        |> assign(:members, Vaults.list_members(vault))
-       |> assign(:invitations, Vaults.list_invitations(vault))}
+       |> assign(:invitations, Vaults.list_invitations(vault))
+       |> stream_configure(:sources, dom_id: &"source-#{&1.entry.id}")
+       |> watch_sources()
+       |> list_sources()}
     else
       _denied ->
         {:ok,
@@ -53,6 +60,7 @@ defmodule BabelSyncWeb.VaultLive.Settings do
          socket
          |> assign(:vault, vault)
          |> assign(:sources_form, to_form(Vault.changeset(vault, %{})))
+         |> list_sources()
          |> put_flash(:info, "Sources folder saved.")}
 
       {:error, changeset} ->
@@ -139,6 +147,41 @@ defmodule BabelSyncWeb.VaultLive.Settings do
   end
 
   @impl true
+  def handle_info({:source_changed, _id}, socket), do: {:noreply, list_sources(socket)}
+
+  def handle_info({:entry_changed, %Entry{path: path}}, socket) do
+    if Script.file?(path, socket.assigns.vault.sources_folder),
+      do: {:noreply, list_sources(socket)},
+      else: {:noreply, socket}
+  end
+
+  def handle_info(_other, socket), do: {:noreply, socket}
+
+  defp watch_sources(socket) do
+    if connected?(socket) and Sources.enabled?() do
+      :ok = Sources.subscribe(socket.assigns.vault.id)
+      :ok = Vaults.subscribe(socket.assigns.vault.id)
+    end
+
+    socket
+  end
+
+  defp list_sources(socket) do
+    sources =
+      if Sources.enabled?() do
+        for draft <- Sources.drafts(socket.assigns.vault.id) do
+          Map.put(draft, :last, draft.source && List.first(Sources.runs(draft.source, 1)))
+        end
+      else
+        []
+      end
+
+    socket
+    |> assign(:no_sources, sources == [])
+    |> stream(:sources, sources, reset: true)
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
@@ -187,18 +230,16 @@ defmodule BabelSyncWeb.VaultLive.Settings do
           </form>
         </.panel>
 
-        <.panel :if={BabelSync.Sources.enabled?()} id="sources" title="Sources">
+        <.panel :if={Sources.enabled?()} id="sources" title="Sources">
           <div class="space-y-4 rounded-xl border border-line bg-surface p-4">
-            <div class="flex flex-wrap items-center justify-between gap-4">
-              <p class="min-w-0 flex-1 basis-64 text-sm text-muted">
-                Scripts the server runs to bring outside data into the vault, each only once you
-                have approved it. They live in one folder, and each writes in the folder beside
-                it that has its name.
-              </p>
-              <.button id="open-sources" navigate={~p"/v/#{@vault.id}/sources"}>
-                <.icon name="hero-arrow-path-rounded-square" class="size-4" /> Sources
-              </.button>
-            </div>
+            <p class="text-sm text-muted">
+              Scripts the server runs to bring outside data into the vault, each only once you
+              have approved it. They live in one folder: a
+              <code class="font-mono text-[0.9em] text-ink">.js</code>
+              file there that opens with a
+              <code class="font-mono text-[0.9em] text-ink">/* source</code>
+              comment is a source, and writes in the folder beside it that has its name.
+            </p>
             <.form
               for={@sources_form}
               id="sources-folder"
@@ -215,6 +256,45 @@ defmodule BabelSyncWeb.VaultLive.Settings do
               <.button>Save</.button>
             </.form>
           </div>
+
+          <p
+            :if={@no_sources}
+            id="sources-empty"
+            class="rounded-xl border border-dashed border-line-strong p-6 text-center text-sm text-muted"
+          >
+            {if @vault.sources_folder,
+              do: "No source in #{@vault.sources_folder} yet.",
+              else: "Pick a folder above to keep sources in."}
+          </p>
+
+          <.rows :if={not @no_sources} id="source-list" phx-update="stream">
+            <li :for={{id, item} <- @streams.sources} id={id}>
+              <.link
+                navigate={~p"/v/#{@vault.id}/sources/#{item.entry.id}"}
+                class="group flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 transition hover:bg-ink/4"
+              >
+                <span class="min-w-0 flex-1 basis-40 break-words font-medium text-ink">
+                  {item.name}
+                </span>
+                <.badge class={status_class(item)}>{status_label(item)}</.badge>
+                <.icon
+                  name="hero-chevron-right-mini"
+                  class="size-4 text-faint transition group-hover:translate-x-0.5 group-hover:text-ink"
+                />
+                <span :if={item.last} class="flex basis-full items-center gap-2 text-sm text-muted">
+                  <span class={["size-2 shrink-0 rounded-full", run_dot(item.last.status)]}></span>
+                  {run_label(item.last)}
+                  <.local_time
+                    id={"last-run-#{item.entry.id}"}
+                    at={item.last.finished_at || item.last.started_at || item.last.inserted_at}
+                  />
+                </span>
+                <span :if={item.source && is_nil(item.last)} class="basis-full text-sm text-faint">
+                  Has not run yet.
+                </span>
+              </.link>
+            </li>
+          </.rows>
         </.panel>
 
         <.panel :if={@sharing} id="members" title="People">

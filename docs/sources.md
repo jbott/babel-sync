@@ -65,8 +65,9 @@ quietly ignored. Line numbers in an error are the file's own.
 
 ## Approving
 
-The Sources page lists every source in the vault with what it asks for and
-its code. What is approved is the opening comment and where the file is,
+Vault settings list every source in the vault under Sources, with how it
+stands and when it last ran. Each opens a page of its own with what it
+asks for, its code, its secrets and its runs. What is approved is the opening comment and where the file is,
 since that is where it writes. Approving takes a vault owner signed in
 through the browser, and neither an agent's grant nor a device is that.
 
@@ -86,7 +87,7 @@ After that:
 A file moved out of the sources folder stops running, as does one that is
 deleted.
 
-Secrets are entered on the same page. They are stored encrypted under the
+Secrets are entered on the source's page. They are stored encrypted under the
 server's `SECRET_KEY_BASE` and never shown again.
 
 ## What a script can do
@@ -106,7 +107,7 @@ no files, no sockets, no timers.
 | `vault.name(text)` | The text with the characters a file name cannot hold taken out |
 | `state.get(name)`, `state.set(name, value)` | Small things to remember between runs, such as a cursor or an ETag. Saved only when the run ends without an error |
 | `log(...)` | A line in the run's log |
-| `attention(message, { url })` | Asks the owner to do something, such as sign in again. Shown on the Sources page; the link must be https and on one of the source's hosts |
+| `attention(message, { url })` | Asks the owner to do something, such as sign in again. Shown on the source's page; the link must be https and on one of the source's hosts |
 | `params`, `trigger` | The source's `params`, and what started the run: `schedule` or `manual` |
 
 A call that is refused throws, with the reason as the message.

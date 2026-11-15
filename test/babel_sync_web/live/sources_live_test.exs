@@ -30,7 +30,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     vault: vault,
     entry: entry
   } do
-    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources")
+    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
 
     assert has_element?(view, "#source-#{entry.id}")
     assert has_element?(view, "#approve-#{entry.id}")
@@ -43,7 +43,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     vault: vault,
     entry: entry
   } do
-    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources")
+    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
 
     view |> element("#approve-#{entry.id}") |> render_click()
 
@@ -66,7 +66,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     entry: entry,
     owner: owner
   } do
-    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources")
+    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
     view |> element("#approve-#{entry.id}") |> render_click()
 
     {:ok, _} =
@@ -80,7 +80,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
   end
 
   test "a secret is saved and never shown", %{conn: conn, vault: vault, entry: entry} do
-    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources")
+    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
     view |> element("#approve-#{entry.id}") |> render_click()
 
     html =
@@ -93,18 +93,63 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     assert Sources.Secrets.open(source) == %{"token" => "hunter2"}
   end
 
-  test "someone who is not an owner is turned away", %{conn: conn, vault: vault} do
+  test "someone who is not an owner is turned away", %{conn: conn, vault: vault, entry: entry} do
     editor = user()
     Vaults.put_member(vault, editor, :editor)
 
     assert {:error, {:live_redirect, %{to: "/"}}} =
-             conn |> recycle() |> sign_in(editor) |> live(~p"/v/#{vault.id}/sources")
+             conn |> recycle() |> sign_in(editor) |> live(~p"/v/#{vault.id}/sources/#{entry.id}")
   end
 
-  test "settings link to the sources page", %{conn: conn, vault: vault} do
-    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/settings")
+  test "settings list the vault's sources, each leading to its own page", %{
+    conn: conn,
+    vault: vault,
+    entry: entry
+  } do
+    {:ok, settings, _html} = live(conn, ~p"/v/#{vault.id}/settings")
 
-    assert has_element?(view, "#open-sources")
+    assert has_element?(settings, "#source-list #source-#{entry.id}", "Things")
+
+    {:ok, view, _html} =
+      settings
+      |> element("#source-#{entry.id} a")
+      |> render_click()
+      |> follow_redirect(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
+
+    assert has_element?(view, "#approve-#{entry.id}")
+  end
+
+  test "settings show a source's last run as it happens", %{
+    conn: conn,
+    vault: vault,
+    entry: entry
+  } do
+    {:ok, source_page, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
+    {:ok, settings, _html} = live(conn, ~p"/v/#{vault.id}/settings")
+    refute has_element?(settings, "#last-run-#{entry.id}")
+
+    source_page |> element("#approve-#{entry.id}") |> render_click()
+    [source] = Sources.list(vault.id)
+    Sources.enqueue(source, "manual")
+    [{run, claimed}] = Sources.Scheduler.claim(DateTime.utc_now())
+    Sources.Scheduler.carry_out(run, claimed)
+
+    _ = render(settings)
+    assert has_element?(settings, "#last-run-#{entry.id}")
+  end
+
+  test "a source whose file is gone says so", %{
+    conn: conn,
+    vault: vault,
+    entry: entry,
+    owner: owner
+  } do
+    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
+    {:ok, _} = Agent.delete_file(Scope.for_user(owner), vault.id, "Data/Things.js")
+
+    _ = render(view)
+    assert has_element?(view, "#source-gone")
+    refute has_element?(view, "#source-#{entry.id}")
   end
 
   test "a script with no secret is edited without asking again", %{
@@ -115,7 +160,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     plain = "/* source\nhosts: [api.example.com]\n*/\nlog(1)\n"
     {:ok, _} = Agent.write_file(Scope.for_user(owner), vault.id, "Data/Plain.js", plain)
     plain_entry = Vaults.get_entry_by_path(vault.id, "Data/Plain.js")
-    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources")
+    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{plain_entry.id}")
     view |> element("#approve-#{plain_entry.id}") |> render_click()
 
     {:ok, _} =
@@ -137,8 +182,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
 
     assert Vaults.get_vault(vault.id).sources_folder == "Elsewhere"
 
-    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources")
-    refute has_element?(view, "#source-#{entry.id}")
-    assert has_element?(view, "#sources-empty")
+    refute has_element?(settings, "#source-#{entry.id}")
+    assert has_element?(settings, "#sources-empty")
   end
 end
