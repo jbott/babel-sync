@@ -87,6 +87,15 @@ defmodule BabelSync.SourcesTest do
     source
   end
 
+  defp rewritten(%{owner: owner, vault: vault}, text) do
+    entry = Vaults.get_entry_by_path(vault.id, "Sources/Stars.md")
+
+    {:ok, _} =
+      Agent.write_file(Scope.for_user(owner), vault.id, entry.path, text, overwrite: true)
+
+    draft(vault)
+  end
+
   defp run(source, trigger \\ "manual") do
     Sources.enqueue(source, trigger)
     [{run, claimed}] = Scheduler.claim(DateTime.utc_now())
@@ -181,6 +190,24 @@ defmodule BabelSync.SourcesTest do
                "---\nurl: https://example.com/one\nstars: 1\ntags:\n  - type/star\n  - topic/a\n---\n# one\n"
 
       assert Jason.decode!(Sources.get(source.id).state) == %{"runs" => 1}
+    end
+
+    test "a note a source brought in is not taken for a source", %{vault: vault} = context do
+      code = """
+      vault.item("made", {
+        path: "Stars/made.md",
+        properties: { type: "source", schedule: "every 1h" },
+        body: "made",
+      })
+      """
+
+      %{entry: entry, script: {:ok, script}} =
+        rewritten(context, note(context.site, code))
+
+      {:ok, source} = Sources.approve(context.admin, entry.id, Sources.Script.hash(script))
+      assert %{status: :done, created: 1} = run(source)
+      assert text(vault, "Stars/made.md") =~ "type: source"
+      assert [%{entry: %{path: "Sources/Stars.md"}}] = Sources.drafts(vault.id)
     end
 
     test "run again with nothing new, writes nothing", %{vault: vault} = context do

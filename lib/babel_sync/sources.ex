@@ -19,7 +19,7 @@ defmodule BabelSync.Sources do
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Bases, Blobs, Repo, Sync, Vaults}
-  alias BabelSync.Sources.{Run, Script, Secrets, Source}
+  alias BabelSync.Sources.{Items, Run, Script, Secrets, Source}
   alias BabelSync.Vaults.Entry
 
   @type draft :: %{
@@ -66,10 +66,16 @@ defmodule BabelSync.Sources do
     entries = for %Entry{kind: :doc} = entry <- every, into: %{}, do: {entry.path, entry}
 
     approved = Map.new(list(vault_id), &{&1.entry_id, &1})
+    brought_in = Items.entry_ids(vault_id)
+
+    candidates =
+      for {_path, entry} <- entries,
+          is_map_key(approved, entry.id) or entry.id not in brought_in,
+          do: entry
 
     notes =
       for %Bases.Note{path: path, properties: %{"type" => "source"}} <-
-            Bases.Index.notes(Map.values(entries)),
+            Bases.Index.notes(candidates),
           do: entries[path]
 
     files = for %Entry{path: path} = entry <- every, Script.file?(path), do: entry
