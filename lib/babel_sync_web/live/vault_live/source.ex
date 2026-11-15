@@ -327,20 +327,28 @@ defmodule BabelSyncWeb.VaultLive.Source do
               </div>
 
               <div class="px-4 py-3">
-                <p class="text-xs font-semibold uppercase tracking-[0.1em] text-muted">Runs</p>
-                <p :if={@item.runs == [] and @item.source.next_run_at} class="mt-2 text-sm text-faint">
-                  First run due
-                  <.local_time id={"first-run-#{@item.entry.id}"} at={@item.source.next_run_at} />.
-                </p>
-                <p
-                  :if={@item.runs == [] and is_nil(@item.source.next_run_at)}
-                  class="mt-2 text-sm text-faint"
-                >
-                  Has not run. It has no schedule; use Run now.
+                <div class="flex items-baseline justify-between gap-x-3">
+                  <p class="text-xs font-semibold uppercase tracking-[0.1em] text-muted">Runs</p>
+                  <p
+                    :if={@item.source.enabled and @item.source.next_run_at}
+                    id={"next-run-line-#{@item.entry.id}"}
+                    class="text-xs text-faint"
+                  >
+                    Next run
+                    <.local_time id={"next-run-#{@item.entry.id}"} at={@item.source.next_run_at} />
+                  </p>
+                </div>
+                <p :if={@item.runs == []} class="mt-2 text-sm text-faint">
+                  Has not run yet.
+                  <span :if={is_nil(@item.source.next_run_at)}>It has no schedule; use Run now.</span>
                 </p>
                 <ul class="mt-2 space-y-2">
                   <li :for={run <- @item.runs} id={"run-#{run.id}"} class="text-sm">
-                    <details class="group">
+                    <details
+                      id={"run-details-#{run.id}"}
+                      class="group"
+                      phx-mounted={JS.ignore_attributes("open")}
+                    >
                       <summary class={[
                         "flex list-none items-center gap-x-3 [&::-webkit-details-marker]:hidden",
                         logged?(run) && "cursor-pointer"
@@ -379,13 +387,6 @@ defmodule BabelSyncWeb.VaultLive.Source do
                     </details>
                   </li>
                 </ul>
-                <p
-                  :if={@item.runs != [] and @item.source.enabled and @item.source.next_run_at}
-                  class="mt-2 text-xs text-faint"
-                >
-                  Next run
-                  <.local_time id={"next-run-#{@item.entry.id}"} at={@item.source.next_run_at} />.
-                </p>
               </div>
             </div>
           </article>
