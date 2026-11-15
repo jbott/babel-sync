@@ -158,6 +158,11 @@ if storage == :remote do
     secret_access_key: s3_env.("BABELSYNC_S3_SECRET_ACCESS_KEY", "babelsyncsecret")
 end
 
+config :babel_sync, BabelSync.Sources,
+  enabled:
+    System.get_env("BABELSYNC_SOURCES", if(mode == :single, do: "on", else: "off")) == "on",
+  private_hosts: Enum.map(csv.("BABELSYNC_SOURCES_PRIVATE_HOSTS"), &String.downcase/1)
+
 if retention = System.get_env("BABELSYNC_RETENTION_DAYS") do
   config :babel_sync, BabelSync.Janitor, retention_days: String.to_integer(retention)
 end

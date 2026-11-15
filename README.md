@@ -69,7 +69,9 @@ Each Mix dependency is its own Nix derivation, listed in `nix/deps.nix`, so a bu
 | `BABELSYNC_VERSIONS_PER_NOTE` | `1000` | Most saved versions one note keeps, oldest dropped first; `0` keeps them all |
 | `BABELSYNC_MAX_BLOB_BYTES` | 5 GiB | Largest attachment accepted |
 | `BABELSYNC_VAULT_QUOTA_BYTES` | none | Most attachment bytes one vault may hold; a new attachment that would pass it is refused |
-| `SECRET_KEY_BASE` | required in production | `mix phx.gen.secret` |
+| `BABELSYNC_SOURCES` | `on` in single mode, `off` in multi | Whether vault owners may approve scripts for the server to run; see [docs/sources.md](docs/sources.md) |
+| `BABELSYNC_SOURCES_PRIVATE_HOSTS` | none | Hosts on the server's own network that a source may be approved to reach, comma separated, such as `homeassistant.local` |
+| `SECRET_KEY_BASE` | required in production | `mix phx.gen.secret`. Also what secrets saved for sources are encrypted under, so changing it means entering them again |
 | `PORT` | `4000` | HTTP port |
 
 Remote storage:

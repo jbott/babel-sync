@@ -1,0 +1,224 @@
+defmodule BabelSync.Sources do
+  @moduledoc """
+  Scripts kept as notes in a vault that the server runs to bring outside
+  data into it.
+
+  A note whose properties say `type: source` is a draft: anyone who can
+  write to the vault, and any agent or device acting for them, can
+  change it. What runs is the copy an admin approved, held here. A
+  changed note runs nothing new until it is approved again, and
+  approving takes an admin signed in through a browser, which no agent
+  grant or device is, however much of the vault it may write.
+
+  Whether sources run at all is the operator's choice, `BABELSYNC_SOURCES`.
+  They are on where one person runs the server for themselves and off
+  where it is shared, until turned on.
+  """
+
+  import Ecto.Query
+
+  alias BabelSync.Accounts.Scope
+  alias BabelSync.{Bases, Repo, Sync, Vaults}
+  alias BabelSync.Sources.{Run, Script, Secrets, Source}
+  alias BabelSync.Vaults.Entry
+
+  @type draft :: %{
+          entry: Entry.t(),
+          name: String.t(),
+          script: {:ok, Script.t()} | {:error, [String.t()]},
+          source: Source.t() | nil,
+          status: :new | :approved | :changed | :invalid
+        }
+
+  @spec enabled?() :: boolean()
+  def enabled?, do: limits()[:enabled]
+
+  @spec limits() :: keyword()
+  def limits, do: Application.fetch_env!(:babel_sync, __MODULE__)
+
+  @spec subscribe(Ecto.UUID.t()) :: :ok | {:error, term()}
+  def subscribe(vault_id), do: Phoenix.PubSub.subscribe(BabelSync.PubSub, topic(vault_id))
+
+  @spec announce(Source.t()) :: :ok
+  def announce(%Source{id: id, vault_id: vault_id}) do
+    Phoenix.PubSub.broadcast(BabelSync.PubSub, topic(vault_id), {:source_changed, id})
+  end
+
+  defp topic(vault_id), do: "sources:" <> vault_id
+
+  @spec browser_admin?(Scope.t(), Ecto.UUID.t()) :: boolean()
+  def browser_admin?(%Scope{session_id: session, grant_id: nil} = scope, vault_id)
+      when is_binary(session),
+      do: Scope.authorize(scope, vault_id, :admin) == :ok
+
+  def browser_admin?(%Scope{session_id: nil, grant_id: nil, app: nil} = scope, vault_id),
+    do: BabelSync.Auth.open?() and Scope.authorize(scope, vault_id, :admin) == :ok
+
+  def browser_admin?(%Scope{}, _vault_id), do: false
+
+  @spec drafts(Ecto.UUID.t()) :: [draft()]
+  def drafts(vault_id) do
+    entries =
+      for %Entry{kind: :doc} = entry <- Vaults.list_entries(vault_id),
+          into: %{},
+          do: {entry.path, entry}
+
+    approved = Map.new(list(vault_id), &{&1.entry_id, &1})
+
+    for %Bases.Note{path: path, properties: %{"type" => "source"}} <-
+          Bases.Index.notes(Map.values(entries)) do
+      entry = entries[path]
+      draft(entry, Script.parse(Sync.text(entry.id)), approved[entry.id])
+    end
+    |> Enum.sort_by(& &1.name)
+  end
+
+  defp draft(entry, script, source) do
+    status =
+      case {script, source} do
+        {{:error, _problems}, _source} ->
+          :invalid
+
+        {{:ok, _script}, nil} ->
+          :new
+
+        {{:ok, script}, %Source{approved_hash: hash}} ->
+          if(Script.hash(script) == hash, do: :approved, else: :changed)
+      end
+
+    %{entry: entry, name: name(entry), script: script, source: source, status: status}
+  end
+
+  defp name(%Entry{path: path}), do: path |> Path.basename() |> Path.rootname()
+
+  @spec list(Ecto.UUID.t()) :: [Source.t()]
+  def list(vault_id), do: Repo.all(from s in Source, where: s.vault_id == ^vault_id)
+
+  @spec get(Ecto.UUID.t()) :: Source.t() | nil
+  def get(id), do: Repo.get(Source, id)
+
+  @spec approve(Scope.t(), Ecto.UUID.t(), String.t()) ::
+          {:ok, Source.t()} | {:error, :forbidden | :not_found | :changed | [String.t()]}
+  def approve(%Scope{} = scope, entry_id, seen_hash) do
+    with %Entry{kind: :doc, deleted_at: nil} = entry <- Vaults.get_entry(entry_id),
+         true <- browser_admin?(scope, entry.vault_id) || {:error, :forbidden},
+         {:ok, script} <- Script.parse(Sync.text(entry.id)),
+         true <- Script.hash(script) == seen_hash || {:error, :changed} do
+      now = DateTime.utc_now()
+
+      approved = [
+        name: name(entry),
+        manifest: Script.manifest(script),
+        code: script.code,
+        approved_hash: Script.hash(script),
+        approved_by_id: scope.user.id,
+        approved_at: now,
+        next_run_at: script.schedule && now,
+        updated_at: now
+      ]
+
+      source =
+        Repo.insert!(
+          struct!(
+            Source,
+            [vault_id: entry.vault_id, entry_id: entry.id, inserted_at: now] ++ approved
+          ),
+          on_conflict: [set: approved],
+          conflict_target: :entry_id,
+          returning: true
+        )
+
+      announce(source)
+      {:ok, source}
+    else
+      nil -> {:error, :not_found}
+      %Entry{} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec set_enabled(Scope.t(), Source.t(), boolean()) :: :ok | {:error, :forbidden}
+  def set_enabled(scope, %Source{} = source, enabled?) do
+    admin(scope, source, fn ->
+      Repo.update_all(from(s in Source, where: s.id == ^source.id),
+        set: [enabled: enabled?, updated_at: DateTime.utc_now()]
+      )
+    end)
+  end
+
+  @spec revoke(Scope.t(), Source.t()) :: :ok | {:error, :forbidden}
+  def revoke(scope, %Source{} = source), do: admin(scope, source, fn -> Repo.delete!(source) end)
+
+  @spec run_now(Scope.t(), Source.t()) :: :ok | {:error, :forbidden}
+  def run_now(scope, %Source{} = source) do
+    admin(scope, source, fn ->
+      enqueue(source, "manual")
+      BabelSync.Sources.Scheduler.poke()
+    end)
+  end
+
+  @spec put_secret(Scope.t(), Source.t(), String.t(), String.t()) :: :ok | {:error, :forbidden}
+  def put_secret(scope, %Source{} = source, name, value),
+    do: admin(scope, source, fn -> Secrets.put(source, name, value) end)
+
+  @spec delete_secret(Scope.t(), Source.t(), String.t()) :: :ok | {:error, :forbidden}
+  def delete_secret(scope, %Source{} = source, name),
+    do: admin(scope, source, fn -> Secrets.delete(source, name) end)
+
+  defp admin(scope, %Source{} = source, change) do
+    if browser_admin?(scope, source.vault_id) do
+      change.()
+      announce(source)
+    else
+      {:error, :forbidden}
+    end
+  end
+
+  @spec enqueue(Source.t(), String.t()) :: Run.t()
+  def enqueue(%Source{id: id}, trigger) do
+    Repo.insert!(%Run{
+      source_id: id,
+      trigger: trigger,
+      status: :queued,
+      inserted_at: DateTime.utc_now()
+    })
+  end
+
+  @spec runs(Source.t(), pos_integer()) :: [Run.t()]
+  def runs(%Source{id: id}, limit \\ 10) do
+    Repo.all(
+      from r in Run, where: r.source_id == ^id, order_by: [desc: r.inserted_at], limit: ^limit
+    )
+  end
+
+  @spec prune_runs(pos_integer()) :: non_neg_integer()
+  def prune_runs(kept_per_source) do
+    crowded =
+      Repo.all(
+        from r in Run,
+          group_by: r.source_id,
+          having: count(r.id) > ^kept_per_source,
+          select: r.source_id
+      )
+
+    for source_id <- crowded, reduce: 0 do
+      dropped ->
+        oldest_kept =
+          Repo.one(
+            from r in Run,
+              where: r.source_id == ^source_id,
+              order_by: [desc: r.inserted_at],
+              offset: ^(kept_per_source - 1),
+              limit: 1,
+              select: r.inserted_at
+          )
+
+        {count, _} =
+          Repo.delete_all(
+            from r in Run, where: r.source_id == ^source_id and r.inserted_at < ^oldest_kept
+          )
+
+        dropped + count
+    end
+  end
+end

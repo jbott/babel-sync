@@ -37,6 +37,18 @@ config :babel_sync, BabelSync.Janitor,
   versions_per_note: 1000,
   interval: :timer.hours(1)
 
+config :babel_sync, BabelSync.Sources,
+  enabled: true,
+  schedule: true,
+  tick: :timer.seconds(30),
+  deadline: :timer.minutes(3),
+  requests: 50,
+  writes: 2_000,
+  response_bytes: 5_000_000,
+  log_bytes: 100_000,
+  state_bytes: 100_000,
+  private_hosts: []
+
 config :babel_sync, BabelSync.OAuth,
   unapproved_clients: 1000,
   registrations_per_hour: 30,
