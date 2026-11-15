@@ -342,31 +342,34 @@ defmodule BabelSyncWeb.VaultLive.Source do
                   <li :for={run <- @item.runs} id={"run-#{run.id}"} class="text-sm">
                     <details class="group">
                       <summary class={[
-                        "flex list-none flex-wrap items-center gap-x-3 gap-y-1 [&::-webkit-details-marker]:hidden",
+                        "flex list-none items-center gap-x-3 [&::-webkit-details-marker]:hidden",
                         logged?(run) && "cursor-pointer"
                       ]}>
-                        <span class={["size-2 shrink-0 rounded-full", run_dot(run.status)]}></span>
-                        <span class="text-ink">{run_label(run)}</span>
-                        <.local_time
-                          id={"run-time-#{run.id}"}
-                          at={run.finished_at || run.started_at || run.inserted_at}
-                        />
-                        <span
-                          :if={logged?(run)}
-                          class="ml-auto inline-flex items-center gap-1 text-xs text-muted transition group-hover:text-ink"
-                        >
-                          Log
-                          <.icon
-                            name="hero-chevron-down-mini"
-                            class="size-4 transition group-open:rotate-180"
+                        <span class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                          <span class={["size-2 shrink-0 rounded-full", run_dot(run.status)]}></span>
+                          <span class="text-ink">{run_label(run)}</span>
+                          <.local_time
+                            id={"run-time-#{run.id}"}
+                            at={run.finished_at || run.started_at || run.inserted_at}
                           />
+                          <span :if={run.error} class="min-w-0 basis-full truncate text-danger">
+                            {first_line(run.error)}
+                          </span>
                         </span>
-                        <span :if={run.status == :done} id={"outcome-#{run.id}"} class="text-muted">
+                        <span
+                          :if={run.status == :done}
+                          id={"outcome-#{run.id}"}
+                          class="shrink-0 text-right tabular-nums text-muted"
+                        >
                           {outcome(run)}
                         </span>
-                        <span :if={run.error} class="min-w-0 basis-full truncate text-danger">
-                          {first_line(run.error)}
-                        </span>
+                        <.icon
+                          name="hero-chevron-right-mini"
+                          class={[
+                            "size-4 shrink-0 text-faint transition-transform duration-200 ease-out group-open:rotate-90 group-hover:text-ink",
+                            not logged?(run) && "invisible"
+                          ]}
+                        />
                       </summary>
                       <pre
                         :if={logged?(run)}

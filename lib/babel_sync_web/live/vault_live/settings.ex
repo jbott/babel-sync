@@ -271,30 +271,38 @@ defmodule BabelSyncWeb.VaultLive.Settings do
             <li :for={{id, item} <- @streams.sources} id={id}>
               <.link
                 navigate={~p"/v/#{@vault.id}/sources/#{item.entry.id}"}
-                class="group flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 transition hover:bg-ink/4"
+                class="group flex items-center gap-x-3 px-4 py-3 transition hover:bg-ink/4"
               >
-                <span class="min-w-0 flex-1 basis-40 break-words font-medium text-ink">
-                  {item.name}
-                </span>
-                <.badge class={status_class(item)}>{status_label(item)}</.badge>
-                <.icon
-                  name="hero-chevron-right-mini"
-                  class="size-4 text-faint transition group-hover:translate-x-0.5 group-hover:text-ink"
-                />
-                <span :if={item.last} class="flex basis-full items-center gap-2 text-sm text-muted">
-                  <span class={["size-2 shrink-0 rounded-full", run_dot(item.last.status)]}></span>
-                  {run_label(item.last)}
-                  <.local_time
-                    id={"last-run-#{item.entry.id}"}
-                    at={item.last.finished_at || item.last.started_at || item.last.inserted_at}
-                  />
-                  <span :if={item.last.status == :done} id={"last-outcome-#{item.entry.id}"}>
-                    {outcome(item.last)}
+                <span class="min-w-0 flex-1 space-y-1">
+                  <span class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span class="min-w-0 break-words font-medium text-ink">{item.name}</span>
+                    <.badge class={status_class(item)}>{status_label(item)}</.badge>
+                  </span>
+                  <span :if={item.last} class="flex items-center gap-x-2 text-sm text-muted">
+                    <span class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span class={["size-2 shrink-0 rounded-full", run_dot(item.last.status)]}></span>
+                      {run_label(item.last)}
+                      <.local_time
+                        id={"last-run-#{item.entry.id}"}
+                        at={item.last.finished_at || item.last.started_at || item.last.inserted_at}
+                      />
+                    </span>
+                    <span
+                      :if={item.last.status == :done}
+                      id={"last-outcome-#{item.entry.id}"}
+                      class="shrink-0 text-right tabular-nums"
+                    >
+                      {outcome(item.last)}
+                    </span>
+                  </span>
+                  <span :if={item.source && is_nil(item.last)} class="block text-sm text-faint">
+                    Has not run yet.
                   </span>
                 </span>
-                <span :if={item.source && is_nil(item.last)} class="basis-full text-sm text-faint">
-                  Has not run yet.
-                </span>
+                <.icon
+                  name="hero-chevron-right-mini"
+                  class="size-4 shrink-0 text-faint transition group-hover:translate-x-0.5 group-hover:text-ink"
+                />
               </.link>
             </li>
           </.rows>
