@@ -55,7 +55,8 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     [{run, claimed}] = Sources.Scheduler.claim(DateTime.utc_now())
     Sources.Scheduler.carry_out(run, claimed)
 
-    assert render(view) =~ "1 made"
+    assert has_element?(view, "[id^=outcome-]", "Looked at 1 note: 1 new")
+    assert has_element?(view, "[id^=run-time-]")
     assert Vaults.get_entry_by_path(vault.id, "Data/Things/One.md")
   end
 

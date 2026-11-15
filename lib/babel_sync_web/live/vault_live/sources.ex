@@ -168,7 +168,7 @@ defmodule BabelSyncWeb.VaultLive.Sources do
             class="overflow-hidden rounded-xl border border-line bg-surface shadow-raise"
           >
             <header class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3">
-              <h2 class="min-w-0 flex-1 truncate font-medium text-ink">
+              <h2 class="min-w-0 flex-1 basis-full break-words font-medium text-ink sm:basis-0">
                 <.link
                   navigate={Paths.vault(@vault.id) <> "/f/" <> item.entry.path}
                   class="hover:underline"
@@ -326,22 +326,40 @@ defmodule BabelSyncWeb.VaultLive.Sources do
                 </p>
                 <ul class="mt-2 space-y-2">
                   <li :for={run <- item.runs} id={"run-#{run.id}"} class="text-sm">
-                    <details>
-                      <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1">
+                    <details class="group">
+                      <summary class={[
+                        "flex list-none flex-wrap items-center gap-x-3 gap-y-1 [&::-webkit-details-marker]:hidden",
+                        logged?(run) && "cursor-pointer"
+                      ]}>
                         <span class={["size-2 shrink-0 rounded-full", run_dot(run.status)]}></span>
                         <span class="text-ink">{run_label(run)}</span>
-                        <span class="text-faint">{at(
-                          run.finished_at || run.started_at || run.inserted_at
-                        )}</span>
-                        <span :if={run.status == :done} class="text-muted">
-                          {run.created} made, {run.changed} changed, {run.unchanged} already right
+                        <.local_time
+                          id={"run-time-#{run.id}"}
+                          at={run.finished_at || run.started_at || run.inserted_at}
+                        />
+                        <span
+                          :if={logged?(run)}
+                          class="ml-auto inline-flex items-center gap-1 text-xs text-muted transition group-hover:text-ink"
+                        >
+                          Log
+                          <.icon
+                            name="hero-chevron-down-mini"
+                            class="size-4 transition group-open:rotate-180"
+                          />
+                        </span>
+                        <span
+                          :if={run.status == :done}
+                          id={"outcome-#{run.id}"}
+                          class="basis-full text-muted"
+                        >
+                          {outcome(run)}
                         </span>
                         <span :if={run.error} class="min-w-0 basis-full truncate text-danger">
                           {first_line(run.error)}
                         </span>
                       </summary>
                       <pre
-                        :if={run.error || run.log != ""}
+                        :if={logged?(run)}
                         class="mt-2 max-h-64 overflow-auto rounded-lg border border-line bg-sunken p-3 font-mono text-xs"
                         phx-no-curly-interpolation
                       ><%= run.error && run.error <> "\n" %><%= run.log %></pre>
@@ -352,7 +370,8 @@ defmodule BabelSyncWeb.VaultLive.Sources do
                   :if={item.runs != [] and item.source.enabled and item.source.next_run_at}
                   class="mt-2 text-xs text-faint"
                 >
-                  Next run {at(item.source.next_run_at)}.
+                  Next run
+                  <.local_time id={"next-run-#{item.entry.id}"} at={item.source.next_run_at} />.
                 </p>
               </div>
             </div>
@@ -444,8 +463,55 @@ defmodule BabelSyncWeb.VaultLive.Sources do
 
   defp run_label(%{status: :queued}), do: "Waiting to run"
   defp run_label(%{status: :running}), do: "Running"
-  defp run_label(%{status: :done, trigger: trigger}), do: "Ran (#{trigger})"
-  defp run_label(%{status: :failed, trigger: trigger}), do: "Failed (#{trigger})"
+  defp run_label(%{status: :done, trigger: trigger}), do: "Ran #{started_by(trigger)}"
+  defp run_label(%{status: :failed, trigger: trigger}), do: "Failed #{started_by(trigger)}"
+
+  defp started_by("schedule"), do: "on schedule"
+  defp started_by("manual"), do: "by hand"
+  defp started_by(other), do: "(#{other})"
+
+  defp logged?(run), do: is_binary(run.error) or run.log != ""
+
+  defp outcome(%{created: 0, changed: 0, unchanged: 0}), do: "Looked at no notes."
+
+  defp outcome(%{created: created, changed: changed, unchanged: unchanged}) do
+    looked = created + changed + unchanged
+
+    changes =
+      for {count, what} <- [{created, "new"}, {changed, "updated"}],
+          count > 0,
+          do: "#{count} #{what}"
+
+    "Looked at #{looked} #{if looked == 1, do: "note", else: "notes"}: " <>
+      case changes do
+        [] -> "nothing to change."
+        some -> Enum.join(some, ", ") <> ", #{unchanged} left as they were."
+      end
+  end
+
+  attr :id, :string, required: true
+  attr :at, DateTime, required: true
+
+  defp local_time(assigns) do
+    ~H"""
+    <time id={@id} datetime={DateTime.to_iso8601(@at)} phx-hook=".LocalTime" class="text-faint">
+      {at(@at)}
+    </time>
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".LocalTime">
+      export default {
+        mounted() { this.show() },
+        updated() { this.show() },
+        show() {
+          const at = new Date(this.el.dateTime)
+          if (Number.isNaN(at.getTime())) return
+          this.el.textContent = at.toLocaleString(undefined, {
+            day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
+          })
+        }
+      }
+    </script>
+    """
+  end
 
   defp first_line(text), do: text |> String.split("\n", parts: 2) |> hd()
 
