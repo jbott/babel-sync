@@ -51,6 +51,8 @@ XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/t
 XSS.ContentType: XSS in `put_resp_content_type`,lib/babel_sync_web/controllers/transfer_controller.ex:154,1F9E044
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/reader.ex:199,17727DF
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/reader.ex:210,10D891C
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/reader.ex:212,1D07
+XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/reader.ex:223,7529D95
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:676,E545E1
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:677,7771DE0
 XSS.Raw: XSS,lib/babel_sync_web/live/vault_live/show.ex:688,3CBA028

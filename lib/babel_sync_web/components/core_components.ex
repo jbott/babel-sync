@@ -143,7 +143,7 @@ defmodule BabelSyncWeb.CoreComponents do
   attr :label, :string, required: true
   attr :tone, :string, values: ~w(neutral danger), default: "neutral"
   attr :class, :any, default: nil
-  attr :rest, :global, include: ~w(href navigate patch method disabled type)
+  attr :rest, :global, include: ~w(href navigate patch method download disabled type)
 
   def icon_button(%{rest: rest} = assigns) do
     assigns =

@@ -763,6 +763,25 @@ defmodule BabelSyncWeb.VaultLiveTest do
       assert conn |> get(Paths.raw(note)) |> response(200) == "plain"
     end
 
+    test "a file of text is shown as its text, and one of bytes as an attachment", %{
+      conn: conn,
+      vault: vault
+    } do
+      {:ok, script} = Blobs.put(vault.id, "const answer = 42\n")
+      {:ok, bytes} = Blobs.put(vault.id, <<0, 255, 1>>)
+      entry(vault, "Data/Stars.js", %{blob_hash: script.hash, size: 18})
+      entry(vault, "Data/blob.bin", %{blob_hash: bytes.hash, size: 3})
+
+      {:ok, view, _html} = live(conn, Paths.vault(vault.id) <> "/f/Data/Stars.js")
+      assert has_element?(view, "#preview-body pre", "answer")
+      refute has_element?(view, "#attachment")
+      assert has_element?(view, "#download-button[download]")
+
+      {:ok, view, _html} = live(conn, Paths.vault(vault.id) <> "/f/Data/blob.bin")
+      assert has_element?(view, "#attachment")
+      refute has_element?(view, "#preview")
+    end
+
     test "a PDF opens in a frame and is still served sandboxed", %{conn: conn, vault: vault} do
       {:ok, blob} = Blobs.put(vault.id, "<html><script>alert(1)</script>")
       pdf = entry(vault, "paper.pdf", %{blob_hash: blob.hash})
@@ -1046,8 +1065,10 @@ defmodule BabelSyncWeb.VaultLiveTest do
           size: 3 * 1024 * 1024
         })
 
+      {:ok, packed} = Blobs.put(vault.id, <<80, 75, 3, 4, 0, 255>>)
+
       {:ok, other} =
-        Vaults.create_entry(vault.id, %{path: "data.zip", blob_hash: clip.hash, size: 10})
+        Vaults.create_entry(vault.id, %{path: "data.zip", blob_hash: packed.hash, size: 6})
 
       {:ok, folder} = Vaults.create_entry(vault.id, %{path: "Clips", kind: :folder})
 

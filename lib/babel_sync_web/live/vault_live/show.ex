@@ -20,6 +20,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
   @tree_delay 150
 
   @fence String.duplicate("`", 12)
+  @shown_text_bytes 512 * 1024
 
   @impl true
   def mount(%{"vault_id" => vault_id}, _session, socket) do
@@ -434,6 +435,9 @@ defmodule BabelSyncWeb.VaultLive.Show do
       %Entry{id: id, path: path} when id == changed.id and path != changed.path ->
         {:noreply, push_patch(socket, to: Paths.entry(changed))}
 
+      %Entry{id: id, kind: :blob} when id == changed.id ->
+        {:noreply, socket |> assign(:entry, changed) |> render_preview()}
+
       %Entry{id: id} when id == changed.id ->
         {:noreply, assign(socket, :entry, changed)}
 
@@ -601,7 +605,37 @@ defmodule BabelSyncWeb.VaultLive.Show do
     end
   end
 
+  defp render_preview(%{assigns: %{entry: %Entry{kind: :blob} = entry}} = socket) do
+    case written(entry) do
+      {:ok, text} ->
+        fenced = Enum.join([@fence <> extension(entry.path), text, @fence], "\n")
+        html = Markdown.to_html(fenced, socket.assigns.link_index, links())
+        socket |> assign(:shown_as, :text) |> assign(:base, nil) |> assign(:preview, html)
+
+      :error ->
+        socket |> assign(:shown_as, :attachment) |> assign(:base, nil) |> assign(:preview, nil)
+    end
+  end
+
   defp render_preview(socket), do: socket |> assign(:preview, nil) |> assign(:base, nil)
+
+  defp written(%Entry{size: size, blob_hash: hash} = entry)
+       when is_binary(hash) and size <= @shown_text_bytes do
+    with :other <- Reader.media(entry),
+         %Blobs.Blob{} = blob <- Blobs.get(entry.vault_id, hash),
+         bytes = Blobs.read(blob),
+         true <- String.valid?(bytes) and not String.contains?(bytes, <<0>>) do
+      {:ok, bytes}
+    else
+      _shown_otherwise -> :error
+    end
+  end
+
+  defp written(%Entry{}), do: :error
+
+  defp extension(path) do
+    path |> Path.extname() |> String.downcase() |> String.replace(~r/[^a-z0-9]/, "")
+  end
 
   defp show_markdown(socket, entry, text, notice \\ "") do
     html = Markdown.to_html(notice <> readable(entry, text), socket.assigns.link_index, links())
@@ -703,6 +737,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
             vault={@vault}
             writable={@writable}
             mode={@mode}
+            shown_as={@shown_as}
             rename_form={@rename_form}
           />
           <Reader.editor
@@ -714,7 +749,7 @@ defmodule BabelSyncWeb.VaultLive.Show do
           />
           <Reader.note entry={@entry} mode={@mode} shown_as={@shown_as} preview={@preview} />
           <Reader.base entry={@entry} mode={@mode} shown_as={@shown_as} base={@base} />
-          <Reader.attachment entry={@entry} />
+          <Reader.attachment entry={@entry} shown_as={@shown_as} />
         </section>
 
         <HistoryPanel.note_history

@@ -48,6 +48,7 @@ defmodule BabelSyncWeb.VaultLive.Reader do
   attr :vault, :any, required: true
   attr :writable, :boolean, required: true
   attr :mode, :atom, required: true
+  attr :shown_as, :atom, required: true
   attr :rename_form, :any, required: true
 
   def toolbar(assigns) do
@@ -102,6 +103,14 @@ defmodule BabelSyncWeb.VaultLive.Reader do
         phx-click="details"
         icon="hero-list-bullet"
         label="Outline and links"
+      />
+      <.icon_button
+        :if={@entry.kind == :blob and @shown_as == :text}
+        id="download-button"
+        href={Paths.raw(@entry)}
+        download={Path.basename(@entry.path)}
+        icon="hero-arrow-down-tray"
+        label="Download"
       />
       <.icon_button
         :if={@entry.kind in [:doc, :blob]}
@@ -191,7 +200,11 @@ defmodule BabelSyncWeb.VaultLive.Reader do
   def note(assigns) do
     ~H"""
     <article
-      :if={@entry && @entry.kind == :doc && @mode == :read && @shown_as == :markdown}
+      :if={
+        @entry &&
+          ((@entry.kind == :doc && @mode == :read && @shown_as == :markdown) ||
+             (@entry.kind == :blob && @shown_as == :text))
+      }
       id="preview"
       class="flex-1 overflow-y-auto px-5 pb-24 pt-7 md:px-10 md:pt-12"
     >
@@ -356,11 +369,12 @@ defmodule BabelSyncWeb.VaultLive.Reader do
   end
 
   attr :entry, :any, required: true
+  attr :shown_as, :atom, required: true
 
   def attachment(assigns) do
     ~H"""
     <div
-      :if={@entry && @entry.kind == :blob}
+      :if={@entry && @entry.kind == :blob && @shown_as != :text}
       id="attachment"
       class="flex flex-1 flex-col items-center gap-5 overflow-auto bg-sunken/60 p-4 md:p-10"
     >
@@ -421,7 +435,8 @@ defmodule BabelSyncWeb.VaultLive.Reader do
     ]
   end
 
-  defp media(%Entry{path: path}) do
+  @doc false
+  def media(%Entry{path: path}) do
     extension = String.downcase(Path.extname(path))
 
     cond do
