@@ -384,7 +384,7 @@ defmodule BabelSyncWeb.CoreComponents do
 
   @doc """
   Renders the path of a file as its folders and then its name. When there
-  is no room for all of it, the name is what stays.
+  is no room for all of it, the folders are cut short before the name is.
   """
   attr :id, :string, required: true
   attr :path, :string, required: true
@@ -397,9 +397,9 @@ defmodule BabelSyncWeb.CoreComponents do
     ~H"""
     <span
       id={@id}
-      class={["path-tail min-w-0 truncate text-sm font-medium text-ink", @class]}
+      class={["flex min-w-0 items-center text-sm font-medium", @class]}
       phx-no-format
-    ><bdi><span :for={folder <- @folders} class="text-muted">{folder}<span class="mx-1.5 text-faint">/</span></span>{@name}</bdi></span>
+    ><span :for={folder <- @folders} class="flex min-w-8 shrink-[1000] items-center overflow-hidden text-muted"><span class="min-w-0 truncate">{folder}</span><span class="mx-1.5 shrink-0 text-faint">/</span></span><span class="min-w-0 truncate text-ink">{@name}</span></span>
     """
   end
 

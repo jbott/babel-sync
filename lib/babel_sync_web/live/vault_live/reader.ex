@@ -56,10 +56,9 @@ defmodule BabelSyncWeb.VaultLive.Reader do
     <div
       :if={@entry}
       id="toolbar"
-      class="flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-1.5 pr-1.5 md:gap-1 md:pl-5 md:pr-3"
+      class="flex h-12 shrink-0 items-center gap-0.5 border-b border-line pl-4 pr-1.5 md:gap-1 md:pl-5 md:pr-3"
     >
-      <.file_trail id="entry-path" path={@entry.path} class="hidden flex-1 pr-2 md:block" />
-      <span class="flex-1 md:hidden"></span>
+      <.file_trail id="entry-path" path={@entry.path} class="hidden flex-1 pr-2 md:flex" />
       <div
         :if={@entry.kind == :doc}
         class="mr-1 flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunken p-0.5"
@@ -80,6 +79,7 @@ defmodule BabelSyncWeb.VaultLive.Reader do
           class={mode_class(@mode == :read)}
         >Read</button>
       </div>
+      <span class="flex-1 md:hidden"></span>
       <.icon_button
         :if={@entry.kind == :doc and @mode == :edit and Vaults.Path.markdown?(@entry.path)}
         id="source-button"

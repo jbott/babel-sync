@@ -58,6 +58,10 @@ async function textOf(page: Page, selector: string): Promise<string> {
   return page.$eval(selector, (element) => (element as HTMLElement).innerText);
 }
 
+async function waitForPath(page: Page, expected: string): Promise<void> {
+  await page.waitForFunction((expected) => document.querySelector("#entry-path")?.textContent?.trim() === expected, { timeout: 10_000 }, expected);
+}
+
 async function waitForText(page: Page, selector: string, expected: string, exact = false): Promise<void> {
   await page.waitForFunction(
     (selector, expected, exact) => {
@@ -223,13 +227,13 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     assert.equal(await scale(), fitted);
 
     await one.locator('#tree a[href$="/f/Notes/browser.md"]').click();
-    await waitForText(one, "#entry-path", "Notes/browser.md");
+    await waitForPath(one, "Notes/browser.md");
     await one.locator("#rename-button").click();
     await one.waitForSelector("#rename-form input[type=text]");
     await fill(one, "#rename-form input[type=text]", "Notes/renamed.md");
     await one.keyboard.press("Enter");
-    await waitForText(one, "#entry-path", "Notes/renamed.md", true);
-    await waitForText(two, "#entry-path", "Notes/renamed.md", true);
+    await waitForPath(one, "Notes/renamed.md");
+    await waitForPath(two, "Notes/renamed.md");
 
     await two.focus(".cm-content");
     await two.keyboard.type("after the move\n");
@@ -274,7 +278,7 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     await two.keyboard.press("ArrowDown");
     await two.keyboard.press("ArrowUp");
     await two.keyboard.press("Enter");
-    await waitForText(two, "#entry-path", "Notes/renamed.md");
+    await waitForPath(two, "Notes/renamed.md");
     await two.waitForFunction(() => document.querySelector("#finder-dialog") === null);
     await two.locator("#find-button").click();
     await two.waitForSelector("#finder-input:focus");
