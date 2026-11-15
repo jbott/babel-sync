@@ -48,15 +48,32 @@ defmodule BabelSyncWeb.SourceComponents do
       {at(@at)}
     </time>
     <script :type={Phoenix.LiveView.ColocatedHook} name=".LocalTime">
+      const MINUTE = 60
+      const HOUR = 60 * MINUTE
+      const DAY = 24 * HOUR
+      const SPANS = [
+        { under: 45, unit: "second", size: Infinity, again: 15 },
+        { under: 45 * MINUTE, unit: "minute", size: MINUTE, again: 20 },
+        { under: 22 * HOUR, unit: "hour", size: HOUR, again: 5 * MINUTE },
+        { under: 26 * DAY, unit: "day", size: DAY, again: HOUR },
+        { under: 320 * DAY, unit: "month", size: 30 * DAY, again: HOUR },
+        { under: Infinity, unit: "year", size: 365 * DAY, again: HOUR }
+      ]
+      const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+
       export default {
         mounted() { this.show() },
         updated() { this.show() },
+        destroyed() { clearTimeout(this.timer) },
         show() {
+          clearTimeout(this.timer)
           const at = new Date(this.el.dateTime)
           if (Number.isNaN(at.getTime())) return
-          this.el.textContent = at.toLocaleString(undefined, {
-            day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
-          })
+          const seconds = (at.getTime() - Date.now()) / 1000
+          const span = SPANS.find(({ under }) => Math.abs(seconds) < under)
+          this.el.textContent = relative.format(Math.round(seconds / span.size), span.unit)
+          this.el.title = at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+          this.timer = setTimeout(() => this.show(), span.again * 1000)
         }
       }
     </script>
