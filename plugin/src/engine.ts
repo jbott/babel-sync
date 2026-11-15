@@ -74,6 +74,12 @@ function explained(error: unknown, reason: string): string {
 
 class Unplaceable extends Error {}
 
+function holdsMoreThan(doc: Y.Doc, updates: Uint8Array[]): boolean {
+  const theirs = Y.decodeStateVector(Y.encodeStateVectorFromUpdate(Y.mergeUpdates(updates)));
+  const mine = Y.decodeStateVector(Y.encodeStateVector(doc));
+  return [...mine].some(([client, clock]) => clock > (theirs.get(client) ?? 0));
+}
+
 async function placing<T>(work: Promise<T>): Promise<T> {
   try {
     return await work;
@@ -113,6 +119,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   private failures = new Map<string, number>();
   private buried = new Map<string, number>();
   private fetched = new Map<string, Uint8Array[]>();
+  private arriving: { vault: VaultSession; entry: Entry }[] = [];
   private unsent = new Map<string, { stamp: string; attempts: number }>();
   private told = new Set<string>();
   private unsure = false;
@@ -174,13 +181,28 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
         this.retryMs = this.firstRetryMs;
       }),
     );
-    vault.on("entry", (entry) => this.run(async () => void (current() && (await this.receive(entry)))));
+    vault.on("entry", (entry) => this.arrive(vault, entry));
     vault.on("acknowledged", (entry) => current() && this.acknowledge(entry));
     vault.on("left", () => void (current() && this.setStatus("offline")));
     vault.on("error", (reason) => {
       if (!current()) return;
       this.emit("error", reason);
       this.setStatus("error");
+    });
+  }
+
+  private arrive(vault: VaultSession, entry: Entry): void {
+    this.arriving.push({ vault, entry });
+    if (this.arriving.length > 1) return;
+
+    this.run(async () => {
+      const changes = this.arriving.splice(0).flatMap((arrival) => (arrival.vault === this.vault ? [arrival.entry] : []));
+      await this.prefetch(changes);
+      for (const [done, change] of changes.entries()) {
+        this.report("receiving", done, changes.length);
+        await this.receive(change);
+      }
+      for (const change of changes) this.fetched.delete(change.id);
     });
   }
 
@@ -686,9 +708,10 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   }
 
   private async prefetch(incoming: Entry[]): Promise<void> {
-    const wanted = incoming
-      .filter((change) => change.kind === "doc" && !change.deleted && !this.byId.has(change.id) && !this.ignored(change.path))
-      .map((change) => change.id);
+    const notes = incoming.filter((change) => change.kind === "doc" && !change.deleted && !this.ignored(change.path));
+    const unseen = notes.filter((change) => !this.byId.has(change.id));
+    const behind = notes.filter((change) => this.atRestBehind(change));
+    const wanted = [...new Set([...unseen, ...behind].map((change) => change.id))];
 
     for (let start = 0; start < wanted.length && this.online; start += PREFETCH_BATCH) {
       this.report("receiving", start, wanted.length);
@@ -700,6 +723,25 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
         return;
       }
     }
+  }
+
+  private atRestBehind(change: Entry): boolean {
+    const local = this.byId.get(change.id);
+    if (!local || local.kind !== "doc" || local.dirty || local.hash === null) return false;
+    if (this.open.has(local.id) || this.live.has(local.id)) return false;
+    return change.content_hash !== null && change.content_hash !== local.hash;
+  }
+
+  private async catchUp(entry: LocalEntry): Promise<void> {
+    const fetched = this.fetched.get(entry.id);
+    this.fetched.delete(entry.id);
+    const busy = () => entry.dirty || this.open.has(entry.id) || this.live.has(entry.id);
+    if (!fetched || fetched.length === 0 || busy() || (await this.absorb(entry)) || busy()) return this.syncDoc(entry.id);
+
+    const doc = this.doc(entry.id);
+    if (holdsMoreThan(doc, fetched)) return this.syncDoc(entry.id);
+    Y.transact(doc, () => fetched.forEach((update) => Y.applyUpdate(doc, update)), FETCHED);
+    await this.writeBack(entry);
   }
 
   private async adopt(remote: Entry): Promise<void> {
@@ -798,7 +840,7 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
 
     if (remote.kind === "doc") {
       if (missing || (remote.content_hash !== null && remote.content_hash !== local.hash)) {
-        await this.syncDoc(local.id);
+        await this.catchUp(local);
       }
     } else if (remote.kind === "blob" && remote.blob_hash && remote.blob_hash !== local.hash) {
       if (this.tooLarge(remote.size)) return void this.leftOut(remote.path, remote.size);

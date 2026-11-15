@@ -70,7 +70,7 @@ defmodule BabelSync.E2E.JsClientTest do
 
   test "two plugin sync engines keep their vaults identical through the server" do
     owner = user()
-    vaults = for n <- 1..44, do: vault(owner, %{name: "Device test #{n}"})
+    vaults = for n <- 1..45, do: vault(owner, %{name: "Device test #{n}"})
     token = owner |> Scope.for_user() |> Auth.socket_token()
 
     {output, status} =

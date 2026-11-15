@@ -206,6 +206,33 @@ test("renames and deletions follow, and a note keeps its identity when moved", a
   await eventually(async () => (await text(laptop, "Final/done.md")) === "v1\nv2\n", "an edit after the move");
 });
 
+test("notes changed elsewhere reach a device at rest without a session for each", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault);
+  const names = Array.from({ length: 12 }, (_, n) => `Stars/note-${n}.md`);
+  for (const name of names) await edit(laptop, name, "stars: 1\n");
+  await eventually(() => paths(phone).length === names.length && phone.engine.status === "synced", "the phone to have every note");
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  let sessions = 0;
+  const open = phone.client.doc.bind(phone.client);
+  phone.client.doc = ((...given: Parameters<typeof open>) => {
+    sessions += 1;
+    return open(...given);
+  }) as typeof phone.client.doc;
+
+  for (const name of names) await edit(laptop, name, "stars: 2\n");
+  for (const name of names) await eventually(async () => (await text(phone, name)) === "stars: 2\n", `${name} to change on the phone`);
+  assert.equal(sessions, 0);
+
+  await phone.fs.writeText(names[0], "stars: 2\nmine\n");
+  phone.engine.localChanged(names[0]);
+  await eventually(async () => (await text(laptop, names[0])) === "stars: 2\nmine\n", "the phone's own edit to reach the laptop");
+  assert.equal(sessions, 1);
+  assert.deepEqual(phone.errors, []);
+});
+
 test("a folder deleted or renamed on one device goes, with nothing left behind, on the other", async () => {
   const vault = freshVault();
   const laptop = await boot("laptop", vault);
