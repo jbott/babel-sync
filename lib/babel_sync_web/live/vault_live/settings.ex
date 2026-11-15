@@ -172,6 +172,18 @@ defmodule BabelSyncWeb.VaultLive.Settings do
           </form>
         </.panel>
 
+        <.panel :if={BabelSync.Sources.enabled?()} id="sources" title="Sources">
+          <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface p-4">
+            <p class="min-w-0 flex-1 basis-64 text-sm text-muted">
+              Scripts kept as notes that the server runs to bring outside data into the vault,
+              each only once you have approved it.
+            </p>
+            <.button id="open-sources" navigate={~p"/v/#{@vault.id}/sources"}>
+              <.icon name="hero-arrow-path-rounded-square" class="size-4" /> Sources
+            </.button>
+          </div>
+        </.panel>
+
         <.panel :if={@sharing} id="members" title="People">
           <.rows>
             <li

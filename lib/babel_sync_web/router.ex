@@ -119,6 +119,7 @@ defmodule BabelSyncWeb.Router do
       live "/account", AuthLive.Account
       live "/v/:vault_id", VaultLive.Show
       live "/v/:vault_id/settings", VaultLive.Settings
+      live "/v/:vault_id/sources", VaultLive.Sources
       live "/v/:vault_id/trash", VaultLive.Trash
       live "/v/:vault_id/connect", VaultLive.Connect
       live "/v/:vault_id/f/*path", VaultLive.Show
