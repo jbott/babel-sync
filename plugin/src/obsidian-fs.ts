@@ -123,8 +123,8 @@ export class ObsidianFs implements VaultFs {
       if (listing.files.length > 0 || listing.folders.length > 0) return;
 
       const known = this.app.vault.getAbstractFileByPath(local);
-      if (known instanceof TFolder) await this.app.vault.delete(known);
-      else await adapter.rmdir(local, false);
+      if (known instanceof TFolder) await this.app.vault.delete(known, true);
+      else await adapter.rmdir(local, true);
     }
   }
 
