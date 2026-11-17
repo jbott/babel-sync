@@ -21,7 +21,8 @@ defmodule BabelSync.Bases.Evaluation do
           required(:note) => Note.t(),
           optional(:formulas) => %{optional(String.t()) => Expression.t()},
           optional(:now) => DateTime.t(),
-          optional(:depth) => non_neg_integer()
+          optional(:depth) => non_neg_integer(),
+          optional(:remembered) => :ets.tid()
         }
 
   @formula_depth 20
@@ -174,6 +175,22 @@ defmodule BabelSync.Bases.Evaluation do
   defp value({:call, _other, _arguments}, _context),
     do: throw({:invalid, "only a named function or a method can be called"})
 
+  defp remembered(%{remembered: table, note: note}, name, work) do
+    key = {note.path, name}
+
+    case :ets.lookup(table, key) do
+      [{^key, value}] ->
+        value
+
+      [] ->
+        value = work.()
+        :ets.insert(table, {key, value})
+        value
+    end
+  end
+
+  defp remembered(_context, _name, work), do: work.()
+
   defp member({:scope, "note"}, name, %{note: note}), do: note.properties[name]
 
   defp member({:scope, "formula"}, name, context) do
@@ -184,7 +201,7 @@ defmodule BabelSync.Bases.Evaluation do
         throw({:invalid, "formula #{name} refers to itself"})
 
       %{^name => tree} ->
-        value(tree, Map.put(context, :depth, depth + 1))
+        remembered(context, name, fn -> value(tree, Map.put(context, :depth, depth + 1)) end)
 
       _formulas ->
         throw({:invalid, "there is no formula named #{name}"})

@@ -75,7 +75,14 @@ defmodule BabelSync.Bases do
          {:ok, sort} <- sort(opts[:sort], view, opts[:near]),
          {:ok, group} <- optional(opts[:group_by]),
          {:ok, sections} <- sections(view, group) do
-      context = %{formulas: definition.formulas, now: opts[:now] || DateTime.utc_now()}
+      remembered = :ets.new(__MODULE__, [:set, :private])
+
+      context = %{
+        formulas: definition.formulas,
+        now: opts[:now] || DateTime.utc_now(),
+        remembered: remembered
+      }
+
       filters = Enum.reject([definition.filter, view && view.filter, where], &is_nil/1)
 
       try do
@@ -97,6 +104,8 @@ defmodule BabelSync.Bases do
         end
       catch
         {:invalid, message} -> {:error, message}
+      after
+        :ets.delete(remembered)
       end
     end
   end
