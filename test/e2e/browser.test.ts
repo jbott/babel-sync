@@ -145,9 +145,10 @@ test("two tabs write, read, attach, rename, restore and delete together", { skip
     await appending;
     await two.keyboard.type("still typing\n");
 
-    const afterAgent = (await agent.read(note.path, { vault: vaultId })).text;
+    const held = async () => (await agent.read(note.path, { vault: vaultId })).text;
+    await eventually(async () => (await held()).includes("typed while the agent was writing\nstill typing\n"), held);
+    const afterAgent = await held();
     for (let line = 1; line <= 15; line++) assert.ok(afterAgent.includes(`agent line ${line}\n`), `agent line ${line} survived`);
-    assert.ok(afterAgent.includes("typed while the agent was writing\nstill typing\n"), afterAgent);
     await waitForText(one, ".cm-content", "agent line 15");
     await waitForText(one, ".cm-content", "typed while the agent was writing");
     const settled = (await agent.read(note.path, { vault: vaultId })).text;
