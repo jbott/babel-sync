@@ -10,11 +10,15 @@ defmodule BabelSyncWeb.VaultLive.BaseView do
   alias BabelSync.Vaults.Entry
   alias BabelSyncWeb.Paths
 
+  require Logger
+
   @base_rows 500
 
   @spec run(Scope.t(), Ecto.UUID.t(), Entry.t(), String.t(), String.t() | nil, [Entry.t()]) ::
           {:ok, map()} | {:error, String.t()}
   def run(scope, vault_id, entry, text, wanted, entries) do
+    started = now()
+
     with {:ok, definition} <- Bases.Definition.parse(text),
          names = Enum.map(definition.views, & &1.name),
          view = if(wanted in names, do: wanted, else: List.first(names)),
@@ -26,17 +30,27 @@ defmodule BabelSyncWeb.VaultLive.BaseView do
              limit: @base_rows,
              as: if(map?, do: :map, else: :table)
            ) do
+      queried = now()
+
       shown =
         case result do
           %{markers: _} -> %{places: placed(result, definition.names, entries), table: nil}
           %{rows: _} -> %{places: nil, table: based(result, definition.names, entries)}
         end
 
+      Logger.info(
+        "base #{entry.path} view #{inspect(view)}: #{result.total} notes, " <>
+          "queried in #{queried - started} ms, shaped in #{now() - queried} ms" <>
+          if(shown.places, do: ", #{div(byte_size(shown.places), 1024)} KiB", else: "")
+      )
+
       {:ok, Map.merge(%{entry_id: entry.id, views: names, view: view}, shown)}
     else
       failed -> {:error, problem(failed)}
     end
   end
+
+  defp now, do: System.monotonic_time(:millisecond)
 
   defp placed(places, names, entries) do
     paths = Map.new(entries, &{&1.path, &1})
