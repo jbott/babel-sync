@@ -308,7 +308,10 @@ test("changes made while a device was off are caught up on return", async () => 
   await edit(laptop, "keep.md", "keep\n");
   await edit(laptop, "remove.md", "remove\n");
   await edit(laptop, "move.md", "move\n");
-  await eventually(() => paths(phone).length === 3, "three notes on the phone");
+  await eventually(
+    async () => (await text(phone, "keep.md")) === "keep\n" && (await text(phone, "remove.md")) === "remove\n" && (await text(phone, "move.md")) === "move\n",
+    "three notes on the phone",
+  );
   await shutdown(phone);
 
   await phone.fs.writeText("offline-new.md", "written on a plane\n");
@@ -324,8 +327,8 @@ test("changes made while a device was off are caught up on return", async () => 
 
   await eventually(() => paths(laptop).join() === expected.join(), "the laptop to match");
   assert.deepEqual(paths(back), expected);
-  assert.equal(await text(laptop, "keep.md"), "keep\nphone addition\n");
-  assert.equal(await text(laptop, "offline-new.md"), "written on a plane\n");
+  await eventually(async () => (await text(laptop, "keep.md")) === "keep\nphone addition\n", "the phone's addition on the laptop");
+  await eventually(async () => (await text(laptop, "offline-new.md")) === "written on a plane\n", "the phone's new note on the laptop");
 });
 
 test("the same new path with different content on two devices keeps both", async () => {
@@ -340,9 +343,9 @@ test("the same new path with different content on two devices keeps both", async
   const copy = "ideas (conflict phone 2026-11-10 120000).md";
 
   await eventually(() => paths(laptop).join() === [copy, "ideas.md"].sort().join(), "the conflict copy on the laptop");
-  assert.equal(await text(phone, "ideas.md"), "laptop idea\n");
+  await eventually(async () => (await text(phone, "ideas.md")) === "laptop idea\n", "the laptop's note on the phone");
   assert.equal(await text(phone, copy), "phone idea\n");
-  assert.equal(await text(laptop, copy), "phone idea\n");
+  await eventually(async () => (await text(laptop, copy)) === "phone idea\n", "the conflict copy's text on the laptop");
 });
 
 test("the same new path with identical content is simply adopted", async () => {
@@ -640,6 +643,25 @@ test("changing only the case of a name is a rename on devices that cannot tell c
   assert.deepEqual(paths(laptop), ["README.md"]);
 });
 
+test("a change reported under a spelling a note no longer has is a change to that note", async () => {
+  const vault = freshVault();
+  const laptop = await boot("laptop", vault);
+  const phone = await boot("phone", vault, { fs: new MemoryFs({ caseBlind: true }), store: new MemoryStore() });
+  await edit(laptop, "readme.md", "hello\n");
+  await eventually(async () => (await text(phone, "readme.md")) === "hello\n", "the note on the phone");
+  await laptop.fs.rename("readme.md", "README.md");
+  await eventually(() => paths(phone).join() === "README.md", "the phone to follow");
+  await eventually(() => laptop.engine.status === "synced" && phone.engine.status === "synced", "both to settle");
+
+  phone.fs.files.get("README.md")!.data = new TextEncoder().encode("hello again\n");
+  phone.engine.localChanged("readme.md");
+  await eventually(async () => (await text(laptop, "README.md")) === "hello again\n", "the change on the laptop");
+  await eventually(() => laptop.engine.status === "synced" && phone.engine.status === "synced", "both to settle again");
+  assert.deepEqual(paths(phone), ["README.md"]);
+  assert.deepEqual(paths(laptop), ["README.md"]);
+  assert.deepEqual(phone.notices, []);
+});
+
 test("a second note whose name differs only by case is kept under another name", async () => {
   const vault = freshVault();
   const laptop = await boot("laptop", vault);
@@ -653,8 +675,8 @@ test("a second note whose name differs only by case is kept under another name",
     () => paths(phone).join() === [copy, "todo.md"].join(),
     () => `both notes on the phone, it has ${paths(phone).join()}`,
   );
-  assert.equal(await text(phone, "todo.md"), "lower\n");
-  assert.equal(await text(phone, copy), "upper\n");
+  await eventually(async () => (await text(phone, "todo.md")) === "lower\n", "the first note's text on the phone");
+  await eventually(async () => (await text(phone, copy)) === "upper\n", "the second note's text on the phone");
 });
 
 test("two notes that swapped names while a device was away swap there too, with no conflict copy", async () => {
@@ -663,7 +685,7 @@ test("two notes that swapped names while a device was away swap there too, with 
   const phone = await boot("phone", vault);
   await edit(laptop, "a.md", "was a\n");
   await edit(laptop, "b.md", "was b\n");
-  await eventually(() => paths(phone).join() === "a.md,b.md", "both notes on the phone");
+  await eventually(async () => (await text(phone, "a.md")) === "was a\n" && (await text(phone, "b.md")) === "was b\n", "both notes on the phone");
   await shutdown(phone);
 
   const settled = () => eventually(() => laptop.engine.status === "synced", "the laptop to settle");
@@ -786,8 +808,8 @@ test("hundreds of notes created at once all arrive", async () => {
     () => paths(phone).length === 250,
     () => `the phone to have all 250, it has ${paths(phone).length}; errors ${[...new Set([...phone.errors, ...laptop.errors])].join()}`,
   );
+  await eventually(async () => (await text(phone, "Import/note 249.md")) === "note 249\n", "the last note's text on the phone");
   assert.deepEqual([...laptop.errors, ...phone.errors], []);
-  assert.equal(await text(phone, "Import/note 249.md"), "note 249\n");
 });
 
 test("a note the server deleted without this device hearing of it is cleared away, not an error", async () => {

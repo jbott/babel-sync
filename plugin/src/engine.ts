@@ -949,8 +949,9 @@ export class SyncEngine extends Emitter<{ status: Status; error: string; notice:
   private async yieldTo(path: string, holder: Entry): Promise<void> {
     if (holder.path !== path && !this.byPath.has(path)) {
       const mine = this.byId.get(holder.id);
-      const files = mine ? await this.options.fs.list() : [];
-      if (mine && !files.some((file) => file.path === mine.path)) return this.renameLocal(mine.path, path);
+      const listed = new Set(mine ? (await this.options.fs.list()).map((file) => file.path) : []);
+      if (mine && !listed.has(mine.path)) return this.renameLocal(mine.path, path);
+      if (mine && !listed.has(path)) return this.pushLocal(mine.path);
       await this.keepCopy(path);
     }
     await this.applyRemote(holder);
