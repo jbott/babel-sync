@@ -7,7 +7,8 @@ defmodule BabelSync.Sync.Store do
   import Ecto.Query
 
   alias BabelSync.Repo
-  alias BabelSync.Sync.{State, Update, Version}
+  alias BabelSync.Sync.{Settled, State, Update, Version}
+  alias BabelSync.Vaults.Entry
 
   @asked_together 500
 
@@ -162,26 +163,49 @@ defmodule BabelSync.Sync.Store do
     |> Map.new()
   end
 
+  @doc """
+  The notes among these holding an update later than the last one their
+  saved text accounts for, so that the text has to be read from the
+  note's document rather than from its last version.
+  """
   @spec unsettled([Ecto.UUID.t()]) :: [Ecto.UUID.t()]
   def unsettled(entry_ids) do
     entry_ids |> Enum.chunk_every(@asked_together) |> Enum.flat_map(&unsettled_among/1)
   end
 
   defp unsettled_among(entry_ids) do
-    saved =
-      from v in Version,
-        where: v.entry_id in ^entry_ids,
-        group_by: v.entry_id,
-        select: %{entry_id: v.entry_id, at: max(v.inserted_at)}
-
     Repo.all(
       from u in Update,
-        left_join: s in subquery(saved),
+        left_join: s in Settled,
         on: s.entry_id == u.entry_id,
-        where: u.entry_id in ^entry_ids and (is_nil(s.at) or u.inserted_at >= s.at),
+        where: u.entry_id in ^entry_ids and (is_nil(s.update_id) or u.id > s.update_id),
         distinct: true,
         select: u.entry_id
     )
+  end
+
+  @doc """
+  Records that a note's saved text accounts for every stored update up
+  to `update_id`. The mark only ever moves forward, and a note that has
+  been purged gets none.
+  """
+  @spec settle(Ecto.UUID.t(), integer()) :: :ok
+  def settle(entry_id, update_id) do
+    Repo.insert_all(
+      Settled,
+      from(e in Entry,
+        where: e.id == ^entry_id,
+        select: %{entry_id: e.id, update_id: type(^update_id, :integer)}
+      ),
+      on_conflict:
+        from(s in Settled,
+          where: s.update_id < ^update_id,
+          update: [set: [update_id: ^update_id]]
+        ),
+      conflict_target: :entry_id
+    )
+
+    :ok
   end
 
   @spec prune_versions(DateTime.t()) :: non_neg_integer()

@@ -40,6 +40,8 @@ defmodule BabelSync.Sync.DocServer do
     :unsettled_since,
     :state_at,
     applied: [],
+    taken_in: 0,
+    settled: 0,
     last_author: {nil, nil},
     versioned_hash: nil
   ]
@@ -171,7 +173,14 @@ defmodule BabelSync.Sync.DocServer do
       &(:ok = Yex.apply_update(server.doc, &1))
     )
 
-    %{server | state_at: state_at, applied: Enum.map(updates, &elem(&1, 0)) ++ server.applied}
+    ids = Enum.map(updates, &elem(&1, 0))
+
+    %{
+      server
+      | state_at: state_at,
+        applied: ids ++ server.applied,
+        taken_in: Enum.max([server.taken_in | ids])
+    }
   end
 
   defp catch_up(server) do
@@ -201,7 +210,13 @@ defmodule BabelSync.Sync.DocServer do
       {:doc_update, server.entry_id, update, origin}
     )
 
-    server = %{server | applied: [id | server.applied], last_author: author}
+    server = %{
+      server
+      | applied: [id | server.applied],
+        taken_in: max(server.taken_in, id),
+        last_author: author
+    }
+
     server = if length(server.applied) >= compact_after(), do: compact(server), else: server
     schedule_settle(server)
   end
@@ -242,7 +257,15 @@ defmodule BabelSync.Sync.DocServer do
       Vaults.update_entry(entry, %{content_hash: hash, size: byte_size(content)})
     end
 
-    %{server | settle_timer: nil, unsettled_since: nil, versioned_hash: hash}
+    if server.taken_in > server.settled, do: Store.settle(server.entry_id, server.taken_in)
+
+    %{
+      server
+      | settle_timer: nil,
+        unsettled_since: nil,
+        versioned_hash: hash,
+        settled: server.taken_in
+    }
   end
 
   defp apply_ops(ops, text) do

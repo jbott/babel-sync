@@ -307,6 +307,22 @@ defmodule BabelSync.SyncTest do
              BabelSync.Sync.Store.hash("typed just before a crash")
   end
 
+  test "an edit that leaves the text as it was saved leaves nothing unsettled", %{entry: entry} do
+    :ok = Sync.replace_text(entry.id, "as saved")
+    :ok = Sync.flush(entry.id)
+    assert [_one] = Sync.list_versions(entry.id)
+
+    :ok = Sync.replace_text(entry.id, "as saved, briefly more")
+    :ok = Sync.replace_text(entry.id, "as saved")
+    :ok = Sync.flush(entry.id)
+    stop(entry.id)
+
+    assert [_one] = Sync.list_versions(entry.id)
+    assert BabelSync.Sync.Store.unsettled([entry.id]) == []
+    assert Sync.text(entry.id) == "as saved"
+    refute Sync.live?(entry.id)
+  end
+
   test "reading a settled note nobody has open does not bring it to life", %{entry: entry} do
     :ok = Sync.replace_text(entry.id, "at rest")
     stop(entry.id)
