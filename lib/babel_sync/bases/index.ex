@@ -9,7 +9,8 @@ defmodule BabelSync.Bases.Index do
   A row records the hash of the text it was read from, and is used only
   while that hash matches the note's own `content_hash`, which changes
   whenever the note's text is saved, by anyone. A note open for editing
-  may be ahead of its last save, so it is always read from its live text.
+  may be ahead of its last save, so its live text is always looked at,
+  and read again only when it is not the text the row was read from.
   Rows that are missing or out of date are read again and saved as a
   base runs, so nothing that changes notes has to remember to keep the
   index current, and a change to how notes are read needs only the rows
@@ -51,7 +52,7 @@ defmodule BabelSync.Bases.Index do
     facts =
       Map.merge(
         Map.new(current, fn entry -> {entry.id, elem(stored[entry.id], 1)} end),
-        refresh(stale)
+        refresh(stale, stored)
       )
 
     for entry <- entries do
@@ -78,16 +79,21 @@ defmodule BabelSync.Bases.Index do
     |> Map.new(fn {id, hash, data} -> {id, {hash, :erlang.binary_to_term(data, [:safe])}} end)
   end
 
-  defp refresh([]), do: %{}
+  defp refresh([], _stored), do: %{}
 
-  defp refresh(entries) do
+  defp refresh(entries, stored) do
     now = DateTime.utc_now()
 
     entries
     |> Enum.chunk_every(@batch)
     |> Enum.flat_map(fn batch ->
-      texts = Sync.texts(Enum.map(batch, & &1.id))
-      read = for {id, text} <- texts, do: {id, Store.hash(text), Note.read(text)}
+      hashed =
+        for {id, text} <- Sync.texts(Enum.map(batch, & &1.id)), do: {id, Store.hash(text), text}
+
+      {kept, changed} =
+        Enum.split_with(hashed, fn {id, hash, _text} -> match?({^hash, _facts}, stored[id]) end)
+
+      read = for {id, hash, text} <- changed, do: {id, hash, Note.read(text)}
 
       rows =
         for {id, hash, facts} <- read do
@@ -104,7 +110,8 @@ defmodule BabelSync.Bases.Index do
         conflict_target: :entry_id
       )
 
-      for {id, _hash, facts} <- read, do: {id, facts}
+      for({id, _hash, _text} <- kept, do: {id, elem(stored[id], 1)}) ++
+        for({id, _hash, facts} <- read, do: {id, facts})
     end)
     |> Map.new()
   end

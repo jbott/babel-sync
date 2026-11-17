@@ -68,6 +68,22 @@ defmodule BabelSync.Bases.IndexTest do
     assert read(saved).properties == %{"status" => "typing"}
   end
 
+  test "a note open for editing with nothing typed is not read again", %{note: note} do
+    saved = save(note, "---\nstatus: open\n---\n")
+    assert read(saved).properties == %{"status" => "open"}
+
+    planted = %{properties: %{"status" => "from the index"}, tags: [], links: []}
+
+    Index
+    |> Repo.get!(note.id)
+    |> Ecto.Changeset.change(data: :erlang.term_to_binary(planted))
+    |> Repo.update!()
+
+    :ok = Sync.flush(note.id)
+    assert Sync.live?(note.id)
+    assert read(saved).properties == %{"status" => "from the index"}
+  end
+
   test "files that are not notes have no properties, and rows go with their note", %{
     vault: vault,
     note: note
