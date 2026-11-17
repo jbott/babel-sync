@@ -387,8 +387,10 @@ defmodule BabelSyncWeb.VaultLive.Source do
                           navigate={
                             ~p"/v/#{@vault.id}/sources/#{@item.entry.id}/notes?#{[run: run.id]}"
                           }
-                          class="shrink-0 text-right tabular-nums text-muted underline decoration-line underline-offset-4 transition-colors duration-150 hover:text-ink hover:decoration-muted"
+                          title="See the notes this run made and edited"
+                          class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-0.5 font-medium tabular-nums text-accent shadow-raise transition-colors duration-150 hover:border-accent hover:bg-accent/8"
                         >
+                          <.icon name="hero-document-text-mini" class="size-4" />
                           {outcome(run)}
                         </.link>
                         <span
