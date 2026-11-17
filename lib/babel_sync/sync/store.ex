@@ -185,6 +185,23 @@ defmodule BabelSync.Sync.Store do
   end
 
   @doc """
+  Every note, in any vault, that holds an update its saved text does not
+  account for and has received none since `quiet_since`.
+  """
+  @spec left_unsettled(DateTime.t()) :: [Ecto.UUID.t()]
+  def left_unsettled(quiet_since) do
+    Repo.all(
+      from u in Update,
+        left_join: s in Settled,
+        on: s.entry_id == u.entry_id,
+        where: is_nil(s.update_id) or u.id > s.update_id,
+        group_by: u.entry_id,
+        having: max(u.inserted_at) < ^quiet_since,
+        select: u.entry_id
+    )
+  end
+
+  @doc """
   Records that a note's saved text accounts for every stored update up
   to `update_id`. The mark only ever moves forward, and a note that has
   been purged gets none.

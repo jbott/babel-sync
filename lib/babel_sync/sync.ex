@@ -61,6 +61,18 @@ defmodule BabelSync.Sync do
   @spec flush(Ecto.UUID.t()) :: :ok
   def flush(entry_id), do: call(entry_id, :flush)
 
+  @doc """
+  Settles the notes that hold edits their saved text lacks and have been
+  quiet since `quiet_since`, so that none waits to be read before its
+  text is saved. Returns how many there were.
+  """
+  @spec settle_left(DateTime.t()) :: non_neg_integer()
+  def settle_left(quiet_since) do
+    left = Store.left_unsettled(quiet_since)
+    Enum.each(left, &flush/1)
+    length(left)
+  end
+
   @spec live?(Ecto.UUID.t()) :: boolean()
   def live?(entry_id) do
     case Registry.lookup(BabelSync.Sync.Registry, entry_id) do

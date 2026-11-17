@@ -43,6 +43,25 @@ defmodule BabelSync.JanitorTest do
     Repo.update_all(from(r in schema, where: r.id == ^id), set: [{field, days_from_now(-3)}])
   end
 
+  describe "notes left with edits their saved text lacks" do
+    test "are settled without anyone reading them, once they have been quiet" do
+      note = entry(vault(), "left.md")
+      :ok = Sync.replace_text(note.id, "typed just before a crash")
+      [{pid, _}] = Registry.lookup(BabelSync.Sync.Registry, note.id)
+      ref = Process.monitor(pid)
+      Process.exit(pid, :kill)
+      assert_receive {:DOWN, ^ref, _, _, :killed}
+
+      :ok = Janitor.run()
+      assert Sync.Store.unsettled([note.id]) == [note.id]
+      refute Sync.live?(note.id)
+
+      :ok = Janitor.run(DateTime.add(DateTime.utc_now(), 3600, :second))
+      assert Sync.Store.unsettled([note.id]) == []
+      assert [%{content: "typed just before a crash"}] = Sync.list_versions(note.id)
+    end
+  end
+
   describe "attachments recognised as text" do
     test "become notes with the same identity, text and history" do
       vault = vault()

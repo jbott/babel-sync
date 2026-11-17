@@ -9,7 +9,9 @@ defmodule BabelSync.Janitor do
   `BABELSYNC_VERSIONS_PER_NOTE` versions however recent they are, so one
   that is written to all day cannot fill the database. Uploads that were never finished and expired
   sign-in artifacts go regardless of the retention setting. Attachments
-  that have since been recognised as text become notes.
+  that have since been recognised as text become notes. A note holding
+  edits that its saved text lacks, and quiet for ten minutes, is
+  settled, so one whose process died or that nobody reads does not wait.
 
   Servers in a cluster take turns: one that finds another in the middle
   of a cleanup skips its own and tries again at its next hour.
@@ -27,6 +29,7 @@ defmodule BabelSync.Janitor do
 
   @day 86_400
   @grace @day
+  @quiet 600
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -48,6 +51,7 @@ defmodule BabelSync.Janitor do
       expiry(now) ++
         crowding() ++
         [
+          unsettled_notes: fn -> Sync.settle_left(DateTime.add(now, -@quiet, :second)) end,
           text_files: &Vaults.TextFiles.promote/0,
           attachments: fn -> Blobs.collect_garbage(recent) end,
           uploads: fn -> Blobs.abandon_stale_uploads(recent) end,
