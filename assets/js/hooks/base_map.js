@@ -9,6 +9,9 @@ const PIN_RADIUS = 10;
 const LABEL_SIZE = 12;
 const LABEL_PADDING = 3;
 const LABEL_GAP = (PIN_RADIUS + LABEL_PADDING + 2) / LABEL_SIZE;
+const LEVEL = { bearing: 0, pitch: 0, roll: 0 };
+const REFRAME_MS = 800;
+const TURNS = ["rotate", "pitch", "roll"];
 
 const dark = () =>
   document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
@@ -21,6 +24,44 @@ async function load() {
     maplibre.setWorkerUrl(WORKER_URL);
   }
   return maplibre;
+}
+
+function button(className, label, onClick) {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = className;
+  element.title = label;
+  element.setAttribute("aria-label", label);
+  const icon = document.createElement("span");
+  icon.className = "maplibregl-ctrl-icon";
+  icon.setAttribute("aria-hidden", "true");
+  element.append(icon);
+  element.addEventListener("click", onClick);
+  return element;
+}
+
+function controls(library, reframe) {
+  const navigation = new library.NavigationControl({ showCompass: true, visualizePitch: true });
+  const add = navigation.onAdd.bind(navigation);
+  const remove = navigation.onRemove.bind(navigation);
+  let shown;
+  let showCompass;
+
+  navigation.onAdd = (map) => {
+    const group = add(map);
+    const compass = group.querySelector(".maplibregl-ctrl-compass");
+    shown = map;
+    showCompass = () => (compass.hidden = map.getBearing() === 0 && map.getPitch() === 0 && map.getRoll() === 0);
+    for (const turn of TURNS) map.on(turn, showCompass);
+    showCompass();
+    group.append(button("base-map-reframe", "Back to the starting view", reframe));
+    return group;
+  };
+  navigation.onRemove = () => {
+    for (const turn of TURNS) shown?.off(turn, showCompass);
+    remove();
+  };
+  return navigation;
 }
 
 function resolveColor(color, cache) {
@@ -119,7 +160,10 @@ export const BaseMap = {
       attributionControl: { compact: true },
       ...this.opening(),
     });
-    this.map.addControl(new library.NavigationControl({ showCompass: false }), "top-right");
+    this.map.addControl(
+      controls(library, () => this.frame({ animate: true })),
+      "top-right",
+    );
     this.popup = new library.Popup({ closeButton: true, closeOnClick: false, offset: 12, maxWidth: "300px" });
     this.popup.on("close", () => (this.pinned = false));
     this.bindPopupHover();
@@ -274,9 +318,10 @@ export const BaseMap = {
     return { center: middle ?? [0, 0], zoom: 4 };
   },
 
-  frame() {
-    const view = this.opening();
-    if (view.bounds) this.map.fitBounds(view.bounds, { ...view.fitBoundsOptions, animate: false });
-    else this.map.jumpTo(view);
+  frame({ animate } = { animate: false }) {
+    const { bounds, fitBoundsOptions, ...camera } = this.opening();
+    if (bounds) this.map.fitBounds(bounds, { ...fitBoundsOptions, ...LEVEL, animate, duration: REFRAME_MS });
+    else if (animate) this.map.flyTo({ ...camera, ...LEVEL, duration: REFRAME_MS });
+    else this.map.jumpTo({ ...camera, ...LEVEL });
   },
 };
