@@ -88,11 +88,12 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     run.()
     [idle, second, ^first] = Sources.runs(source)
 
-    assert has_element?(view, "a#outcome-#{second.id}", "0 new, 1 edited")
-    refute has_element?(view, "a#outcome-#{idle.id}")
+    assert has_element?(view, "#outcome-#{second.id}", "0 new, 1 edited")
+    assert has_element?(view, "#run-notes-#{second.id}")
+    refute has_element?(view, "#run-notes-#{idle.id}")
 
     {:ok, made, _html} =
-      view |> element("a#outcome-#{first.id}") |> render_click() |> follow_redirect(conn)
+      view |> element("#run-notes-#{first.id}") |> render_click() |> follow_redirect(conn)
 
     assert has_element?(made, "#run-notes-time")
     assert has_element?(made, "#count-created", "1")
@@ -109,6 +110,11 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     assert has_element?(edited, "#notes-empty")
     edited |> element("#tab-changed") |> render_click()
     assert has_element?(edited, "#notes [id^=note-]", "One")
+
+    {:ok, note, _html} =
+      edited |> element("#notes [id^=open-]") |> render_click() |> follow_redirect(conn)
+
+    assert has_element?(note, "#history [aria-current=true]")
   end
 
   test "a script with a secret, changed after approval, asks to be approved again", %{

@@ -80,8 +80,31 @@ defmodule BabelSyncWeb.VaultLive.Show do
         do: put_flash(socket, :error, "#{path} does not exist."),
         else: socket
 
-    {:noreply, socket |> close_finder() |> select(entry) |> reveal(params["folder"])}
+    {:noreply,
+     socket
+     |> close_finder()
+     |> select(entry)
+     |> reveal(params["folder"])
+     |> as_saved(params["at"])}
   end
+
+  defp as_saved(%{assigns: %{entry: %Entry{kind: :doc} = entry}} = socket, at)
+       when is_binary(at) do
+    with true <- connected?(socket),
+         {:ok, at, _offset} <- DateTime.from_iso8601(at) do
+      versions = History.versions(entry.id)
+      socket = socket |> assign(:versions, versions) |> assign(:against, :previous)
+
+      case Enum.find(versions, &(DateTime.compare(&1.saved_at, at) != :gt)) do
+        nil -> socket
+        version -> compare(socket, version.id)
+      end
+    else
+      _unasked -> socket
+    end
+  end
+
+  defp as_saved(socket, _at), do: socket
 
   defp reveal(socket, folder) when is_binary(folder) and folder != "" do
     above = folder |> String.split("/") |> Enum.scan(&(&2 <> "/" <> &1))

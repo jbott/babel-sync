@@ -113,6 +113,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
     socket
     |> assign(:source, source)
     |> assign(:run, run)
+    |> assign(:edited, Items.edited(run))
     |> assign(:tabs, tabs)
     |> assign(:shown, shown)
     |> assign(:counts, counts)
@@ -128,6 +129,16 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
 
     ~p"/v/#{vault.id}/sources/#{entry.id}/notes?#{query}"
   end
+
+  defp opening(vault, %Entry{} = entry, run, edited) do
+    note = Paths.vault(vault.id) <> "/f/" <> entry.path
+
+    if run && MapSet.member?(edited, entry.id),
+      do: note <> "?" <> URI.encode_query(at: DateTime.to_iso8601(ended(run))),
+      else: note
+  end
+
+  defp ended(%{} = run), do: run.finished_at || run.started_at || run.inserted_at
 
   defp title(%Entry{path: path}), do: path |> Path.basename() |> Path.rootname()
   defp folder(%Entry{path: path}), do: Path.dirname(path)
@@ -158,7 +169,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
             The notes made and edited by the run of
             <.local_time
               id="run-notes-time"
-              at={@run.finished_at || @run.started_at || @run.inserted_at}
+              at={ended(@run)}
             />.
           </:subtitle>
         </.header>
@@ -225,7 +236,8 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
                 <%= cond do %>
                   <% entry && is_nil(entry.deleted_at) -> %>
                     <.link
-                      navigate={Paths.vault(@vault.id) <> "/f/" <> entry.path}
+                      id={"open-#{item.id}"}
+                      navigate={opening(@vault, entry, @run, @edited)}
                       class="block truncate font-medium text-ink hover:underline"
                     >
                       {title(entry)}

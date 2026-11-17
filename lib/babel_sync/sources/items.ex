@@ -207,6 +207,22 @@ defmodule BabelSync.Sources.Items do
     end)
   end
 
+  @doc """
+  The entries of the notes a run edited, as apart from those it made.
+  """
+  @spec edited(Run.t() | nil) :: MapSet.t(Ecto.UUID.t())
+  def edited(nil), do: MapSet.new()
+
+  def edited(%Run{id: run_id}) do
+    MapSet.new(
+      Repo.all(
+        from n in RunNote,
+          where: n.run_id == ^run_id and n.outcome == :changed,
+          select: n.entry_id
+      )
+    )
+  end
+
   @spec shown(Run.t() | nil) :: [shown()]
   def shown(nil), do: [:all, :current, :deleted]
   def shown(%Run{}), do: [:all, :created, :changed]

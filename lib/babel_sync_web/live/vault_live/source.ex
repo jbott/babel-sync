@@ -368,7 +368,7 @@ defmodule BabelSyncWeb.VaultLive.Source do
                     >
                       <summary class={[
                         "flex list-none items-center gap-x-3 [&::-webkit-details-marker]:hidden",
-                        logged?(run) && "cursor-pointer"
+                        (logged?(run) or run.noted) && "cursor-pointer"
                       ]}>
                         <span class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
                           <span class={["size-2 shrink-0 rounded-full", run_dot(run.status)]}></span>
@@ -381,20 +381,8 @@ defmodule BabelSyncWeb.VaultLive.Source do
                             {first_line(run.error)}
                           </span>
                         </span>
-                        <.link
-                          :if={run.noted}
-                          id={"outcome-#{run.id}"}
-                          navigate={
-                            ~p"/v/#{@vault.id}/sources/#{@item.entry.id}/notes?#{[run: run.id]}"
-                          }
-                          title="See the notes this run made and edited"
-                          class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-0.5 font-medium tabular-nums text-accent shadow-raise transition-colors duration-150 hover:border-accent hover:bg-accent/8"
-                        >
-                          <.icon name="hero-document-text-mini" class="size-4" />
-                          {outcome(run)}
-                        </.link>
                         <span
-                          :if={run.status == :done and not run.noted}
+                          :if={run.status == :done}
                           id={"outcome-#{run.id}"}
                           class="shrink-0 text-right tabular-nums text-muted"
                         >
@@ -404,10 +392,21 @@ defmodule BabelSyncWeb.VaultLive.Source do
                           name="hero-chevron-right-mini"
                           class={[
                             "size-4 shrink-0 text-faint transition-transform duration-200 ease-out group-open:rotate-90 group-hover:text-ink",
-                            not logged?(run) && "invisible"
+                            not (logged?(run) or run.noted) && "invisible"
                           ]}
                         />
                       </summary>
+                      <.link
+                        :if={run.noted}
+                        id={"run-notes-#{run.id}"}
+                        navigate={
+                          ~p"/v/#{@vault.id}/sources/#{@item.entry.id}/notes?#{[run: run.id]}"
+                        }
+                        class="mt-2 inline-flex items-center gap-1 text-sm text-accent transition-colors duration-150 hover:underline"
+                      >
+                        Notes this run made and edited
+                        <.icon name="hero-arrow-right-mini" class="size-4" />
+                      </.link>
                       <pre
                         :if={logged?(run)}
                         class="mt-2 max-h-64 overflow-auto rounded-lg border border-line bg-sunken p-3 font-mono text-xs"
