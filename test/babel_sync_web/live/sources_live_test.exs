@@ -99,6 +99,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     assert has_element?(made, "#count-created", "1")
     assert has_element?(made, "#count-changed", "0")
     assert has_element?(made, "#notes [id^=note-]", "One")
+    assert has_element?(made, "#notes [id^=outcome-]", "New")
 
     {:ok, edited, _html} =
       live(
@@ -110,6 +111,7 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     assert has_element?(edited, "#notes-empty")
     edited |> element("#tab-changed") |> render_click()
     assert has_element?(edited, "#notes [id^=note-]", "One")
+    assert has_element?(edited, "#notes [id^=outcome-]", "Edited")
 
     {:ok, note, _html} =
       edited |> element("#notes [id^=open-]") |> render_click() |> follow_redirect(conn)

@@ -261,6 +261,19 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
                 <% end %>
                 <p :if={entry} class="truncate font-mono text-[0.7rem] text-faint">{item.key}</p>
               </div>
+              <span
+                :if={@run && entry}
+                id={"outcome-#{item.id}"}
+                class={[
+                  "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
+                  if(MapSet.member?(@edited, entry.id),
+                    do: "bg-ink/8 text-muted",
+                    else: "bg-accent/14 text-accent"
+                  )
+                ]}
+              >
+                {if MapSet.member?(@edited, entry.id), do: "Edited", else: "New"}
+              </span>
               <.button
                 :if={@may_change and not (entry && is_nil(entry.deleted_at))}
                 id={"reinstate-#{item.id}"}
