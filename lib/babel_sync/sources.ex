@@ -24,7 +24,7 @@ defmodule BabelSync.Sources do
 
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Blobs, Repo, Sync, Vaults}
-  alias BabelSync.Sources.{Items, Run, Script, Secrets, Source}
+  alias BabelSync.Sources.{Items, Run, RunNote, Script, Secrets, Source}
   alias BabelSync.Vaults.{Entry, Vault}
 
   @type draft :: %{
@@ -280,9 +280,32 @@ defmodule BabelSync.Sources do
 
   @spec runs(Source.t(), pos_integer()) :: [Run.t()]
   def runs(%Source{id: id}, limit \\ 10) do
-    Repo.all(
-      from r in Run, where: r.source_id == ^id, order_by: [desc: r.inserted_at], limit: ^limit
-    )
+    runs =
+      Repo.all(
+        from r in Run, where: r.source_id == ^id, order_by: [desc: r.inserted_at], limit: ^limit
+      )
+
+    noted =
+      MapSet.new(
+        Repo.all(
+          from n in RunNote,
+            where: n.run_id in ^Enum.map(runs, & &1.id),
+            distinct: true,
+            select: n.run_id
+        )
+      )
+
+    Enum.map(runs, &%{&1 | noted: MapSet.member?(noted, &1.id)})
+  end
+
+  @spec run(Source.t(), String.t() | nil) :: Run.t() | nil
+  def run(%Source{id: source_id}, id) do
+    with true <- is_binary(id),
+         {:ok, id} <- Ecto.UUID.cast(id) do
+      Repo.get_by(Run, id: id, source_id: source_id)
+    else
+      _none -> nil
+    end
   end
 
   @spec prune_runs(pos_integer()) :: non_neg_integer()

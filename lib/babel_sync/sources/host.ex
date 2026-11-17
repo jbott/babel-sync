@@ -147,10 +147,11 @@ defmodule BabelSync.Sources.Host do
            match: match,
            body: body(fields["body"])
          },
-         {:ok, outcome, path} <-
+         {:ok, outcome, entry} <-
            Items.put(run.source, run.scope, folders, wanted, finder(run, folders)) do
       count(run, outcome)
-      {:ok, %{outcome: outcome, path: path}}
+      note(run, outcome, entry)
+      {:ok, %{outcome: outcome, path: entry && entry.path}}
     end
   end
 
@@ -273,6 +274,11 @@ defmodule BabelSync.Sources.Host do
   end
 
   defp count(run, outcome), do: :ets.update_counter(run.kept, outcome, 1, {outcome, 0})
+
+  defp note(run, outcome, %{id: entry_id}) when outcome in [:created, :changed],
+    do: :ets.insert_new(run.kept, {{:note, entry_id}, outcome})
+
+  defp note(_run, _outcome, _entry), do: false
 
   defp kept(run, name, otherwise) do
     case :ets.lookup(run.kept, name) do

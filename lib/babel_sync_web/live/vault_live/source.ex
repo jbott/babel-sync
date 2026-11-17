@@ -381,8 +381,18 @@ defmodule BabelSyncWeb.VaultLive.Source do
                             {first_line(run.error)}
                           </span>
                         </span>
+                        <.link
+                          :if={run.noted}
+                          id={"outcome-#{run.id}"}
+                          navigate={
+                            ~p"/v/#{@vault.id}/sources/#{@item.entry.id}/notes?#{[run: run.id]}"
+                          }
+                          class="shrink-0 text-right tabular-nums text-muted underline decoration-line underline-offset-4 transition-colors duration-150 hover:text-ink hover:decoration-muted"
+                        >
+                          {outcome(run)}
+                        </.link>
                         <span
-                          :if={run.status == :done}
+                          :if={run.status == :done and not run.noted}
                           id={"outcome-#{run.id}"}
                           class="shrink-0 text-right tabular-nums text-muted"
                         >

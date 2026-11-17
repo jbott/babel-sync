@@ -10,7 +10,13 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
   alias BabelSyncWeb.Paths
 
   @page 100
-  @tabs [all: "All", current: "Current", deleted: "Deleted"]
+  @labels %{
+    all: "All",
+    current: "Current",
+    deleted: "Deleted",
+    created: "New",
+    changed: "Edited"
+  }
 
   @impl true
   def mount(%{"vault_id" => vault_id, "entry_id" => entry_id}, _session, socket) do
@@ -46,6 +52,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
     {:noreply,
      socket
      |> assign(:shown, shown(params["show"]))
+     |> assign(:run_id, params["run"])
      |> assign(:matching, params["q"] || "")
      |> assign(:limit, @page)
      |> load()}
@@ -53,6 +60,8 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
 
   defp shown("current"), do: :current
   defp shown("deleted"), do: :deleted
+  defp shown("created"), do: :created
+  defp shown("changed"), do: :changed
   defp shown(_all), do: :all
 
   @impl true
@@ -90,25 +99,31 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   defp load(socket) do
-    %{entry: entry, vault: vault, shown: shown, matching: matching, limit: limit} = socket.assigns
+    %{entry: entry, vault: vault, matching: matching, limit: limit} = socket.assigns
     source = Enum.find(Sources.list(vault.id), &(&1.entry_id == entry.id))
+    run = source && Sources.run(source, socket.assigns.run_id)
+    tabs = Items.shown(run)
+    shown = if socket.assigns.shown in tabs, do: socket.assigns.shown, else: :all
 
     counts =
-      if source, do: Items.counts(source, matching), else: %{all: 0, current: 0, deleted: 0}
+      if source, do: Items.counts(source, matching, run), else: Map.new(tabs, &{&1, 0})
 
-    notes = if source, do: Items.list(source, shown, matching, limit), else: []
+    notes = if source, do: Items.list(source, shown, matching, limit, run), else: []
 
     socket
     |> assign(:source, source)
+    |> assign(:run, run)
+    |> assign(:tabs, tabs)
+    |> assign(:shown, shown)
     |> assign(:counts, counts)
     |> assign(:more, counts[shown] > length(notes))
     |> assign(:form, to_form(%{"q" => matching}))
     |> stream(:notes, notes, reset: true)
   end
 
-  defp here(%{vault: vault, entry: entry}, shown, matching) do
+  defp here(%{vault: vault, entry: entry, run_id: run_id}, shown, matching) do
     query =
-      [show: shown != :all && shown, q: matching != "" && matching]
+      [run: run_id, show: shown != :all && shown, q: matching != "" && matching]
       |> Enum.filter(fn {_name, value} -> value end)
 
     ~p"/v/#{vault.id}/sources/#{entry.id}/notes?#{query}"
@@ -119,7 +134,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :tabs, @tabs)
+    assigns = assign(assigns, :labels, @labels)
 
     ~H"""
     <Layouts.app
@@ -129,12 +144,25 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
       trail={[
         {@vault.name, Paths.vault(@vault.id)},
         {"Settings", Paths.settings(@vault.id)},
-        {"Source: #{@name}", ~p"/v/#{@vault.id}/sources/#{@entry.id}"},
-        {"Notes", nil}
+        {"Source: #{@name}", ~p"/v/#{@vault.id}/sources/#{@entry.id}"}
+        | if(@run,
+            do: [{"Notes", ~p"/v/#{@vault.id}/sources/#{@entry.id}/notes"}, {"Run", nil}],
+            else: [{"Notes", nil}]
+          )
       ]}
     >
       <div class="mx-auto max-w-3xl space-y-6 pb-12 pt-7 md:pb-20 md:pt-10">
-        <.header>
+        <.header :if={@run}>
+          {@name} notes from one run
+          <:subtitle>
+            The notes made and edited by the run of
+            <.local_time
+              id="run-notes-time"
+              at={@run.finished_at || @run.started_at || @run.inserted_at}
+            />.
+          </:subtitle>
+        </.header>
+        <.header :if={!@run}>
           {@name} notes
           <:subtitle>
             Every note this source keeps up to date, and the ones deleted here that it will
@@ -145,7 +173,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
         <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
           <nav id="note-tabs" class="flex gap-1 rounded-lg border border-line bg-sunken p-1">
             <.link
-              :for={{shown, label} <- @tabs}
+              :for={shown <- @tabs}
               id={"tab-#{shown}"}
               patch={here(assigns, shown, @matching)}
               aria-current={@shown == shown && "page"}
@@ -157,7 +185,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
                 )
               ]}
             >
-              {label}
+              {@labels[shown]}
               <span id={"count-#{shown}"} class="tabular-nums text-xs text-faint">
                 {@counts[shown]}
               </span>
@@ -186,7 +214,7 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
               id="notes-empty"
               class="hidden px-4 py-10 text-center text-sm text-muted only:block"
             >
-              {empty(@source, @shown, @matching)}
+              {empty(@source, @run, @shown, @matching)}
             </li>
             <li
               :for={{id, {item, entry}} <- @streams.notes}
@@ -244,10 +272,13 @@ defmodule BabelSyncWeb.VaultLive.SourceNotes do
     """
   end
 
-  defp empty(nil, _shown, _matching),
+  defp empty(nil, _run, _shown, _matching),
     do: "This source has not been approved, so it keeps no notes yet."
 
-  defp empty(_source, _shown, matching) when matching != "", do: "No note matches that."
-  defp empty(_source, :deleted, _matching), do: "No note of this source's has been deleted."
-  defp empty(_source, _shown, _matching), do: "This source has not made a note yet."
+  defp empty(_source, _run, _shown, matching) when matching != "", do: "No note matches that."
+  defp empty(_source, nil, :deleted, _matching), do: "No note of this source's has been deleted."
+  defp empty(_source, nil, _shown, _matching), do: "This source has not made a note yet."
+  defp empty(_source, _run, :created, _matching), do: "This run made no note."
+  defp empty(_source, _run, :changed, _matching), do: "This run edited no note."
+  defp empty(_source, _run, _shown, _matching), do: "This run made and edited no note."
 end

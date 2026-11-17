@@ -2,7 +2,8 @@ defmodule BabelSync.Sources.Run do
   @moduledoc """
   One run of a source: what set it off, which server took it, how it
   ended, what it logged and how many notes it made, changed and found
-  already right.
+  already right. `noted` says whether the notes it made and changed are
+  on record, which they are not for a run from before they were kept.
   """
 
   use BabelSync.Schema
@@ -20,6 +21,7 @@ defmodule BabelSync.Sources.Run do
     field :created, :integer, default: 0
     field :changed, :integer, default: 0
     field :unchanged, :integer, default: 0
+    field :noted, :boolean, virtual: true, default: false
     belongs_to :source, BabelSync.Sources.Source
     timestamps(updated_at: false)
   end

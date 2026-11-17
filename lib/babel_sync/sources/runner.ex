@@ -16,7 +16,7 @@ defmodule BabelSync.Sources.Runner do
   alias BabelSync.Accounts
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Repo, Sandbox, Sources, Vaults}
-  alias BabelSync.Sources.{Host, Run, Script, Secrets, Source}
+  alias BabelSync.Sources.{Host, Run, RunNote, Script, Secrets, Source}
 
   @spec run(Run.t(), Source.t()) :: Run.t()
   def run(%Run{} = run, %Source{} = source) do
@@ -88,6 +88,7 @@ defmodule BabelSync.Sources.Runner do
         if(done?, do: [state: Jason.encode!(seen[:state] || %{})], else: [])
 
     Repo.update_all(from(s in Source, where: s.id == ^source.id), set: changes)
+    note(run, seen)
 
     run
     |> Ecto.Changeset.change(
@@ -100,6 +101,16 @@ defmodule BabelSync.Sources.Runner do
       unchanged: (seen[:unchanged] || 0) + (seen[:gone] || 0)
     )
     |> Repo.update!()
+  end
+
+  defp note(run, seen) do
+    notes =
+      for {{:note, entry_id}, outcome} <- seen,
+          do: %{id: Ecto.UUID.generate(), run_id: run.id, entry_id: entry_id, outcome: outcome}
+
+    notes
+    |> Enum.chunk_every(500)
+    |> Enum.each(&Repo.insert_all(RunNote, &1, on_conflict: :nothing))
   end
 
   defp problem({:ok, _result}), do: nil

@@ -22,7 +22,7 @@ defmodule BabelSync.Sources.Items do
   alias BabelSync.Accounts.Scope
   alias BabelSync.{Agent, Bases, Repo, Sync, Vaults}
   alias BabelSync.Markdown.FrontMatter
-  alias BabelSync.Sources.{Item, Source}
+  alias BabelSync.Sources.{Item, Run, RunNote, Source}
   alias BabelSync.Vaults.Entry
 
   @type wanted :: %{
@@ -33,11 +33,11 @@ defmodule BabelSync.Sources.Items do
           match: {String.t(), String.t()} | nil
         }
   @type outcome :: :created | :changed | :unchanged | :gone
-  @type shown :: :all | :current | :deleted
+  @type shown :: :all | :current | :deleted | :created | :changed
   @type found :: (String.t(), String.t() -> Entry.t() | nil)
 
   @spec put(Source.t(), Scope.t(), [String.t()], wanted(), found()) ::
-          {:ok, outcome(), String.t() | nil} | {:error, String.t()}
+          {:ok, outcome(), Entry.t() | nil} | {:error, String.t()}
   def put(%Source{} = source, %Scope{} = scope, folders, wanted, found) do
     case Repo.one(from i in Item, where: i.source_id == ^source.id and i.key == ^wanted.key) do
       %Item{} = item ->
@@ -94,9 +94,9 @@ defmodule BabelSync.Sources.Items do
          {:ok, text} <- FrontMatter.merge(wanted.body, wanted.properties, %{}),
          {:ok, %{path: path}} <-
            written(Agent.write_file(scope, source.vault_id, wanted.path, text)) do
-      %Entry{id: entry_id} = Vaults.get_entry_by_path(source.vault_id, path)
-      remember(%Item{source_id: source.id, key: wanted.key}, entry_id, wanted.properties)
-      {:ok, :created, path}
+      %Entry{} = entry = Vaults.get_entry_by_path(source.vault_id, path)
+      remember(%Item{source_id: source.id, key: wanted.key}, entry.id, wanted.properties)
+      {:ok, :created, entry}
     else
       {:error, :invalid_front_matter} ->
         {:error, "the body given for #{wanted.path} has properties that cannot be read"}
@@ -124,7 +124,7 @@ defmodule BabelSync.Sources.Items do
         end
 
       remember(item, entry.id, wanted.properties)
-      {:ok, outcome, entry.path}
+      {:ok, outcome, entry}
     else
       {:error, :invalid_front_matter} ->
         {:error, "#{entry.path} has properties that cannot be read"}
@@ -185,32 +185,50 @@ defmodule BabelSync.Sources.Items do
   deleted (`:deleted`). `matching` narrows them to keys and paths that
   hold that text. A deleted note's entry is there while the note is still
   in the trash.
+
+  Given a run, they are the notes that run made or edited: all of them,
+  only those it made (`:created`), or only those it edited (`:changed`).
   """
-  @spec list(Source.t(), shown(), String.t(), pos_integer()) :: [{Item.t(), Entry.t() | nil}]
-  def list(%Source{} = source, shown, matching, limit) do
+  @spec list(Source.t(), shown(), String.t(), pos_integer(), Run.t() | nil) ::
+          [{Item.t(), Entry.t() | nil}]
+  def list(%Source{} = source, shown, matching, limit, run \\ nil) do
     Repo.all(
-      from [i, e] in listed(source, shown, matching),
+      from [i, e] in listed(source, shown, matching, run),
         order_by: [asc: e.folded, asc: i.key],
         limit: ^limit,
         select: {i, e}
     )
   end
 
-  @spec counts(Source.t(), String.t()) :: %{shown() => non_neg_integer()}
-  def counts(%Source{} = source, matching) do
-    Map.new([:all, :current, :deleted], fn shown ->
-      {shown, Repo.aggregate(listed(source, shown, matching), :count)}
+  @spec counts(Source.t(), String.t(), Run.t() | nil) :: %{shown() => non_neg_integer()}
+  def counts(%Source{} = source, matching, run \\ nil) do
+    Map.new(shown(run), fn shown ->
+      {shown, Repo.aggregate(listed(source, shown, matching, run), :count)}
     end)
   end
 
-  defp listed(source, shown, matching) do
+  @spec shown(Run.t() | nil) :: [shown()]
+  def shown(nil), do: [:all, :current, :deleted]
+  def shown(%Run{}), do: [:all, :created, :changed]
+
+  defp listed(source, shown, matching, run) do
     from(i in Item,
       left_join: e in Entry,
       on: e.id == i.entry_id,
       where: i.source_id == ^source.id
     )
+    |> touched(run)
     |> shown(shown)
     |> matching(String.trim(matching))
+  end
+
+  defp touched(query, nil), do: query
+
+  defp touched(query, %Run{id: run_id}) do
+    from [i, e] in query,
+      join: n in RunNote,
+      as: :note,
+      on: n.entry_id == i.entry_id and n.run_id == ^run_id
   end
 
   defp shown(query, :all), do: query
@@ -220,6 +238,9 @@ defmodule BabelSync.Sources.Items do
 
   defp shown(query, :deleted),
     do: from([i, e] in query, where: not is_nil(e.deleted_at) or is_nil(e.id))
+
+  defp shown(query, outcome) when outcome in [:created, :changed],
+    do: from([note: n] in query, where: n.outcome == ^outcome)
 
   defp matching(query, ""), do: query
 

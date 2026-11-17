@@ -60,6 +60,57 @@ defmodule BabelSyncWeb.SourcesLiveTest do
     assert Vaults.get_entry_by_path(vault.id, "Data/Things/One.md")
   end
 
+  test "a run leads to the notes it made and edited", %{
+    conn: conn,
+    vault: vault,
+    entry: entry,
+    owner: owner
+  } do
+    {:ok, view, _html} = live(conn, ~p"/v/#{vault.id}/sources/#{entry.id}")
+    view |> element("#approve-#{entry.id}") |> render_click()
+    [source] = Sources.list(vault.id)
+
+    run = fn ->
+      Sources.enqueue(source, "manual")
+      [{run, claimed}] = Sources.Scheduler.claim(DateTime.utc_now())
+      Sources.Scheduler.carry_out(run, claimed)
+    end
+
+    run.()
+    [first] = Sources.runs(source)
+
+    {:ok, _} =
+      Agent.edit_file(Scope.for_user(owner), vault.id, "Data/Things/One.md", [
+        %{old_text: "seen: true", new_text: "seen: false"}
+      ])
+
+    run.()
+    run.()
+    [idle, second, ^first] = Sources.runs(source)
+
+    assert has_element?(view, "a#outcome-#{second.id}", "0 new, 1 edited")
+    refute has_element?(view, "a#outcome-#{idle.id}")
+
+    {:ok, made, _html} =
+      view |> element("a#outcome-#{first.id}") |> render_click() |> follow_redirect(conn)
+
+    assert has_element?(made, "#run-notes-time")
+    assert has_element?(made, "#count-created", "1")
+    assert has_element?(made, "#count-changed", "0")
+    assert has_element?(made, "#notes [id^=note-]", "One")
+
+    {:ok, edited, _html} =
+      live(
+        conn,
+        ~p"/v/#{vault.id}/sources/#{entry.id}/notes?#{[run: second.id, show: "created"]}"
+      )
+
+    assert has_element?(edited, "#count-changed", "1")
+    assert has_element?(edited, "#notes-empty")
+    edited |> element("#tab-changed") |> render_click()
+    assert has_element?(edited, "#notes [id^=note-]", "One")
+  end
+
   test "a script with a secret, changed after approval, asks to be approved again", %{
     conn: conn,
     vault: vault,
