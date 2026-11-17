@@ -84,10 +84,10 @@ export class ObsidianFs implements VaultFs {
 
   async remove(path: string): Promise<void> {
     const file = this.file(path);
-    if (file) await this.app.fileManager.trashFile(file);
-    else if (await this.app.vault.adapter.exists(this.toLocal(path))) {
-      await this.app.vault.adapter.remove(this.toLocal(path));
-    }
+    if (file) return this.app.fileManager.trashFile(file);
+
+    const stat = await this.app.vault.adapter.stat(this.toLocal(path));
+    if (stat?.type === "file") await this.app.vault.adapter.remove(this.toLocal(path));
   }
 
   async rename(from: string, to: string): Promise<void> {
