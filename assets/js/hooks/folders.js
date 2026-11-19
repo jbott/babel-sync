@@ -90,10 +90,13 @@ export const Folders = {
 
   apply() {
     const current = this.el.querySelector("[aria-current=page]");
+    const href = current?.getAttribute("href");
+    const selectionChanged = href !== this.selectedHref;
+    this.selectedHref = href;
     let found = false;
     for (const folder of this.folders()) {
       const path = folder.dataset.path;
-      const holdsCurrent = current !== null && folder.contains(current);
+      const holdsCurrent = selectionChanged && current !== null && folder.contains(current);
       if (holdsCurrent && !this.open.has(path)) {
         this.open.add(path);
         found = true;
