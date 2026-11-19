@@ -21,7 +21,7 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-        beam = pkgs.beam28Packages;
+        beam = pkgs.beamMinimal29Packages;
 
         sandboxGuest = pkgs.callPackage ./nix/sandbox-guest.nix { };
 
@@ -39,12 +39,12 @@
       in
       {
         packages = {
-          default = release pkgs pkgs.beam28Packages;
+          default = release pkgs beam;
           sandbox-guest = sandboxGuest;
 
           container = pkgs.callPackage ./nix/container.nix {
             inherit (nix2container.packages.${system}) nix2container;
-            babelsync = release linux linux.beamMinimal28Packages;
+            babelsync = release linux linux.beamMinimal29Packages;
             architecture = linux.go.GOARCH;
             inherit (linux) cacert coreutils;
             inherit (linux) runCommand writeShellApplication;

@@ -25,7 +25,7 @@ Servers that share a database run as a cluster, and during an upgrade the old ve
 
 ### Tools
 
-- Elixir 1.20 on Erlang/OTP 28, Phoenix 1.8, LiveView 1.2
+- Elixir 1.20 on Erlang/OTP 29, Phoenix 1.8, LiveView 1.2
 - Node.js 24 for `assets/` and the Obsidian plugin
 - `oxfmt` and `oxlint` for JavaScript and TypeScript
 - Rust (`rustc`, `cargo`) to build the `y_ex` Yjs NIF from source
