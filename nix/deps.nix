@@ -978,7 +978,7 @@ let
 
       plug =
         let
-          version = "1.20.3";
+          version = "1.20.4";
           drv = buildMix {
             inherit version;
             name = "plug";
@@ -987,7 +987,7 @@ let
             src = fetchHex {
               inherit version;
               pkg = "plug";
-              sha256 = "be266aee1b8536ef6409d58cf39a3121319f0ec47cfa1b24024485aa0e76ad76";
+              sha256 = "96ee42c0b8b35bcb14e3e65afb85abe9bb7745a8576e8c602802bbb01e5acf72";
             };
 
             beamDeps = [
@@ -1169,7 +1169,7 @@ let
 
       telemetry =
         let
-          version = "1.4.2";
+          version = "1.4.3";
           drv = buildRebar3 {
             inherit version;
             name = "telemetry";
@@ -1177,7 +1177,7 @@ let
             src = fetchHex {
               inherit version;
               pkg = "telemetry";
-              sha256 = "928f6495066506077862c0d1646609eed891a4326bee3126ba54b60af61febb1";
+              sha256 = "17a63581cf2e832a238287f5fe6811e8ca1f333249f1376ad653164a3c4770d4";
             };
           };
         in
