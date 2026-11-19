@@ -9,6 +9,7 @@ DOS.StringToAtom: Unsafe `String.to_atom`,lib/babel_sync/cluster.ex:77,15668C2
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/auth/passkeys.ex:91,E3BA49
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/bases/index.ex:76,66AB627
 Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/bases/index.ex:78,7000D
+Misc.BinToTerm: Unsafe `binary_to_term`,lib/babel_sync/bases/index.ex:79,50870D8
 Traversal.FileModule: Directory Traversal in `File.cp!`,lib/babel_sync/backup.ex:57,61E583B
 Traversal.FileModule: Directory Traversal in `File.cp!`,lib/babel_sync/backup.ex:60,4165A38
 Traversal.FileModule: Directory Traversal in `File.cp!`,lib/babel_sync/backup.ex:117,56D6BD0
