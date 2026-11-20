@@ -82,6 +82,10 @@ defmodule BabelSyncWeb.Router do
   scope "/api/vaults/:vault_id", BabelSyncWeb do
     pipe_through :api
 
+    get "/connections/:id", ConnectorController, :show
+    post "/connections/:id", ConnectorController, :create
+    delete "/connections/:id", ConnectorController, :delete
+
     post "/uploads", BlobController, :begin
     put "/uploads/:id/parts/:number", BlobController, :part
     post "/uploads/:id/complete", BlobController, :complete

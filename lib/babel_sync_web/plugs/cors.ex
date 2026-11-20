@@ -25,7 +25,10 @@ defmodule BabelSyncWeb.Plugs.CORS do
 
   @impl true
   def call(%Plug.Conn{request_path: path} = conn, _opts) do
-    if String.starts_with?(path, @prefixes), do: open(conn), else: conn
+    if String.starts_with?(path, @prefixes) or
+         Regex.match?(~r|\A/api/vaults/[0-9a-f-]{36}/connections/[0-9a-f-]{36}\z|, path),
+       do: open(conn),
+       else: conn
   end
 
   defp open(%Plug.Conn{method: "OPTIONS"} = conn) do

@@ -511,6 +511,23 @@ let
         in
         drv;
 
+      fine =
+        let
+          version = "0.2.0";
+          drv = buildMix {
+            inherit version;
+            name = "fine";
+            appConfigPath = ../config;
+
+            src = fetchHex {
+              inherit version;
+              pkg = "fine";
+              sha256 = "6f69a9e8dadbfd017b27f611b000362870683ae65f28aec904f36ec4c5058db5";
+            };
+          };
+        in
+        drv;
+
       gen_smtp =
         let
           version = "1.3.0";
@@ -636,6 +653,33 @@ let
           };
         in
         drv;
+
+      lazy_html =
+        let
+          version = "0.1.14";
+          drv = buildMix {
+            inherit version;
+            name = "lazy_html";
+            appConfigPath = ../config;
+
+            buildInputs = [
+              lexbor
+            ];
+
+            src = fetchHex {
+              inherit version;
+              pkg = "lazy_html";
+              sha256 = "99210889b0cc591398d006def761f2faef438d1ac77d045a527791733571dc0c";
+            };
+
+            beamDeps = [
+              cc_precompiler
+              elixir_make
+              fine
+            ];
+          };
+        in
+        drv.override (workarounds.lazyHtml { } drv);
 
       mdex =
         let
@@ -928,6 +972,7 @@ let
 
             beamDeps = [
               jason
+              lazy_html
               phoenix
               phoenix_html
               phoenix_template
