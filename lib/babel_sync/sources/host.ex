@@ -17,8 +17,8 @@ defmodule BabelSync.Sources.Host do
   """
 
   alias BabelSync.Accounts.Scope
-  alias BabelSync.Sources.{Fetch, Items, Script, Source}
-  alias BabelSync.{Sources, Sync, Vaults}
+  alias BabelSync.Sources.{Fetch, HTML, Items, Script, Source}
+  alias BabelSync.{Connectors, Sources, Sync, Vaults}
   alias BabelSync.Vaults.Entry
 
   @type run :: %{
@@ -40,6 +40,8 @@ defmodule BabelSync.Sources.Host do
            const __answer = (got) => ({ status: got.status, ok: got.status >= 200 && got.status < 300, url: got.url, headers: got.headers, next: __next(got.headers.link), text: () => got.body, json: () => JSON.parse(got.body) });\
            const __ask = (method) => (url, options = {}) => __answer(__call("http", { method, url, headers: options.headers || {}, body: options.body === undefined || options.body === null ? null : typeof options.body === "string" ? options.body : JSON.stringify(options.body) }));\
            const http = { get: __ask("GET"), post: __ask("POST"), put: __ask("PUT"), patch: __ask("PATCH"), delete: __ask("DELETE"), head: __ask("HEAD") };\
+           const connections = { get: (id, url, options = {}) => __answer(__call("connection", { id, url, headers: options.headers || {} })) };\
+           const html = { select: (markup, selector) => __call("html", [markup, selector]) };\
            const vault = { folder: __FOLDER__, item: (key, item) => __call("item", { key, ...item }), read: (path) => __call("read", path), list: (folder) => __call("list", folder), name: (text) => String(text).replace(/[\\\\/:*?"<>|#^\\[\\]]+/g, " ").replace(/\\s+/g, " ").trim().slice(0, 120) };\
            const attention = (message, options = {}) => { __call("attention", { message, url: options.url || null }); };\
            """
@@ -129,6 +131,48 @@ defmodule BabelSync.Sources.Host do
         else: {:error, "#{url} did not answer with text"}
     end
   end
+
+  defp handle("connection", %Jason.OrderedObject{} = asked, run) do
+    asked = plain(asked)
+    id = asked["id"]
+
+    with true <-
+           id in Map.get(run.script, :connections, []) ||
+             {:error, "this source was not approved to use that connection"},
+         :ok <- spend(run, :requests, "this run has made all the requests it may"),
+         {:ok, url} <- text(asked["url"], "a connection needs a web address"),
+         {:ok, response} <-
+           Connectors.request(
+             run.scope,
+             run.source.vault_id,
+             id,
+             %{
+               url: url,
+               method: "GET",
+               headers: if(is_map(asked["headers"]), do: asked["headers"], else: %{})
+             },
+             hosts: run.script.hosts,
+             most: run.limits[:response_bytes]
+           ) do
+      if String.valid?(response.body),
+        do: {:ok, response},
+        else: {:error, "the connection did not answer with text"}
+    else
+      {:error, reason} when reason in [:reauthorize, :not_found, :disconnected] ->
+        message = "Open this connection in Obsidian and reconnect server sync."
+        keep(run, :attention, %{message: message, url: nil})
+        {:error, message}
+
+      {:error, message} when is_binary(message) ->
+        {:error, message}
+
+      {:error, _reason} ->
+        {:error, "Could not read from the connection."}
+    end
+  end
+
+  defp handle("html", [markup, selector], run) when is_binary(markup) and is_binary(selector),
+    do: HTML.select(markup, selector, run.limits[:response_bytes])
 
   defp handle("item", %Jason.OrderedObject{} = asked, run) do
     fields = Map.new(asked.values)

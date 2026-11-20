@@ -441,6 +441,10 @@ defmodule BabelSyncWeb.VaultLive.Source do
       <dd :if={@script.secrets != %{}} class="text-ink">
         {Enum.map_join(@script.secrets, ", ", fn {name, secret} -> "#{name} to #{secret.host}" end)}
       </dd>
+      <dt :if={Map.get(@script, :connections, []) != []} class="text-muted">Connections</dt>
+      <dd :if={Map.get(@script, :connections, []) != []} class="text-ink break-all">
+        {listed(Map.get(@script, :connections, []), "")}
+      </dd>
     </dl>
     """
   end

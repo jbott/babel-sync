@@ -79,6 +79,42 @@ defmodule BabelSync.Sources.ScriptTest do
     refute Script.gated?(open)
   end
 
+  test "connection grants require code approval and preserve existing manifests" do
+    legacy =
+      """
+      {
+        "schedule": null,
+        "hosts": [],
+        "secrets": {},
+        "writes": [
+          "Data/Account"
+        ],
+        "reads": [],
+        "params": {}
+      }
+      """
+      |> String.trim_trailing()
+
+    old = Script.from_manifest(legacy, "log(1)")
+    assert old.connections == []
+    assert Script.manifest(old) == legacy
+    refute Script.gated?(old)
+
+    id = Ecto.UUID.generate()
+
+    code =
+      ~s|/* source\nconnections: [#{id}]\n*/\nconnections.get(#{Jason.encode!(id)}, "https://fixture.example/account")|
+
+    assert {:ok, script} = Script.parse(code, "Data/Account.js")
+    assert script.connections == [id]
+    assert Script.gated?(script)
+    assert Script.from_manifest(Script.manifest(script), code) == script
+    refute Script.hash(script) == Script.hash(%{script | connections: []})
+
+    assert {:error, ["connections is a list of connection UUIDs"]} =
+             Script.parse("/* source\nconnections: [invalid]\n*/\n", @path)
+  end
+
   test "without the comment is a problem" do
     assert {:error, [problem]} = Script.parse("log(1)\n", @path)
     assert problem =~ "/* source"

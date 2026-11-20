@@ -21,7 +21,16 @@ defmodule BabelSync.Sources.Script do
   alias BabelSync.Vaults
 
   @enforce_keys [:code]
-  defstruct [:code, :schedule, hosts: [], secrets: %{}, writes: [], reads: [], params: %{}]
+  defstruct [
+    :code,
+    :schedule,
+    hosts: [],
+    secrets: %{},
+    connections: [],
+    writes: [],
+    reads: [],
+    params: %{}
+  ]
 
   @type secret :: %{host: String.t(), header: String.t(), template: String.t()}
   @type t :: %__MODULE__{
@@ -29,6 +38,7 @@ defmodule BabelSync.Sources.Script do
           schedule: pos_integer() | nil,
           hosts: [String.t()],
           secrets: %{String.t() => secret()},
+          connections: [Ecto.UUID.t()],
           writes: [String.t()],
           reads: [String.t()],
           params: map()
@@ -39,7 +49,7 @@ defmodule BabelSync.Sources.Script do
   @shortest 300
   @host ~r/^(\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
   @header ~r/^([A-Za-z0-9-]+):\s*(.*\{\}.*)$/
-  @known ~w(schedule hosts secrets reads params)
+  @known ~w(schedule hosts secrets connections reads params)
   @suffix ".js"
   @opening ~r/\A\s*\/\*\s*source[ \t]*\n(.*?)\n[ \t]*\*\//s
   @opens ~r/\A\s*\/\*\s*source\b/
@@ -71,6 +81,7 @@ defmodule BabelSync.Sources.Script do
         schedule: schedule(properties["schedule"]),
         hosts: hosts(properties["hosts"]),
         secrets: secrets(properties["secrets"]),
+        connections: connections(properties["connections"]),
         reads: folders("reads", properties["reads"]),
         params: params(properties["params"])
       ]
@@ -83,19 +94,28 @@ defmodule BabelSync.Sources.Script do
   end
 
   @spec gated?(t()) :: boolean()
-  def gated?(%__MODULE__{secrets: secrets}), do: map_size(secrets) > 0
+  def gated?(%__MODULE__{} = script),
+    do: map_size(script.secrets) > 0 or Map.get(script, :connections, []) != []
 
   @spec manifest(t()) :: String.t()
   def manifest(%__MODULE__{} = script) do
+    fields = [
+      schedule: script.schedule,
+      hosts: script.hosts,
+      secrets: ordered(script.secrets),
+      writes: script.writes,
+      reads: script.reads,
+      params: ordered(script.params)
+    ]
+
+    fields =
+      case Map.get(script, :connections, []) do
+        [] -> fields
+        ids -> fields ++ [connections: ids]
+      end
+
     Jason.encode!(
-      Jason.OrderedObject.new(
-        schedule: script.schedule,
-        hosts: script.hosts,
-        secrets: ordered(script.secrets),
-        writes: script.writes,
-        reads: script.reads,
-        params: ordered(script.params)
-      ),
+      Jason.OrderedObject.new(fields),
       pretty: true
     )
   end
@@ -111,6 +131,7 @@ defmodule BabelSync.Sources.Script do
       writes: held["writes"],
       reads: held["reads"],
       params: held["params"],
+      connections: Map.get(held, "connections", []),
       secrets:
         Map.new(held["secrets"], fn {name, secret} ->
           {name, %{host: secret["host"], header: secret["header"], template: secret["template"]}}
@@ -185,6 +206,16 @@ defmodule BabelSync.Sources.Script do
   end
 
   defp hosts(_other), do: {:error, "hosts is a list of host names"}
+
+  defp connections(nil), do: {:ok, []}
+
+  defp connections(ids) when is_list(ids) do
+    if Enum.all?(ids, &(is_binary(&1) and Ecto.UUID.cast(&1) == {:ok, &1})),
+      do: {:ok, Enum.uniq(ids)},
+      else: {:error, "connections is a list of connection UUIDs"}
+  end
+
+  defp connections(_other), do: {:error, "connections is a list of connection UUIDs"}
 
   defp secrets(nil), do: {:ok, %{}}
 
