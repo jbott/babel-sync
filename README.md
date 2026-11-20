@@ -111,6 +111,18 @@ A release built with Nix or `mix assets.deploy` includes the plugin. In developm
 
 Notes sync as you type. Themes, snippets, hotkeys and plugins under `.obsidian` sync too (this can be turned off); window layout stays per device. In a shared vault only an owner can change `.obsidian/plugins`, since a plugin is code that would run on every member's devices: an owner's plugins sync between the owner's own devices, and other members install their own. On mobile, attachments over 50 MiB are left on the server by default.
 
+### Desktop connections
+
+In Obsidian desktop, open **Settings → Babel Sync → Manage connections**. Choose **Add connection**, enter a name and an HTTPS start URL, and save. If sign-in redirects to another host, add its exact name under **Additional sign-in hosts**. Each connection keeps an isolated browser session for that vault.
+
+Use **Babel Sync: Open connection** to sign in or reopen the site. Set **Signed-in CSS selector** to an element on the start page that appears only after sign-in. Choose **Connect server sync** and confirm the Babel server and vault. The server checks that selector before replacing its saved session. The encrypted cookie jar is bound to that vault and connection, and approved sources can use it while Obsidian is closed.
+
+Source code lives in the vault's configured Sources folder. Use **Copy ID** in the connection manager to bind a source to its session. The source declares the connection ID in `connections` and the request hosts in `hosts`, then uses `connections.get(id, url)` for authenticated GET requests. Its response has the same `status`, `headers`, `text()` and `json()` interface as `http.get`. `html.select(markup, selector)` returns matching elements with `text`, `html` and `attributes` for site-specific parsing in the vault script. Approve the script through the vault's Sources page to enable its schedule.
+
+**Disconnect server sync** revokes the saved server session. **Disconnect connection** also clears the local session. If a site expires its session, reopen the connection, sign in, and connect server sync again. **Copy link** makes an Obsidian link to the saved connection, which asks for confirmation before opening. Changing the start URL or sign-in hosts clears the previous session.
+
+Desktop connections default to a Chrome user agent for your operating system. Set **User agent** in the connection editor to override it. Clear the field to restore the default. Changes apply when you reopen the connection.
+
 ## Agents (MCP)
 
 Add `$BABELSYNC_URL/mcp` to an MCP client as a Streamable HTTP server. The client registers itself and sends you to the consent page; approved agents are listed on the account page, where each can be disconnected. An agent that asks for the `vault:read` scope cannot change anything.

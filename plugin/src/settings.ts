@@ -1,6 +1,7 @@
 import { type App, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
 import { DisconnectModal } from "./connect.ts";
 import { hostOf, normalizeServer } from "./invitation.ts";
+import type { Connection } from "./connection.ts";
 import type BabelSyncPlugin from "./main.ts";
 import type { Pending, Tokens } from "./oauth.ts";
 
@@ -14,6 +15,7 @@ export type Settings = {
   pendingSignIn: Pending | null;
   vaultId: string;
   vaultName: string;
+  connections: Record<string, Connection>;
   deviceName: string;
   syncConfig: boolean;
   maxFileMebibytes: number;
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pendingSignIn: null,
   vaultId: "",
   vaultName: "",
+  connections: {},
   deviceName: Platform.isMobile ? "Phone" : "Desktop",
   syncConfig: true,
   maxFileMebibytes: Platform.isMobile ? 50 : 0,
@@ -113,6 +116,13 @@ export class SettingsTab extends PluginSettingTab {
           void this.save({ maxFileMebibytes: Number.isFinite(parsed) && parsed > 0 ? parsed : 0 });
         });
       });
+
+    if (this.plugin.connections) {
+      new Setting(containerEl)
+        .setName("Desktop connections")
+        .setDesc("Open a website in a sign-in session dedicated to this vault.")
+        .addButton((button) => button.setButtonText("Manage connections").onClick(() => this.plugin.connections?.manage()));
+    }
 
     new Setting(containerEl).setName("Troubleshooting").setHeading();
 

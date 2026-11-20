@@ -11,6 +11,8 @@ import { type Callback, beginAuthorization, finishAuthorization, needsRefresh, r
 import { ObsidianFs } from "./obsidian-fs.ts";
 import { DEFAULT_SETTINGS, type RemoteVault, type Settings, SettingsTab, maxBlobBytes } from "./settings.ts";
 
+import { DesktopConnections } from "./desktop-connections.ts";
+
 const CONFIG_SCAN_MS = Platform.isMobile ? 300_000 : 60_000;
 const TOKEN_CHECK_MS = 60_000;
 const UPDATE_FETCH_MS = 3_600_000;
@@ -62,6 +64,7 @@ export default class BabelSyncPlugin extends Plugin {
   private journal: string[] = [];
   private journalSave: number | null = null;
   private instance = Math.random().toString(16).slice(2, 6);
+  connections?: DesktopConnections;
   private retired = false;
   private release: (() => void) | null = null;
 
@@ -79,6 +82,10 @@ export default class BabelSyncPlugin extends Plugin {
 
     this.statusBar = this.addStatusBarItem();
     this.show("offline");
+    if (Platform.isDesktopApp) {
+      this.connections = new DesktopConnections(this);
+      this.connections.register();
+    }
     this.addSettingTab(new SettingsTab(this.app, this));
     this.registerEditorExtension(this.collab.extension);
 
@@ -470,6 +477,7 @@ export default class BabelSyncPlugin extends Plugin {
 
   private retire(): void {
     this.retired = true;
+    this.connections?.dispose();
     this.saveJournal();
     void this.engine?.stop().catch(() => {});
     void this.client?.disconnect();

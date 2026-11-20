@@ -50,6 +50,22 @@ defmodule BabelSync.E2E.JsClientTest do
     assert Sync.text(live.id) == "a😀😃b 日本の語\nbob was here\nand the server too ✅🎉\n"
   end
 
+  test "desktop connections validate sites and isolate sessions" do
+    {output, status} =
+      System.cmd(
+        "node",
+        [
+          "--test",
+          "plugin/test/connection.test.ts",
+          "plugin/test/connection-handoff.test.ts",
+          "plugin/test/connector-session.test.cjs"
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert status == 0, output
+  end
+
   test "the plugin reads connect links and refuses malformed ones" do
     {output, status} =
       System.cmd("node", ["--test", "plugin/test/invitation.test.ts"], stderr_to_stdout: true)
