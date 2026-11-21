@@ -958,7 +958,7 @@ let
 
       phoenix_live_view =
         let
-          version = "1.2.13";
+          version = "1.2.14";
           drv = buildMix {
             inherit version;
             name = "phoenix_live_view";
@@ -967,7 +967,7 @@ let
             src = fetchHex {
               inherit version;
               pkg = "phoenix_live_view";
-              sha256 = "a5cd2a3df10552bce6b7e68e5d376ff3b46cca3ca62d6c43bd4398d80c197fbe";
+              sha256 = "1ca75ed52d3916f93299de990f152f3f49202d12849e526bf5f9b89b4ccf25f2";
             };
 
             beamDeps = [
