@@ -57,8 +57,10 @@ defmodule BabelSync.E2E.JsClientTest do
         [
           "--test",
           "plugin/test/connection.test.ts",
+          "plugin/test/connection-check.test.ts",
           "plugin/test/connection-handoff.test.ts",
-          "plugin/test/connector-session.test.cjs"
+          "plugin/test/connector-session.test.cjs",
+          "plugin/test/connector-window-loader.test.ts"
         ],
         stderr_to_stdout: true
       )
