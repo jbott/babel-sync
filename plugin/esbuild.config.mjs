@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import esbuild from "esbuild";
 
 const production = process.argv[2] === "production";
@@ -26,12 +28,44 @@ const context = await esbuild.context({
   minify: production,
   logLevel: "info",
   define: { BABELSYNC_REVISION: JSON.stringify(revision) },
+  plugins: [
+    {
+      name: "connector-window",
+      setup(build) {
+        build.onLoad({ filter: /[/\\]connector-window-loader\.ts$/ }, async ({ path }) => {
+          const helper = await esbuild.build({
+            entryPoints: ["src/connector-window.cjs"],
+            bundle: true,
+            format: "cjs",
+            target: "es2022",
+            platform: "node",
+            external: ["electron"],
+            minify: production,
+            write: false,
+            metafile: true,
+          });
+          const loader = await esbuild.transform(await readFile(path, "utf8"), {
+            loader: "ts",
+            define: { BABELSYNC_CONNECTOR_WINDOW: JSON.stringify(helper.outputFiles[0].text) },
+          });
+          return {
+            contents: loader.code,
+            loader: "js",
+            resolveDir: dirname(path),
+            watchFiles: [path, ...Object.keys(helper.metafile.inputs).map((input) => resolve(input))],
+          };
+        });
+      },
+    },
+  ],
   external: [
     "obsidian",
     "electron",
     "@electron/remote",
     "crypto",
+    "fs",
     "net",
+    "path",
     "@codemirror/autocomplete",
     "@codemirror/collab",
     "@codemirror/commands",

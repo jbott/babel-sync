@@ -1,5 +1,6 @@
 const { createHash } = require("crypto");
 const { isIP } = require("net");
+const { allowedNavigation } = require("./connector-navigation.cjs");
 
 const sessionOwners = (globalThis[Symbol.for("babel-handoff-session-owners")] ||= new Map());
 const sessionClosures = (globalThis[Symbol.for("babel-handoff-session-closures")] ||= new Map());
@@ -7,11 +8,11 @@ const sessionQueues = (globalThis[Symbol.for("babel-handoff-session-queues")] ||
 const sessionFailures = (globalThis[Symbol.for("babel-handoff-session-failures")] ||= new Set());
 
 class ConnectorLogin {
-  constructor({ app, Modal, session, webContents, connectors, getUserAgent, renderActions, notice }) {
+  constructor({ app, Modal, session, createWindow, connectors, getUserAgent, renderActions, notice }) {
     this.app = app;
     this.Modal = Modal;
     this.session = session;
-    this.webContents = webContents;
+    this.createWindow = createWindow;
     this.connectors = connectors;
     this.getUserAgent = getUserAgent;
     this.renderActions = renderActions;
@@ -34,7 +35,8 @@ class ConnectorLogin {
         partition: `persist:babel-handoff-${hash}`,
         window: null,
         closePromise: Promise.resolve(),
-        guestId: null,
+        browser: null,
+        browserClosed: Promise.resolve(),
       });
     }
     const state = this.states.get(id);
@@ -77,7 +79,10 @@ class ConnectorLogin {
         this.notice(`Retry disconnecting ${state.connector.name} before opening it.`);
         return;
       }
-      if (state.window) return;
+      if (state.window) {
+        state.window.showLogin();
+        return;
+      }
 
       const isolatedSession = this.session.fromPartition(state.partition);
       this.configureSession(isolatedSession, state.connector, state);
@@ -87,65 +92,58 @@ class ConnectorLogin {
         onOpen() {
           this.titleEl.setText(state.connector.name);
           this.status = this.contentEl.createEl("p");
+          this.contentEl.createEl("p", { text: "Sign in in the connection window, then return here to connect server sync." });
+          this.contentEl.createEl("button", { text: "Show sign-in window" }).addEventListener("click", () => void login.open(id));
+          login.renderActions?.(id, this.contentEl);
+          this.showLogin();
+        }
+
+        showLogin() {
+          if (state.browser) {
+            state.browser.show();
+            state.browser.focus();
+            return;
+          }
+          const browser = login.createWindow(state.connector, state.partition, login.getUserAgent(id));
+          state.browser = browser;
+          state.browserClosed = new Promise((resolve) => {
+            browser.once("closed", () => {
+              if (state.browser === browser) state.browser = null;
+              this.status.setText("Sign-in window closed. You can connect server sync or reopen the window.");
+              resolve();
+            });
+          });
           this.status.setText(`Opening ${new URL(state.connector.landingUrl).origin}`);
-          const guest = document.createElement("webview");
-          this.guest = guest;
-          this.started = false;
-          guest.setAttribute("partition", state.partition);
-          const agent = login.getUserAgent(id);
-          if (agent) guest.setAttribute("useragent", agent);
-          guest.setAttribute(
-            "webpreferences",
-            "sandbox=yes,contextIsolation=yes,nodeIntegration=no,nodeIntegrationInWorker=no,nodeIntegrationInSubFrames=no,webSecurity=yes,allowRunningInsecureContent=no",
-          );
-          guest.style.width = "100%";
-          guest.style.height = "70vh";
-          const rememberGuest = () => {
+          browser.webContents.on("did-navigate", (_event, address) => {
             try {
-              this.guestId = guest.getWebContentsId();
-            } catch {}
-          };
-          guest.addEventListener("did-attach", rememberGuest);
-          guest.addEventListener("dom-ready", rememberGuest);
-          guest.addEventListener("did-navigate", (event) => {
-            try {
-              const origin = new URL(event.url).origin;
               this.blocked = false;
-              this.status.setText(`Current site: ${origin}`);
+              this.status.setText(`Current site: ${new URL(address).origin}`);
             } catch {
               this.status.setText("Current site could not be verified.");
             }
           });
-          guest.addEventListener("did-fail-load", (event) => {
-            if (event.isMainFrame && event.errorCode !== -3) {
+          browser.webContents.on("did-fail-load", (_event, errorCode, _description, address, mainFrame) => {
+            if (mainFrame && errorCode !== -3) {
               if (!this.blocked) {
                 let origin = "the site";
                 try {
-                  origin = new URL(event.validatedURL).origin;
+                  origin = new URL(address).origin;
                 } catch {}
                 this.status.setText(`Could not load ${origin}.`);
               }
               login.notice(`Could not load ${state.connector.name}.`);
             }
           });
-          login.renderActions?.(id, this.contentEl);
-          this.contentEl.appendChild(guest);
-          if (typeof guest.loadURL !== "function") {
-            this.close();
-            login.notice("This Obsidian installation does not support isolated connector windows.");
-            return;
-          }
-          this.started = true;
-          guest.setAttribute("src", state.connector.landingUrl);
+          browser.show();
+          void browser.loadURL(state.connector.landingUrl).catch(() => {});
         }
 
         onClose() {
-          const guest = this.guest;
-          try {
-            this.guestId ||= guest.getWebContentsId();
-          } catch {}
-          state.guestId = this.guestId || null;
-          state.closePromise = this.started ? new Promise((resolve) => guest.addEventListener("destroyed", resolve, { once: true })) : Promise.resolve();
+          if (state.browser) {
+            state.closePromise = state.browserClosed;
+            sessionClosures.set(state.partition, { login, state });
+            state.browser.destroy();
+          }
           this.contentEl.empty();
           if (state.window === this) state.window = null;
         }
@@ -172,18 +170,6 @@ class ConnectorLogin {
     });
   }
 
-  allowedNavigation(value, connector) {
-    try {
-      const url = new URL(value);
-      const landing = new URL(connector.landingUrl);
-      if (url.username || url.password || !connector.allowedHosts.includes(url.hostname)) return false;
-      if (landing.protocol === "http:" && landing.hostname === "127.0.0.1") return url.origin === landing.origin;
-      return url.protocol === "https:" && (url.origin === landing.origin || !url.port);
-    } catch {
-      return false;
-    }
-  }
-
   configureSession(isolatedSession, connector, state) {
     isolatedSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     isolatedSession.webRequest.onBeforeRequest({ urls: ["<all_urls>"] }, (details, callback) => {
@@ -198,8 +184,8 @@ class ConnectorLogin {
       const local = landing.protocol === "http:" && landing.hostname === "127.0.0.1";
       const remote =
         url.protocol === "https:" && !isIP(url.hostname.replace(/^\[|\]$/g, "")) && url.hostname !== "localhost" && !url.hostname.endsWith(".localhost");
-      const allowedResource = !url.username && !url.password && (local ? url.origin === landing.origin : remote || this.allowedNavigation(url.href, connector));
-      const allowed = allowedResource && (details.resourceType !== "mainFrame" || this.allowedNavigation(details.url, connector));
+      const allowedResource = !url.username && !url.password && (local ? url.origin === landing.origin : remote || allowedNavigation(url.href, connector));
+      const allowed = allowedResource && (details.resourceType !== "mainFrame" || allowedNavigation(details.url, connector));
       if (details.resourceType === "mainFrame" && state.window?.status) {
         state.window.blocked = !allowed;
         state.window.status.setText(allowed ? `Opening ${url.origin}` : `Blocked navigation to ${url.origin}.`);
@@ -222,29 +208,17 @@ class ConnectorLogin {
 
   async waitForClose(state) {
     let timer;
-    let poll;
     const closing = state.closePromise;
     try {
       await Promise.race([
         closing,
-        new Promise((resolve, reject) => {
+        new Promise((_resolve, reject) => {
           timer = setTimeout(() => reject(new Error("Connector window is still closing")), 3000);
-          if (state.guestId && this.webContents) {
-            const check = () => {
-              try {
-                const guest = this.webContents.fromId(state.guestId);
-                if (!guest || guest.isDestroyed()) resolve();
-              } catch {}
-            };
-            poll = setInterval(check, 100);
-            check();
-          }
         }),
       ]);
       if (state.closePromise === closing) state.closePromise = Promise.resolve();
     } finally {
       clearTimeout(timer);
-      clearInterval(poll);
     }
   }
 
@@ -289,6 +263,7 @@ class ConnectorLogin {
       this.closeWindow(state);
       void this.waitForClose(state)
         .then(() => {
+          if (sessionClosures.get(state.partition)?.state === state) sessionClosures.delete(state.partition);
           if (sessionOwners.get(state.partition) !== this) return;
           const isolatedSession = this.session.fromPartition(state.partition);
           isolatedSession.webRequest.onBeforeRequest(null);

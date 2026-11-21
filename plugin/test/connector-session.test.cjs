@@ -44,6 +44,7 @@ class GuestSession extends EventEmitter {
 function guestHost() {
   const partitions = new Map();
   const windows = [];
+  const browsers = [];
   const session = {
     fromPartition(partition) {
       if (!partitions.has(partition)) partitions.set(partition, new GuestSession());
@@ -51,28 +52,27 @@ function guestHost() {
     },
   };
 
-  class Guest extends EventEmitter {
-    constructor() {
+  class Browser extends EventEmitter {
+    constructor(connector, partition, agent) {
       super();
-      this.attributes = {};
-      this.style = {};
+      this.connector = connector;
+      this.partition = partition;
+      this.agent = agent;
+      this.session = session.fromPartition(partition);
+      this.webContents = new EventEmitter();
     }
 
-    addEventListener(name, listener, options) {
-      if (options?.once) this.once(name, listener);
-      else this.on(name, listener);
+    show() {}
+
+    focus() {}
+
+    loadURL(url) {
+      this.loaded = this.session.request(url, "GET", this.agent);
+      return this.loaded;
     }
 
-    loadURL() {}
-
-    setAttribute(name, value) {
-      this.attributes[name] = value;
-      if (name === "src") {
-        this.session = session.fromPartition(this.attributes.partition);
-        this.loaded = this.session.request(value, "GET", this.attributes.useragent).then((page) => {
-          this.page = page;
-        });
-      }
+    destroy() {
+      if (!this.holdDestroy) queueMicrotask(() => this.emit("closed"));
     }
   }
 
@@ -84,21 +84,14 @@ function guestHost() {
         },
       };
       this.contentEl = {
-        createEl: (tag) => {
-          assert.equal(tag, "p");
-          return {
-            setText: (text) => {
-              this.statusText = text;
-            },
-          };
-        },
-        appendChild: (guest) => {
-          this.guest = guest;
-          guest.emit("did-attach");
-        },
+        createEl: () => ({
+          setText: (text) => {
+            this.statusText = text;
+          },
+          addEventListener() {},
+        }),
         empty: () => {
           this.closed = true;
-          if (!this.guest.holdDestroy) queueMicrotask(() => this.guest.emit("destroyed"));
         },
       };
       windows.push(this);
@@ -113,22 +106,16 @@ function guestHost() {
     }
   }
 
-  const document = {
-    createElement: (tag) => {
-      assert.equal(tag, "webview");
-      return new Guest();
-    },
+  const createWindow = (...args) => {
+    const browser = new Browser(...args);
+    browsers.push(browser);
+    return browser;
   };
-  return { Modal, session, windows, document };
+  return { Modal, session, windows, browsers, createWindow };
 }
 
-test("connector sessions are isolated and disconnect waits for the guest to close", async (t) => {
+test("connector sessions are isolated and disconnect waits for the sign-in window to close", async (t) => {
   const host = guestHost();
-  const originalDocument = global.document;
-  global.document = host.document;
-  t.after(() => {
-    global.document = originalDocument;
-  });
   const connectors = {
     orders: { name: "Orders", landingUrl: "https://orders.example/history", allowedHosts: ["orders.example"] },
     other: { name: "Other", landingUrl: "https://orders.example/history", allowedHosts: ["orders.example"] },
@@ -151,12 +138,8 @@ test("connector sessions are isolated and disconnect waits for the guest to clos
 
   assert.equal(await first.open("orders"), true);
   const initial = host.windows.at(-1);
-  const session = initial.guest.session;
-  assert.match(initial.guest.attributes.partition, /^persist:/);
-  assert.match(initial.guest.attributes.webpreferences, /sandbox=yes/);
-  assert.match(initial.guest.attributes.webpreferences, /contextIsolation=yes/);
-  assert.match(initial.guest.attributes.webpreferences, /nodeIntegration=no/);
-  assert.equal(initial.guest.attributes.allowpopups, undefined);
+  const session = host.browsers.at(-1).session;
+  assert.match(host.browsers.at(-1).partition, /^persist:/);
   session.permissionRequest(null, "notifications", (allowed) => assert.equal(allowed, false));
   for (const url of ["https://elsewhere.example/", "file:///etc/passwd"]) {
     session.beforeRequest({ url, resourceType: "mainFrame" }, (result) => assert.deepEqual(result, { cancel: true }));
@@ -176,20 +159,20 @@ test("connector sessions are isolated and disconnect waits for the guest to clos
   );
   await first.close("orders");
   await first.open("orders");
-  const reopened = host.windows.at(-1);
-  assert.equal(reopened.guest.session, session);
+  const reopened = host.browsers.at(-1);
+  assert.equal(reopened.session, session);
   await other.open("orders");
-  const otherVault = host.windows.at(-1).guest.session;
+  const otherVault = host.browsers.at(-1).session;
   assert.notEqual(otherVault, session);
   await first.open("other");
-  const otherConnection = host.windows.at(-1).guest.session;
+  const otherConnection = host.browsers.at(-1).session;
   assert.notEqual(otherConnection, session);
 
-  reopened.guest.holdDestroy = true;
+  reopened.holdDestroy = true;
   const disconnect = first.disconnect("orders");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(session.cleared, undefined);
-  reopened.guest.emit("destroyed");
+  reopened.emit("closed");
   assert.equal(await disconnect, true);
   assert.equal(session.cleared, true);
   assert.equal(otherVault.cleared, undefined);
@@ -208,11 +191,6 @@ test("connector sessions are isolated and disconnect waits for the guest to clos
 
 test("use the configured user agent for HTTPS on first navigation", async (t) => {
   const host = guestHost();
-  const originalDocument = global.document;
-  global.document = host.document;
-  t.after(() => {
-    global.document = originalDocument;
-  });
 
   const landingUrl = "https://orders.example/store";
   let userAgent = "Orders/1";
@@ -226,7 +204,7 @@ test("use the configured user agent for HTTPS on first navigation", async (t) =>
   t.after(() => login.dispose());
 
   assert.equal(await login.open("orders"), true);
-  const first = host.windows.at(-1).guest;
+  const first = host.browsers.at(-1);
   await first.loaded;
   assert.equal(first.session.lastRequest.url, landingUrl);
   assert.equal(first.session.lastRequest.agent, "Orders/1");
@@ -234,8 +212,28 @@ test("use the configured user agent for HTTPS on first navigation", async (t) =>
   userAgent = "";
   assert.equal(await login.close("orders"), true);
   assert.equal(await login.open("orders"), true);
-  const reopened = host.windows.at(-1).guest;
+  const reopened = host.browsers.at(-1);
   await reopened.loaded;
-  assert.equal(reopened.attributes.partition, first.attributes.partition);
+  assert.equal(reopened.partition, first.partition);
   assert.equal(reopened.session.lastRequest.agent, connectionUserAgent());
+});
+
+test("closing the sign-in window preserves the session for handoff and reopening", async (t) => {
+  const host = guestHost();
+  const login = new ConnectorLogin({
+    app: { vault: { adapter: { getBasePath: () => "/test/window-close-vault" } } },
+    ...host,
+    connectors: { orders: { name: "Orders", landingUrl: "https://orders.example/history", allowedHosts: ["orders.example"] } },
+    getUserAgent: () => "Orders/1",
+    notice: assert.fail,
+  });
+  t.after(() => login.dispose());
+  await login.open("orders");
+  const first = host.browsers.at(-1);
+  first.emit("closed");
+  assert.equal(await login.useSession("orders", async (session) => assert.equal(session, first.session)), true);
+  await login.open("orders");
+  assert.equal(host.windows.length, 1);
+  assert.equal(host.browsers.length, 2);
+  assert.equal(host.browsers.at(-1).session, first.session);
 });

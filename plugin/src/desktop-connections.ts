@@ -1,5 +1,6 @@
 import { Modal, Notice, Setting, SuggestModal } from "obsidian";
 import type BabelSyncPlugin from "./main.ts";
+import { connectorWindowPath } from "./connector-window-loader.ts";
 
 import { connection, connectionUserAgent, restoreConnection, type Connection } from "./connection.ts";
 import {
@@ -387,14 +388,18 @@ export class DesktopConnections {
     if (this.disposed) return;
     if (!this.session) {
       try {
-        const { session, webContents } = require("@electron/remote");
+        const remote = require("@electron/remote");
+        const { join } = require("path");
+        const basePath = (this.plugin.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
+        if (!basePath || !this.plugin.manifest.dir) throw new Error("Plugin path unavailable");
+        const windows = remote.require(connectorWindowPath(join(basePath, this.plugin.manifest.dir)));
         const ConnectorSession = require("./connector-session.cjs");
         const connectors = this.plugin.settings.connections;
         this.session = new ConnectorSession({
           app: this.plugin.app,
           Modal,
-          session,
-          webContents,
+          session: remote.session,
+          createWindow: (entry: Connection, partition: string, agent: string) => windows.create(entry, partition, agent, remote.getCurrentWindow().id),
           connectors,
           getUserAgent: (id: string) => connectionUserAgent(connectors[id]?.userAgent),
           renderActions: (id: string, content: HTMLElement) => this.renderActions(id, content),
