@@ -2,6 +2,16 @@ export type ConnectionTarget = { serverUrl: string; vaultId: string };
 export type ServerConnection = { status: "connected" | "disconnected" };
 export type SessionCookie = { domain: string; hostOnly?: boolean; [key: string]: unknown };
 
+export class ConnectionError extends Error {
+  readonly code: "reauthorize" | "invalid_session";
+
+  constructor(code: "reauthorize" | "invalid_session", message: string) {
+    super(message);
+    this.name = "ConnectionError";
+    this.code = code;
+  }
+}
+
 export function connectionCookies(cookies: SessionCookie[], hosts: string[]): SessionCookie[] {
   return cookies.filter((cookie) => {
     const domain = cookie.domain.replace(/^\./, "").toLowerCase();
@@ -44,9 +54,18 @@ export async function serverConnection(
   if (response.status === 401) throw new Error("Sign in to Babel Sync again.");
   if (response.status === 403) throw new Error("Only a vault administrator can manage server connections.");
   if (response.status === 409) throw new Error("The server connection changed. Open it again and retry.");
-  if (response.status === 422) throw new Error("The signed-in check failed for this session. Sign in in the connection and retry.");
+  if (response.status === 422) {
+    const failure: unknown = await response.json().catch(() => null);
+    if (failure && typeof failure === "object" && "error" in failure && failure.error === "invalid_session") {
+      throw new ConnectionError("invalid_session", "The server rejected the session data. Update Babel Sync on the server and try again.");
+    }
+    if (failure && typeof failure === "object" && "error" in failure && failure.error === "reauthorize") {
+      throw new ConnectionError("reauthorize", "Babel has not confirmed sign-in yet. Finish signing in, then try again.");
+    }
+    throw new Error("The server could not verify this connection. Try again.");
+  }
   if (!response.ok) throw new Error(`Could not update server sync. The Babel server answered ${response.status}.`);
-  const result: unknown = await response.json();
+  const result: unknown = await response.json().catch(() => null);
   if (!result || typeof result !== "object" || !("status" in result) || !["connected", "disconnected"].includes(String(result.status))) {
     throw new Error("The Babel server returned an unexpected connection status.");
   }

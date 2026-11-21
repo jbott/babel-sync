@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { connectionCookies, connectionTarget, serverConnection } from "../src/connection-handoff.ts";
+import { ConnectionError, connectionCookies, connectionTarget, serverConnection } from "../src/connection-handoff.ts";
 
 test("handoff includes only cookies applicable to the declared connection hosts", () => {
   const cookies = [
@@ -52,6 +52,21 @@ test("failed handoff never displays a response body that could contain session d
   context.mock.method(globalThis, "fetch", async () => new Response("sensitive-session-value", { status: 422 }));
   await assert.rejects(
     serverConnection({ serverUrl: "https://babel.example", vaultId: "vault" }, "connection", "fixture-token", "POST"),
-    /signed-in check failed/,
+    /could not verify this connection/,
   );
+});
+
+test("known handoff failures distinguish an unfinished login from a rejected session without reflecting server text", async (context) => {
+  for (const code of ["reauthorize", "invalid_session"] as const) {
+    context.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({ error: code, message: "sensitive-session-value" }), { status: 422 }));
+    await assert.rejects(
+      serverConnection({ serverUrl: "https://babel.example", vaultId: "vault" }, "connection", "fixture-token", "POST"),
+      (error: unknown) => {
+        assert.ok(error instanceof ConnectionError);
+        assert.equal(error.code, code);
+        assert.doesNotMatch(error.message, /sensitive-session-value/);
+        return true;
+      },
+    );
+  }
 });

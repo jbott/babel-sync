@@ -1,9 +1,11 @@
 import { Modal, Notice, Setting, SuggestModal } from "obsidian";
 import type BabelSyncPlugin from "./main.ts";
+import { ConnectionCheck } from "./connection-check.ts";
 import { connectorWindowPath } from "./connector-window-loader.ts";
 
 import { connection, connectionUserAgent, restoreConnection, type Connection } from "./connection.ts";
 import {
+  ConnectionError,
   connectionCookies,
   connectionTarget,
   serverConnection,
@@ -17,24 +19,38 @@ type BrowserSession = {
 };
 
 type Session = {
-  open(id: string): Promise<boolean>;
+  open(id: string, flowId?: string): Promise<boolean>;
+  close(id: string): Promise<boolean>;
+  setStatus(id: string, message: string, title: string): void;
   disconnect(id: string): Promise<boolean>;
   useSession(id: string, action: (session: BrowserSession, agent: string) => Promise<void>): Promise<boolean>;
   dispose(): void;
 };
 
+type GuidedConnection = {
+  id: string;
+  entry: Connection;
+  target: ConnectionTarget;
+  destination: string;
+  check: ConnectionCheck;
+  opening: boolean;
+  setting?: Setting;
+};
+
 class Picker extends SuggestModal<[string, Connection]> {
-  constructor(plugin: BabelSyncPlugin, entries: [string, Connection][], choose: (id: string) => void) {
+  constructor(plugin: BabelSyncPlugin, entries: [string, Connection][], choose: (id: string) => void, description: (entry: Connection) => string) {
     super(plugin.app);
     this.getSuggestions = (query) => entries.filter(([, entry]) => entry.name.toLowerCase().includes(query.toLowerCase()));
     this.onChooseSuggestion = ([id]) => choose(id);
     this.setPlaceholder("Choose a connection");
+    this.description = description;
   }
+  private description: (entry: Connection) => string;
   getSuggestions: (query: string) => [string, Connection][];
   onChooseSuggestion: (item: [string, Connection]) => void;
   renderSuggestion([, entry]: [string, Connection], el: HTMLElement): void {
     el.setText(entry.name);
-    el.createEl("small", { text: " · " + new URL(entry.landingUrl).origin });
+    el.createEl("small", { text: " · " + this.description(entry) });
   }
 }
 
@@ -45,6 +61,7 @@ export class DesktopConnections {
   private disposed = false;
   private transfers = new Map<string, Promise<ServerConnection | undefined>>();
   private disconnecting = new Set<string>();
+  private flows = new Map<string, GuidedConnection>();
 
   constructor(plugin: BabelSyncPlugin) {
     this.plugin = plugin;
@@ -63,23 +80,28 @@ export class DesktopConnections {
       }
     }
     plugin.addCommand({ id: "manage-connections", name: "Manage desktop connections", callback: () => this.manage() });
-    plugin.addCommand({ id: "open-connection", name: "Open connection", callback: () => this.pick((id) => void this.runtime()?.open(id)) });
+    plugin.addCommand({
+      id: "open-connection",
+      name: "Sign in and connect",
+      callback: () => this.pick((id, entry, target) => void this.start(id, entry, target)),
+    });
     plugin.addCommand({ id: "disconnect-connection", name: "Disconnect connection", callback: () => this.pick((id) => void this.disconnect(id)) });
     plugin.registerObsidianProtocolHandler("babelsync-login", ({ connection: id }) => {
       const entry = Object.hasOwn(plugin.settings.connections, id) && plugin.settings.connections[id];
       if (!entry) return void new Notice("Unknown connection in this vault.");
       const modal = new Modal(plugin.app);
-      modal.setTitle("Open connection?");
+      const target = this.syncTarget(entry);
+      modal.setTitle(target ? "Sign in and connect?" : "Open connection?");
       new Setting(modal.contentEl)
         .setName(entry.name)
-        .setDesc(new URL(entry.landingUrl).origin)
+        .setDesc(this.description(entry, target))
         .addButton((button) =>
           button
-            .setButtonText("Open")
+            .setButtonText(target ? "Sign in and connect" : "Open sign-in window")
             .setCta()
             .onClick(() => {
               modal.close();
-              if (plugin.settings.connections[id] === entry) void this.runtime()?.open(id);
+              void this.start(id, entry, target ?? null);
             }),
         );
       modal.open();
@@ -95,13 +117,14 @@ export class DesktopConnections {
     const draw = () => {
       modal.contentEl.empty();
       for (const [id, entry] of Object.entries(this.plugin.settings.connections)) {
+        const target = this.syncTarget(entry);
         new Setting(modal.contentEl)
           .setName(entry.name)
-          .setDesc(entry.landingUrl)
+          .setDesc(this.description(entry, target))
           .addButton((button) =>
-            button.setButtonText("Open").onClick(() => {
+            button.setButtonText(target ? "Sign in and connect" : "Open sign-in window").onClick(() => {
               modal.close();
-              void this.runtime()?.open(id);
+              void this.start(id, entry, target ?? null);
             }),
           )
           .addButton((button) =>
@@ -178,6 +201,7 @@ export class DesktopConnections {
           const next = remove ? undefined : connection(name, address, hosts.split(","), agent, selector);
           const changedScope = old && (next?.landingUrl !== old.landingUrl || JSON.stringify(next?.allowedHosts) !== JSON.stringify(old.allowedHosts));
           if (id && changedScope && !(await this.disconnect(id))) return;
+          if (id) this.stopFlow(id);
           const key = id ?? crypto.randomUUID();
           const entries = this.plugin.settings.connections;
           if (next) entries[key] = next;
@@ -210,6 +234,7 @@ export class DesktopConnections {
   }
 
   private async disconnect(id: string): Promise<boolean> {
+    this.stopFlow(id);
     const entry = this.plugin.settings.connections[id];
     if (entry && new URL(entry.landingUrl).protocol === "https:" && this.plugin.settings.serverUrl && this.plugin.settings.vaultId) {
       try {
@@ -223,19 +248,149 @@ export class DesktopConnections {
     return (await this.runtime()?.disconnect(id)) === true;
   }
 
+  private syncTarget(entry: Connection): ConnectionTarget | undefined {
+    if (!entry.checkSelector || new URL(entry.landingUrl).protocol !== "https:") return;
+    return this.serverTarget();
+  }
+
+  private serverTarget(): ConnectionTarget | undefined {
+    try {
+      return connectionTarget(this.plugin.settings);
+    } catch {
+      return;
+    }
+  }
+
+  private destination(target: ConnectionTarget): string {
+    const name = this.plugin.settings.vaultName || this.plugin.app.vault.getName();
+    return `vault “${name}” on ${target.serverUrl}`;
+  }
+
+  private description(entry: Connection, target: ConnectionTarget | null | undefined = this.syncTarget(entry)): string {
+    if (target) return `${new URL(entry.landingUrl).origin} · Sign in to automatically connect this session to ${this.destination(target)}.`;
+    return `${new URL(entry.landingUrl).origin} · Sign-in only. Configure a Babel server, vault and signed-in selector to enable automatic server sync.`;
+  }
+
+  private currentFlow(id: string, flow: GuidedConnection): boolean {
+    if (this.disposed || this.flows.get(id) !== flow || this.disconnecting.has(id) || this.plugin.settings.connections[id] !== flow.entry) return false;
+    try {
+      const current = connectionTarget(this.plugin.settings);
+      return current.serverUrl === flow.target.serverUrl && current.vaultId === flow.target.vaultId;
+    } catch {
+      return false;
+    }
+  }
+
+  private stopFlow(id: string, flowId?: string, paused = true): void {
+    const flow = this.flows.get(id);
+    if (!flow || (flowId !== undefined && flow.id !== flowId)) return;
+    flow.check.stop();
+    if (paused) flow.setting?.setDesc(`Automatic connection paused. Show the sign-in window to connect to ${flow.destination}.`);
+    this.flows.delete(id);
+  }
+
+  private progress(id: string, flow: GuidedConnection, message: string, title: string): void {
+    if (!this.currentFlow(id, flow)) return;
+    flow.setting?.setDesc(`${message} Destination: ${flow.destination}.`);
+    this.session?.setStatus(id, message, title);
+  }
+
+  private async start(
+    id: string,
+    entry = this.plugin.settings.connections[id],
+    target: ConnectionTarget | null | undefined = entry && this.syncTarget(entry),
+  ): Promise<void> {
+    if (this.disposed || !entry || this.plugin.settings.connections[id] !== entry || this.disconnecting.has(id)) return;
+    const runtime = this.runtime();
+    if (!runtime) return;
+    if (!target) {
+      this.stopFlow(id);
+      await runtime.open(id);
+      return;
+    }
+    const current = this.serverTarget();
+    if (current?.serverUrl !== target.serverUrl || current?.vaultId !== target.vaultId) {
+      return this.explain(new Error("The Babel server or vault changed. Open the connection again."));
+    }
+    const previous = this.flows.get(id);
+    if (previous && this.currentFlow(id, previous) && !previous.check.stopped) {
+      if (!previous.opening) await runtime.open(id, previous.id);
+      return;
+    }
+    this.stopFlow(id);
+    const flow: GuidedConnection = {
+      id: crypto.randomUUID(),
+      entry,
+      target,
+      destination: this.destination(target),
+      opening: true,
+      check: new ConnectionCheck({
+        active: () => this.currentFlow(id, flow),
+        verify: async () => {
+          try {
+            const result = await this.handoff(id, entry, target, () => this.currentFlow(id, flow));
+            return result?.status === "connected";
+          } catch (error) {
+            if (error instanceof ConnectionError && error.code === "reauthorize") return false;
+            throw error;
+          }
+        },
+        checking: () => this.progress(id, flow, "Checking your sign-in with the Babel server…", "Checking sign-in…"),
+        waiting: () => this.progress(id, flow, "Finish signing in. This window closes automatically when Babel confirms the connection.", "Sign in to connect"),
+        connected: async () => {
+          this.progress(id, flow, "Connected. Closing the sign-in window…", "Connected");
+          this.stopFlow(id, flow.id, false);
+          new Notice(`${entry.name} connected to ${flow.destination}. Approved sources can now sync.`);
+          await runtime.close(id);
+        },
+        failed: (error) => {
+          const message = error instanceof Error ? error.message : "Could not connect. Choose Check sign-in to retry.";
+          this.progress(id, flow, `${message} Choose Check sign-in to retry.`, "Connection needs attention");
+        },
+      }),
+    };
+    this.flows.set(id, flow);
+    try {
+      if (!(await runtime.close(id))) throw new Error("The sign-in window is still closing. Try again.");
+      await this.transfers.get(id)?.catch(() => undefined);
+      if (!this.currentFlow(id, flow)) return this.stopFlow(id, flow.id);
+      if (!(await this.plugin.accessToken())) throw new Error("Sign in to Babel Sync before connecting server sync.");
+      if (!this.currentFlow(id, flow)) return this.stopFlow(id, flow.id);
+      if (!(await runtime.open(id, flow.id))) throw new Error("Could not open the sign-in window. Try again.");
+      flow.opening = false;
+      if (!this.currentFlow(id, flow)) return this.stopFlow(id, flow.id);
+      this.progress(id, flow, "Finish signing in. This window closes automatically when Babel confirms the connection.", "Sign in to connect");
+      flow.check.schedule();
+    } catch (error) {
+      this.stopFlow(id, flow.id);
+      this.explain(error);
+    }
+  }
+
   private renderActions(id: string, content: HTMLElement): void {
     const entry = this.plugin.settings.connections[id];
-    if (!entry || new URL(entry.landingUrl).protocol !== "https:") return;
+    if (!entry) return;
+    const flow = this.flows.get(id);
     const action = new Setting(content)
-      .setName("Server sync")
-      .setDesc("Sign in, then connect this session to your Babel server.")
-      .addButton((button) => button.setButtonText("Connect server sync").onClick(() => this.confirmHandoff(id)))
-      .addButton((button) =>
+      .setName(flow ? "Automatic server sync" : "Sign-in session")
+      .setDesc(flow ? `Finish signing in to connect automatically to ${flow.destination}.` : this.description(entry));
+    if (flow) {
+      flow.setting = action;
+      action.addButton((button) =>
+        button.setButtonText("Check sign-in").onClick(() => {
+          if (this.currentFlow(id, flow) && !flow.check.stopped) flow.check.schedule(true);
+          else void this.start(id);
+        }),
+      );
+    }
+    const target = flow?.target ?? this.serverTarget();
+    if (target && new URL(entry.landingUrl).protocol === "https:") {
+      action.addButton((button) =>
         button.setButtonText("Disconnect server sync").onClick(async () => {
           button.setDisabled(true);
           try {
-            await this.disconnectServer(connectionTarget(this.plugin.settings), id);
-            action.setDesc("Server sync disconnected. Sign in and connect again to resume.");
+            await this.disconnectServer(target, id);
+            action.setDesc("Server sync disconnected. Show the sign-in window to connect again.");
           } catch (error) {
             this.explain(error);
           } finally {
@@ -243,69 +398,18 @@ export class DesktopConnections {
           }
         }),
       );
-    void this.status(id, action);
-  }
-
-  private async status(id: string, setting: Setting): Promise<void> {
-    try {
-      const status = await this.request(connectionTarget(this.plugin.settings), id, "GET");
-      if (this.disposed) return;
-      setting.setDesc(
-        status.status === "connected"
-          ? "The server has this session. Approved sources can sync while Obsidian is closed."
-          : "Sign in, then connect this session to your Babel server.",
-      );
-    } catch (error) {
-      setting.setDesc(error instanceof Error ? error.message : "Could not check server sync.");
     }
+    action.addButton((button) =>
+      button.setButtonText("Close").onClick(() => {
+        this.stopFlow(id);
+        void this.session?.close(id);
+      }),
+    );
   }
 
-  private confirmHandoff(id: string): void {
-    const entry = this.plugin.settings.connections[id];
-    if (this.disposed || !entry) return;
-    let target: ConnectionTarget;
-    try {
-      target = connectionTarget(this.plugin.settings);
-      if (!entry.checkSelector) throw new Error("Set a signed-in CSS selector in this connection’s settings before connecting server sync.");
-      if (new URL(entry.landingUrl).protocol !== "https:") throw new Error("Server sync requires an HTTPS start URL.");
-    } catch (error) {
-      return this.explain(error);
-    }
-    const modal = new Modal(this.plugin.app);
-    modal.setTitle("Connect server sync?");
-    modal.contentEl.createEl("p", {
-      text: `Send the session for ${entry.name} to ${new URL(target.serverUrl).origin} for vault “${this.plugin.settings.vaultName || this.plugin.app.vault.getName()}”?`,
-    });
-    modal.contentEl.createEl("p", {
-      text: `The server will store the session encrypted and let approved vault sources make signed-in requests to ${entry.allowedHosts.join(", ")} while Obsidian is closed. You can disconnect server sync here.`,
-    });
-    new Setting(modal.contentEl)
-      .addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close()))
-      .addButton((button) =>
-        button
-          .setButtonText("Connect server sync")
-          .setCta()
-          .onClick(async () => {
-            button.setDisabled(true).setButtonText("Connecting…");
-            try {
-              const connected = await this.handoff(id, entry, target);
-              if (connected) {
-                modal.close();
-                new Notice("Session connected. Approved vault sources can use this connection ID.");
-              }
-            } catch (error) {
-              this.explain(error);
-            } finally {
-              button.setDisabled(false).setButtonText("Connect server sync");
-            }
-          }),
-      );
-    modal.open();
-  }
-
-  private async handoff(id: string, entry: Connection, target: ConnectionTarget): Promise<ServerConnection | undefined> {
+  private async handoff(id: string, entry: Connection, target: ConnectionTarget, active: () => boolean): Promise<ServerConnection | undefined> {
     if (this.transfers.has(id) || this.disconnecting.has(id)) throw new Error("This connection is being updated. Wait for it to finish.");
-    const transfer = this.transfer(id, entry, target);
+    const transfer = this.transfer(id, entry, target, active);
     this.transfers.set(id, transfer);
     try {
       return await transfer;
@@ -316,6 +420,7 @@ export class DesktopConnections {
 
   private async disconnectServer(target: ConnectionTarget, id: string): Promise<void> {
     if (this.disconnecting.has(id)) throw new Error("This connection is already disconnecting.");
+    this.stopFlow(id);
     this.disconnecting.add(id);
     try {
       await this.transfers.get(id)?.catch(() => undefined);
@@ -325,16 +430,16 @@ export class DesktopConnections {
     }
   }
 
-  private async transfer(id: string, entry: Connection, target: ConnectionTarget): Promise<ServerConnection | undefined> {
+  private async transfer(id: string, entry: Connection, target: ConnectionTarget, active: () => boolean): Promise<ServerConnection | undefined> {
     const runtime = this.runtime();
     if (!runtime) return;
     let result: ServerConnection | undefined;
     let failure: unknown;
-    await runtime.useSession(id, async (session, agent) => {
+    const available = await runtime.useSession(id, async (session, agent) => {
       try {
-        if (this.disposed || this.plugin.settings.connections[id] !== entry) throw new Error("The connection changed. Open it again.");
+        if (!active()) throw new Error("The connection changed. Open it again.");
         const cookies = connectionCookies(await session.cookies.get({}), entry.allowedHosts);
-        if (!cookies.length) throw new Error("Sign in in this connection first.");
+        if (!cookies.length) throw new ConnectionError("reauthorize", "Finish signing in first.");
         result = await this.request(
           target,
           id,
@@ -348,12 +453,14 @@ export class DesktopConnections {
             check_selector: entry.checkSelector,
           },
           entry,
+          active,
         );
       } catch (error) {
         failure = error;
       }
     });
     if (failure) throw failure;
+    if (!available) throw new Error("Could not read the sign-in session. Reopen the connection and retry.");
     return result;
   }
 
@@ -363,6 +470,7 @@ export class DesktopConnections {
     method: "GET" | "POST" | "DELETE",
     body?: unknown,
     entry?: Connection,
+    active?: () => boolean,
   ): Promise<ServerConnection> {
     const token = await this.plugin.accessToken();
     if (!token) throw new Error("Sign in to Babel Sync before connecting server sync.");
@@ -371,6 +479,7 @@ export class DesktopConnections {
       throw new Error("The Babel server or vault changed. Open the connection again.");
     }
     if (entry && this.plugin.settings.connections[id] !== entry) throw new Error("The connection changed. Open it again.");
+    if (active && !active()) throw new Error("This sign-in attempt was closed. Open the connection again.");
     return serverConnection(target, id, token, method, body);
   }
 
@@ -378,10 +487,21 @@ export class DesktopConnections {
     new Notice(error instanceof Error ? error.message : "Could not update server sync. Try again.");
   }
 
-  private pick(choose: (id: string) => void): void {
+  private pick(choose: (id: string, entry: Connection, target: ConnectionTarget | null) => void): void {
     const entries = Object.entries(this.plugin.settings.connections);
     if (entries.length === 0) this.manage();
-    else new Picker(this.plugin, entries, choose).open();
+    else {
+      const targets = new Map(entries.map(([, entry]) => [entry, this.syncTarget(entry) ?? null]));
+      new Picker(
+        this.plugin,
+        entries,
+        (id) => {
+          const entry = entries.find(([key]) => key === id)![1];
+          choose(id, entry, targets.get(entry) ?? null);
+        },
+        (entry) => this.description(entry, targets.get(entry)),
+      ).open();
+    }
   }
 
   private runtime(): Session | undefined {
@@ -403,6 +523,20 @@ export class DesktopConnections {
           connectors,
           getUserAgent: (id: string) => connectionUserAgent(connectors[id]?.userAgent),
           renderActions: (id: string, content: HTMLElement) => this.renderActions(id, content),
+          instructions: (id: string) => {
+            const flow = this.flows.get(id);
+            return flow
+              ? `Sign in in the connection window. Babel will securely send the session to ${flow.destination}, verify it and close the window automatically. You can close it to pause.`
+              : "Sign in in the connection window. Your session is kept when you close it. Configure server sync in the connection settings to connect automatically.";
+          },
+          onSessionChanged: (id: string, flowId?: string) => {
+            const flow = this.flows.get(id);
+            if (flow && flow.id === flowId) flow.check.schedule();
+          },
+          onClosed: (id: string, flowId?: string) => {
+            if (flowId) this.stopFlow(id, flowId);
+          },
+          reopen: (id: string) => void this.start(id),
           notice: (message: string) => new Notice(message),
         });
       } catch {
@@ -414,6 +548,7 @@ export class DesktopConnections {
 
   dispose(): void {
     this.disposed = true;
+    for (const id of this.flows.keys()) this.stopFlow(id);
     this.manager?.close();
     this.session?.dispose();
   }

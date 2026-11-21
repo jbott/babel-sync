@@ -8,7 +8,7 @@ const sessionQueues = (globalThis[Symbol.for("babel-handoff-session-queues")] ||
 const sessionFailures = (globalThis[Symbol.for("babel-handoff-session-failures")] ||= new Set());
 
 class ConnectorLogin {
-  constructor({ app, Modal, session, createWindow, connectors, getUserAgent, renderActions, notice }) {
+  constructor({ app, Modal, session, createWindow, connectors, getUserAgent, renderActions, instructions, onSessionChanged, onClosed, reopen, notice }) {
     this.app = app;
     this.Modal = Modal;
     this.session = session;
@@ -16,6 +16,10 @@ class ConnectorLogin {
     this.connectors = connectors;
     this.getUserAgent = getUserAgent;
     this.renderActions = renderActions;
+    this.instructions = instructions;
+    this.onSessionChanged = onSessionChanged;
+    this.onClosed = onClosed;
+    this.reopen = reopen;
     this.notice = notice;
     this.states = new Map();
     this.disposed = false;
@@ -37,6 +41,7 @@ class ConnectorLogin {
         closePromise: Promise.resolve(),
         browser: null,
         browserClosed: Promise.resolve(),
+        progress: null,
       });
     }
     const state = this.states.get(id);
@@ -71,7 +76,7 @@ class ConnectorLogin {
       });
   }
 
-  open(id) {
+  open(id, flowId) {
     return this.enqueue(id, async (state) => {
       await this.waitForPreviousClose(state);
       if (this.disposed) return;
@@ -92,8 +97,11 @@ class ConnectorLogin {
         onOpen() {
           this.titleEl.setText(state.connector.name);
           this.status = this.contentEl.createEl("p");
-          this.contentEl.createEl("p", { text: "Sign in in the connection window, then return here to connect server sync." });
-          this.contentEl.createEl("button", { text: "Show sign-in window" }).addEventListener("click", () => void login.open(id));
+          this.contentEl.createEl("p", { text: login.instructions?.(id) || "Sign in in the connection window. Your session is kept when you close it." });
+          this.contentEl.createEl("button", { text: "Show sign-in window" }).addEventListener("click", () => {
+            if (login.reopen) login.reopen(id);
+            else void login.open(id);
+          });
           login.renderActions?.(id, this.contentEl);
           this.showLogin();
         }
@@ -106,18 +114,21 @@ class ConnectorLogin {
           }
           const browser = login.createWindow(state.connector, state.partition, login.getUserAgent(id));
           state.browser = browser;
+          browser.on("session-changed", () => login.onSessionChanged?.(id, flowId));
           state.browserClosed = new Promise((resolve) => {
             browser.once("closed", () => {
               if (state.browser === browser) state.browser = null;
-              this.status.setText("Sign-in window closed. You can connect server sync or reopen the window.");
+              this.status.setText("Sign-in window closed. Choose Show sign-in window to continue.");
+              login.onClosed?.(id, flowId);
               resolve();
             });
           });
-          this.status.setText(`Opening ${new URL(state.connector.landingUrl).origin}`);
+          this.status.setText(state.progress?.message || `Opening ${new URL(state.connector.landingUrl).origin}`);
+          if (state.progress) browser.setTitle(`${state.connector.name} · ${state.progress.title}`);
           browser.webContents.on("did-navigate", (_event, address) => {
             try {
               this.blocked = false;
-              this.status.setText(`Current site: ${new URL(address).origin}`);
+              if (!state.progress) this.status.setText(`Current site: ${new URL(address).origin}`);
             } catch {
               this.status.setText("Current site could not be verified.");
             }
@@ -139,6 +150,8 @@ class ConnectorLogin {
         }
 
         onClose() {
+          login.onClosed?.(id, flowId);
+          state.progress = null;
           if (state.browser) {
             state.closePromise = state.browserClosed;
             sessionClosures.set(state.partition, { login, state });
@@ -157,6 +170,14 @@ class ConnectorLogin {
         throw error;
       }
     });
+  }
+
+  setStatus(id, message, title) {
+    const state = this.states.get(id);
+    if (!state) return;
+    state.progress = { message, title };
+    state.window?.status.setText(message);
+    state.browser?.setTitle(`${state.connector.name} · ${title}`);
   }
 
   useSession(id, action) {
@@ -188,7 +209,7 @@ class ConnectorLogin {
       const allowed = allowedResource && (details.resourceType !== "mainFrame" || allowedNavigation(details.url, connector));
       if (details.resourceType === "mainFrame" && state.window?.status) {
         state.window.blocked = !allowed;
-        state.window.status.setText(allowed ? `Opening ${url.origin}` : `Blocked navigation to ${url.origin}.`);
+        if (!allowed || !state.progress) state.window.status.setText(allowed ? `Opening ${url.origin}` : `Blocked navigation to ${url.origin}.`);
       }
       callback({ cancel: !allowed });
     });
@@ -232,7 +253,15 @@ class ConnectorLogin {
   }
 
   close(id) {
+    let failure;
+    try {
+      const state = this.states.get(id);
+      if (state) this.closeWindow(state);
+    } catch (error) {
+      failure = error;
+    }
     return this.enqueue(id, async (state) => {
+      if (failure) throw failure;
       this.closeWindow(state);
       await this.waitForClose(state);
     });

@@ -33,6 +33,16 @@ function create(connector, partition, userAgent, parentId) {
   });
   contents.setWindowOpenHandler(() => ({ action: "deny" }));
   contents.on("will-prevent-unload", (event) => event.preventDefault());
+  contents.on("page-title-updated", (event) => event.preventDefault());
+  const changed = () => window.emit("session-changed");
+  const cookieChanged = (_event, cookie) => {
+    const domain = cookie.domain.replace(/^\./, "");
+    if (connector.allowedHosts.some((host) => host === domain || (!cookie.hostOnly && host.endsWith("." + domain)))) changed();
+  };
+  const cookies = contents.session.cookies;
+  cookies.on("changed", cookieChanged);
+  contents.on("did-finish-load", changed);
+  window.once("closed", () => cookies.removeListener("changed", cookieChanged));
   contents.setUserAgent(userAgent);
   return window;
 }

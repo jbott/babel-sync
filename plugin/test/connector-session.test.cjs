@@ -66,6 +66,10 @@ function guestHost() {
 
     focus() {}
 
+    setTitle(title) {
+      this.title = title;
+    }
+
     loadURL(url) {
       this.loaded = this.session.request(url, "GET", this.agent);
       return this.loaded;
@@ -236,4 +240,61 @@ test("closing the sign-in window preserves the session for handoff and reopening
   assert.equal(host.windows.length, 1);
   assert.equal(host.browsers.length, 2);
   assert.equal(host.browsers.at(-1).session, first.session);
+});
+
+test("guided sign-in progress survives navigation and closes immediately during verification", async (t) => {
+  const host = guestHost();
+  const changes = [];
+  const closed = [];
+  const login = new ConnectorLogin({
+    app: { vault: { adapter: { getBasePath: () => "/test/guided-vault" } } },
+    ...host,
+    connectors: { orders: { name: "Orders", landingUrl: "https://orders.example/history", allowedHosts: ["orders.example"] } },
+    getUserAgent: () => "Orders/1",
+    onSessionChanged: (...args) => changes.push(args),
+    onClosed: (...args) => closed.push(args),
+    notice: assert.fail,
+  });
+  t.after(() => login.dispose());
+  await login.open("orders", "first-attempt");
+  const first = host.browsers.at(-1);
+  login.setStatus("orders", "Finish signing in to connect automatically.", "Sign in to connect");
+  first.webContents.emit("did-navigate", {}, "https://orders.example/home");
+  first.emit("session-changed");
+  assert.equal(host.windows.at(-1).statusText, "Finish signing in to connect automatically.");
+  assert.equal(first.title, "Orders · Sign in to connect");
+  assert.deepEqual(changes, [["orders", "first-attempt"]]);
+  let finishTransfer;
+  const pending = new Promise((resolve) => {
+    finishTransfer = resolve;
+  });
+  let started;
+  const reading = new Promise((resolve) => {
+    started = resolve;
+  });
+  const transfer = login.useSession("orders", async () => {
+    started();
+    await pending;
+  });
+  await reading;
+  let cleanupFinished = false;
+  const closing = login.close("orders").then((result) => {
+    cleanupFinished = true;
+    return result;
+  });
+  assert.equal(host.windows.at(-1).closed, true);
+  assert.deepEqual(closed, [["orders", "first-attempt"]]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(closed, [
+    ["orders", "first-attempt"],
+    ["orders", "first-attempt"],
+  ]);
+  assert.equal(cleanupFinished, false);
+  assert.equal(first.session.cleared, undefined);
+  finishTransfer();
+  assert.equal(await transfer, true);
+  assert.equal(await closing, true);
+  await login.open("orders", "second-attempt");
+  host.browsers.at(-1).emit("session-changed");
+  assert.deepEqual(changes.at(-1), ["orders", "second-attempt"]);
 });
