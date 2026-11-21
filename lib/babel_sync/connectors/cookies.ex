@@ -2,7 +2,7 @@ defmodule BabelSync.Connectors.Cookies do
   @moduledoc false
 
   @name ~r/\A[!#$%&'*+.^_`|~0-9A-Za-z-]+\z/
-  @value ~r/\A[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*\z/
+  @value ~r/\A("?)[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*\1\z/
 
   @spec validate(term(), [String.t()]) :: {:ok, [map()]} | {:error, :invalid_session}
   def validate(cookies, hosts) when is_list(cookies) and length(cookies) in 1..200 do

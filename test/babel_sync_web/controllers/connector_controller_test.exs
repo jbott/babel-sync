@@ -11,6 +11,8 @@ defmodule BabelSyncWeb.ConnectorControllerTest do
   @url "https://fixture.example/account"
   @cookie "fixture-session"
   @rotated "rotated-session"
+  @quoted_cookie ~s("#{@cookie}")
+  @quoted_rotated ~s("#{@rotated}")
   @agent "Fixture Chrome"
 
   setup do
@@ -91,6 +93,38 @@ defmodule BabelSyncWeb.ConnectorControllerTest do
     assert body == "[secret] [secret] 1"
     refute Map.has_key?(headers, "set-cookie")
     assert headers["x-echo"] == "[secret]"
+
+    assert {:ok, %{body: "fresh"}} =
+             Connectors.request(
+               scope,
+               ctx.vault.id,
+               ctx.id,
+               %{url: "https://fixture.example/records"},
+               hosts: [@host]
+             )
+  end
+
+  test "quoted sessions connect, rotate verbatim and redact both reflected forms", ctx do
+    assert %{"status" => "connected"} =
+             ctx.conn
+             |> bearer(ctx.owner)
+             |> post(ctx.path, payload(@quoted_cookie))
+             |> json_response(200)
+
+    scope = Scope.for_user(ctx.owner)
+
+    assert {:ok, %{body: body, headers: headers}} =
+             Connectors.request(
+               scope,
+               ctx.vault.id,
+               ctx.id,
+               %{url: "https://fixture.example/rotate"},
+               hosts: [@host]
+             )
+
+    assert body == "[secret] [secret] [secret] [secret] 1"
+    assert headers["x-echo"] == "[secret] [secret]"
+    refute Map.has_key?(headers, "set-cookie")
 
     assert {:ok, %{body: "fresh"}} =
              Connectors.request(
@@ -187,14 +221,21 @@ defmodule BabelSyncWeb.ConnectorControllerTest do
 
     {body, headers} =
       case {cookies["session"], request.url.path} do
-        {@cookie, "/account"} ->
+        {value, "/account"} when value in [@cookie, @quoted_cookie] ->
           {~s|<main id="account" data-user="#{@cookie}">Signed in</main>|, %{}}
 
         {@cookie, "/rotate"} ->
           {"#{@cookie} #{@rotated} 1",
            %{"set-cookie" => ["session=#{@rotated}; Path=/; HttpOnly"], "x-echo" => [@cookie]}}
 
-        {@rotated, "/records"} ->
+        {@quoted_cookie, "/rotate"} ->
+          {"#{@quoted_cookie} #{@cookie} #{@quoted_rotated} #{@rotated} 1",
+           %{
+             "set-cookie" => ["session=#{@quoted_rotated}; Path=/; HttpOnly"],
+             "x-echo" => ["#{@quoted_cookie} #{@cookie}"]
+           }}
+
+        {value, "/records"} when value in [@rotated, @quoted_rotated] ->
           {"fresh", %{}}
 
         _other ->

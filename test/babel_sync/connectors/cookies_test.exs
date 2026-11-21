@@ -14,6 +14,42 @@ defmodule BabelSync.Connectors.CookiesTest do
              Cookies.validate([Map.put(@cookie, "hostOnly", true)], ["www.fixture.example"])
   end
 
+  test "quoted values survive import, request serialization and rotation" do
+    for value <- [~s("opaque+/=="), ~s("")] do
+      cookie = Map.put(@cookie, "value", value)
+      assert {:ok, [^cookie]} = Cookies.validate([cookie], ["www.fixture.example"])
+      assert Cookies.header([cookie], @url) == "fixture=" <> value
+    end
+
+    jar =
+      Cookies.receive_cookies(
+        [@cookie],
+        [~s(fixture="updated+/=="; Domain=fixture.example; Path=/; HttpOnly)],
+        @url
+      )
+
+    assert length(jar) == 1
+    assert {:ok, ^jar} = Cookies.validate(jar, ["www.fixture.example"])
+    assert Cookies.header(jar, @url) == ~s(fixture="updated+/==")
+  end
+
+  test "quotes do not permit malformed values or header delimiters" do
+    for value <- [
+          ~s("unclosed),
+          ~s(unopened"),
+          ~s("a"b"),
+          ~s("a;b"),
+          ~S("a\b"),
+          "a,b",
+          "a b",
+          "a\r\nInjected: value",
+          "a\0b"
+        ] do
+      cookie = Map.put(@cookie, "value", value)
+      assert {:error, :invalid_session} = Cookies.validate([cookie], ["www.fixture.example"])
+    end
+  end
+
   test "rotated and deleted cookies replace the canonical domain identity" do
     jar =
       Cookies.receive_cookies([@cookie], ["fixture=new; Domain=.fixture.example; Path=/"], @url)

@@ -176,9 +176,11 @@ defmodule BabelSync.Connectors do
   defp redact(response, cookies) do
     values =
       for cookie <- cookies,
-          value = cookie["value"],
+          wire_value = cookie["value"],
+          value = String.trim(wire_value, ~s(")),
           value != "" and (Map.get(cookie, "httpOnly", true) or byte_size(value) >= 8),
-          do: value
+          secret <- Enum.uniq([wire_value, value]),
+          do: secret
 
     %{
       response
