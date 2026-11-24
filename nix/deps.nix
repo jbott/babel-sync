@@ -294,7 +294,7 @@ let
 
       db_connection =
         let
-          version = "2.10.2";
+          version = "2.10.3";
           drv = buildMix {
             inherit version;
             name = "db_connection";
@@ -303,7 +303,7 @@ let
             src = fetchHex {
               inherit version;
               pkg = "db_connection";
-              sha256 = "510b14482330f1af6490a2fa0efd8d4f1435d1529b165647df22ac0f2df0fa93";
+              sha256 = "ff441940bfd9ef5cced632e0e36d4ac823abeb9cae2767203fb9b4ccd1bd83cb";
             };
 
             beamDeps = [
@@ -865,7 +865,7 @@ let
 
       phoenix =
         let
-          version = "1.8.16";
+          version = "1.8.17";
           drv = buildMix {
             inherit version;
             name = "phoenix";
@@ -874,7 +874,7 @@ let
             src = fetchHex {
               inherit version;
               pkg = "phoenix";
-              sha256 = "e7355c35889305bc539eb09dae2393abcbaf0f65f6874a3f0dcb5f0ec53737fe";
+              sha256 = "21fd4d6a33c6af4e86b95156a49815a59140c2ba4ef8cf19565dbb7be881633e";
             };
 
             beamDeps = [
