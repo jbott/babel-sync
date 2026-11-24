@@ -75,10 +75,11 @@ defmodule BabelSync.MCP.Server do
   component(Tools.ListChanges)
 
   @impl true
-  def server_tools(tools, %{context: %{protocol_version: "2026-07-28"}}),
-    do: Enum.sort_by([Files.tool() | tools], & &1.name)
-
-  def server_tools(tools, _frame), do: tools
+  def server_tools(tools, frame) do
+    if Files.supports?(frame, "upload"),
+      do: Enum.sort_by([Files.tool() | tools], & &1.name),
+      else: tools
+  end
 
   @impl true
   def handle_request(

@@ -183,30 +183,28 @@ defmodule BabelSync.MCP.Files do
   end
 
   defp place(scope, blob, args) do
-    with {:ok, placed} <-
-           Agent.place_staged(
-             scope,
-             blob.vault_id,
-             Path.normalize(args["path"]),
-             blob,
-             args["overwrite"] == true
-           ),
-         do: {:ok, "Saved #{placed.path}."}
+    path = Path.normalize(args["path"])
+
+    case Agent.place_staged(scope, blob.vault_id, path, blob, args["overwrite"] == true) do
+      {:ok, placed} -> {:ok, "Saved #{placed.path}."}
+      {:error, reason} -> {:error, {:placement_failed, reason}}
+    end
   end
 
   defp arguments_hash(args) do
-    :crypto.hash(
-      :sha256,
-      :erlang.term_to_binary({"save_file", normalize_numbers(args)}, [:deterministic])
-    )
+    :crypto.hash(:sha256, Jason.encode_to_iodata!(["save_file", canonical(args)]))
   end
 
-  defp normalize_numbers(value) when is_map(value),
-    do: Map.new(value, fn {key, v} -> {key, normalize_numbers(v)} end)
+  defp canonical(value) when is_map(value) do
+    value
+    |> Enum.sort_by(fn {key, _value} -> key end)
+    |> Enum.map(fn {key, item} -> {key, canonical(item)} end)
+    |> Jason.OrderedObject.new()
+  end
 
-  defp normalize_numbers(value) when is_list(value), do: Enum.map(value, &normalize_numbers/1)
-  defp normalize_numbers(value) when is_float(value) and value == trunc(value), do: trunc(value)
-  defp normalize_numbers(value), do: value
+  defp canonical(value) when is_list(value), do: Enum.map(value, &canonical/1)
+  defp canonical(value) when is_float(value) and value == trunc(value), do: trunc(value)
+  defp canonical(value), do: value
 
   defp invalid(frame),
     do:

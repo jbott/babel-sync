@@ -40,6 +40,9 @@ defmodule BabelSync.MCP.Reply do
     {:reply, Response.error(Response.tool(), message(reason)), frame}
   end
 
+  defp message({:placement_failed, reason}),
+    do: message(reason) <> " To try again, start a new save_file call."
+
   defp message(:forbidden) do
     "This credential may not do that in this vault. Reading may be all it allows, " <>
       "or the path is among the Obsidian plugins, which only an owner may change."

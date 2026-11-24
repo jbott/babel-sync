@@ -15,6 +15,8 @@ defmodule BabelSync.Transfers.PendingUpload do
     field :size, :integer
     field :digest, :binary
     field :blob_id, :binary_id
+    field :receiving_until, :utc_datetime_usec
+    field :consumed_at, :utc_datetime_usec
     field :expires_at, :utc_datetime_usec
   end
 end

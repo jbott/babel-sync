@@ -92,7 +92,13 @@ defmodule BabelSyncWeb.MCP.FilesTest do
              }
            } = rpc(scope, "server/discover", %{})
 
-    %{"result" => %{"tools" => tools}} = rpc(scope, "tools/list", %{}, %{})
+    for features <- [%{}, %{"download" => %{}}] do
+      %{"result" => %{"tools" => tools}} = rpc(scope, "tools/list", %{}, features)
+      refute Enum.any?(tools, &(&1["name"] == "save_file"))
+      assert Enum.any?(tools, &(&1["name"] == "upload_file"))
+    end
+
+    %{"result" => %{"tools" => tools}} = rpc(scope, "tools/list", %{})
     save = Enum.find(tools, &(&1["name"] == "save_file"))
     file = save["inputSchema"]["properties"]["file"]
     assert file["x-mcp-file"]["maxSize"] == Blobs.max_size()
@@ -118,6 +124,8 @@ defmodule BabelSyncWeb.MCP.FilesTest do
     assert target["credentials"] == "omit"
     retry = Map.put(call, "requestState", state)
     assert %{"result" => %{"isError" => true}} = rpc(scope, "tools/call", retry)
+    assert stage(target, <<>>).status == 400
+    assert stage(target, <<0, 1, 200>>).status == 422
     assert stage(target, body).status == 200
     assert stage(target, body).status == 404
     refute Vaults.get_entry_by_path(vault.id, "Inbox/image.bin")
@@ -162,6 +170,24 @@ defmodule BabelSyncWeb.MCP.FilesTest do
              rpc(scope, "tools/call", Map.put(call, "requestState", state))
 
     refute Vaults.get_entry_by_path(vault.id, "note.md")
+  end
+
+  test "a new receiver can recover a crashed PUT without letting the stale receiver release it",
+       %{scope: scope} do
+    %{"result" => %{"uploads" => [target]}} = rpc(scope, "tools/call", offer("probe.bin", "abc"))
+    token = target["headers"]["x-babel-transfer"]
+    {:ok, first} = BabelSync.Transfers.claim_stage(token)
+    assert stage(target, "abc").status == 409
+
+    first
+    |> Ecto.Changeset.change(receiving_until: DateTime.add(DateTime.utc_now(), -1, :second))
+    |> BabelSync.Repo.update!()
+
+    {:ok, second} = BabelSync.Transfers.claim_stage(token)
+    :ok = BabelSync.Transfers.release_stage(first)
+    assert stage(target, "abc").status == 409
+    :ok = BabelSync.Transfers.release_stage(second)
+    assert stage(target, "abc").status == 200
   end
 
   test "concurrent confirmations publish a staged note once", %{scope: scope, vault: vault} do

@@ -68,9 +68,21 @@ defmodule BabelSyncWeb.TransferController do
   end
 
   def stage(conn, _params) do
-    case get_req_header(conn, "x-babel-transfer") do
-      [token] -> receive_upload(conn, Transfers.claim_stage(token))
-      _missing -> receive_upload(conn, :error)
+    with [token] <- get_req_header(conn, "x-babel-transfer"),
+         {:ok, upload} <- Transfers.claim_stage(token) do
+      try do
+        receive_upload(conn, {:ok, upload})
+      after
+        Transfers.release_stage(upload)
+      end
+    else
+      {:error, :receiving} ->
+        conn
+        |> put_resp_header("retry-after", "1")
+        |> refuse(:conflict, "Another PUT is receiving this file. Try again shortly.")
+
+      _missing ->
+        receive_upload(conn, :error)
     end
   end
 

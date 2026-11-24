@@ -20,6 +20,7 @@ defmodule BabelSync.Transfers do
   alias BabelSync.Transfers.{PendingUpload, Transfer}
 
   @lifetime 3600
+  @receive_lease_seconds 300
 
   @spec upload_target(map()) :: map()
   def upload_target(%{} = upload) do
@@ -93,14 +94,31 @@ defmodule BabelSync.Transfers do
     }
   end
 
-  @spec claim_stage(String.t()) :: {:ok, PendingUpload.t()} | :error
+  @spec claim_stage(String.t()) :: {:ok, PendingUpload.t()} | {:error, :receiving} | :error
   def claim_stage(token) do
-    query = from u in pending(), where: u.target_hash == ^digest(token), select: u
+    now = DateTime.utc_now()
+    lease = DateTime.add(now, @receive_lease_seconds, :second)
 
-    case Repo.update_all(query, set: [target_hash: nil]) do
+    target = from u in pending(), where: u.target_hash == ^digest(token)
+
+    available =
+      from u in target, where: is_nil(u.receiving_until) or u.receiving_until <= ^now, select: u
+
+    case Repo.update_all(available, set: [receiving_until: lease]) do
       {1, [upload]} -> {:ok, upload}
-      _missing -> :error
+      _missing -> if Repo.exists?(target), do: {:error, :receiving}, else: :error
     end
+  end
+
+  @spec release_stage(PendingUpload.t()) :: :ok
+  def release_stage(upload) do
+    Repo.update_all(receiving(upload), set: [receiving_until: nil])
+    :ok
+  end
+
+  defp receiving(upload) do
+    from u in PendingUpload,
+      where: u.id == ^upload.id and u.receiving_until == ^upload.receiving_until
   end
 
   @spec stage(PendingUpload.t(), Path.t()) :: :ok | {:error, term()}
@@ -109,8 +127,10 @@ defmodule BabelSync.Transfers do
          {:ok, blob} <- Blobs.put_file(upload.vault_id, path),
          {1, _} <-
            Repo.update_all(
-             from(u in pending(), where: u.id == ^upload.id and u.size == ^blob.size),
-             set: [blob_id: blob.id]
+             from(u in receiving(upload),
+               where: u.expires_at > ^DateTime.utc_now() and u.size == ^blob.size
+             ),
+             set: [blob_id: blob.id, target_hash: nil, receiving_until: nil]
            ) do
       :ok
     else
@@ -136,13 +156,17 @@ defmodule BabelSync.Transfers do
   def confirm_upload(state, arguments_hash, scope) do
     query =
       from u in pending(),
+        where: is_nil(u.consumed_at),
         where:
           u.state_hash == ^digest(state) and u.arguments_hash == ^arguments_hash and
             u.user_id == ^scope.user.id
 
     with %PendingUpload{grant_id: grant} = upload when grant == scope.grant_id <- Repo.one(query),
          %Blobs.Blob{size: size} = blob when size == upload.size <- staged_blob(upload),
-         {1, _} <- Repo.delete_all(from u in query, where: u.blob_id == ^blob.id) do
+         {1, _} <-
+           Repo.update_all(from(u in query, where: u.blob_id == ^blob.id),
+             set: [consumed_at: DateTime.utc_now()]
+           ) do
       {:ok, blob}
     else
       :missing -> {:error, :missing_upload}
