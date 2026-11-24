@@ -6,6 +6,7 @@ defmodule BabelSync.MCP.Tools.ReadFile do
   use Anubis.Server.Component, type: :tool
 
   alias BabelSync.Agent
+  alias BabelSync.MCP.Files
   alias BabelSync.MCP.Format
   alias BabelSync.MCP.Reply
 
@@ -38,7 +39,12 @@ defmodule BabelSync.MCP.Tools.ReadFile do
   def execute(params, frame) do
     Reply.run(frame, fn scope ->
       options =
-        [offset: params[:offset], limit: params[:limit], version: params[:version]]
+        [
+          offset: params[:offset],
+          limit: params[:limit],
+          version: params[:version],
+          native: Files.supports?(frame, "download")
+        ]
         |> then(&if(params[:encoding] == "base64", do: [{:encoding, "base64"} | &1], else: &1))
 
       with {:ok, read} <- Agent.read_file(scope, params[:vault], params.path, options) do

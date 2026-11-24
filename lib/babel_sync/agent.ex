@@ -184,7 +184,8 @@ defmodule BabelSync.Agent do
           {:ok, Map.merge(part, %{path: entry.path, kind: :note, rev: Text.rev(text)})}
 
         {:error, :not_a_note} when entry.kind == :blob ->
-          {:ok, Map.put(attachment(entry), :download, download(scope, entry, entry.size))}
+          with {:ok, target} <- attachment_download(scope, entry, opts[:native]),
+               do: {:ok, Map.put(attachment(entry), :download, target)}
 
         refused ->
           refused
@@ -268,9 +269,17 @@ defmodule BabelSync.Agent do
 
   @spec upload_link(Scope.t(), vault_reference(), String.t(), non_neg_integer(), keyword()) ::
           {:ok, map()} | error()
-  def upload_link(%Scope{user: user} = scope, vault, path, size, opts \\ []) do
+  def upload_link(scope, vault, path, size, opts \\ []) do
+    with {:ok, attrs} <- prepare_upload(scope, vault, path, size, opts[:overwrite] == true) do
+      target = BabelSync.Transfers.upload_target(attrs)
+      {:ok, Map.merge(target, %{path: attrs.path, size: size})}
+    end
+  end
+
+  @spec prepare_upload(Scope.t(), vault_reference(), String.t(), non_neg_integer(), boolean()) ::
+          {:ok, map()} | error()
+  def prepare_upload(%Scope{user: user} = scope, vault, path, size, overwrite?) do
     path = Vaults.Path.normalize(path)
-    overwrite? = opts[:overwrite] == true
     note? = Vaults.Path.kind_for(path) == :doc
 
     with {:ok, vault} <- vault(scope, vault, :write),
@@ -279,47 +288,50 @@ defmodule BabelSync.Agent do
          true <- (is_integer(size) and size >= 0) || {:error, :invalid_size},
          :ok <- storable(size, note?),
          :ok <- replaceable(Vaults.get_entry_by_path(vault.id, path), note?, overwrite?) do
-      target =
-        BabelSync.Transfers.upload_target(%{
-          user_id: user.id,
-          grant_id: scope.grant_id,
-          vault_id: vault.id,
-          path: path,
-          size: size,
-          overwrite: overwrite?
-        })
-
-      {:ok, Map.merge(target, %{path: path, size: size})}
+      {:ok,
+       %{
+         user_id: user.id,
+         grant_id: scope.grant_id,
+         vault_id: vault.id,
+         path: path,
+         size: size,
+         overwrite: overwrite?
+       }}
     end
   end
 
-  @spec download_link(Scope.t(), vault_reference(), String.t()) :: {:ok, map()} | error()
-  def download_link(scope, vault, path) do
+  @spec download_link(Scope.t(), vault_reference(), String.t(), keyword()) ::
+          {:ok, map()} | error()
+  def download_link(scope, vault, path, opts \\ []) do
     with {:ok, vault} <- vault(scope, vault, :read),
-         {:ok, entry} <- entry(vault, path) do
-      case entry do
-        %Entry{kind: :folder} ->
-          {:error, :not_a_note}
-
-        %Entry{kind: :doc} ->
-          with {:ok, text} <- content(entry),
-               do: {:ok, Map.put(download(scope, entry, byte_size(text)), :path, entry.path)}
-
-        %Entry{kind: :blob} ->
-          {:ok, Map.put(download(scope, entry, entry.size), :path, entry.path)}
-      end
+         {:ok, entry} <- entry(vault, path),
+         {:ok, target} <- file_download(scope, entry, opts[:native]) do
+      {:ok, Map.put(target, :path, entry.path)}
     end
   end
+
+  defp file_download(_scope, %Entry{kind: :folder}, _native), do: {:error, :not_a_note}
+
+  defp file_download(scope, %Entry{kind: :doc} = entry, native?) do
+    with {:ok, text} <- content(entry) do
+      snapshot = if native?, do: [snapshot_text: text], else: []
+      {:ok, download(scope, entry, byte_size(text), snapshot)}
+    end
+  end
+
+  defp file_download(scope, %Entry{kind: :blob} = entry, native?),
+    do: attachment_download(scope, entry, native?)
 
   @spec place_upload(Scope.t(), Ecto.UUID.t(), String.t(), Path.t(), boolean()) ::
           {:ok, map()} | error()
   def place_upload(scope, vault_id, path, file, overwrite?) do
     with {:ok, vault} <- vault(scope, vault_id, :write),
-         :ok <- reachable(vault, path) do
+         :ok <- writable(scope, vault, path) do
       if Vaults.Path.kind_for(path) == :doc do
         place_text(scope, vault, path, File.read!(file), overwrite?)
       else
-        place_blob(vault, path, file, overwrite?)
+        with {:ok, blob} <- put_blob_file(vault.id, file),
+             do: place_blob(vault, path, blob, overwrite?)
       end
     end
   end
@@ -330,35 +342,46 @@ defmodule BabelSync.Agent do
       else: {:error, :not_text}
   end
 
-  defp place_blob(vault, path, file, overwrite?) do
-    with {:ok, blob} <- put_blob_file(vault.id, file) do
-      attrs = %{blob_hash: blob.hash, size: blob.size}
-
-      case Vaults.get_entry_by_path(vault.id, path) do
-        %Entry{kind: :blob} = entry when overwrite? ->
-          with {:ok, entry} <- Vaults.update_entry(entry, attrs),
-               do:
-                 {:ok,
-                  %{outcome: :updated, path: entry.path, kind: :attachment, bytes: blob.size}}
-
-        %Entry{kind: :blob} ->
-          {:error, :unguarded}
-
-        %Entry{} ->
-          {:error, :not_an_attachment}
-
-        nil ->
-          case Vaults.create_entry(vault.id, Map.merge(attrs, %{path: path, kind: :blob})) do
-            {:ok, entry} ->
-              {:ok, %{outcome: :created, path: entry.path, kind: :attachment, bytes: blob.size}}
-
-            {:error, {:exists, _entry}} ->
-              {:error, :exists}
-
-            {:error, %Ecto.Changeset{}} ->
-              {:error, :invalid_path}
-          end
+  @spec place_staged(Scope.t(), Ecto.UUID.t(), String.t(), Blobs.Blob.t(), boolean()) ::
+          {:ok, map()} | error()
+  def place_staged(scope, vault_id, path, %Blobs.Blob{vault_id: vault_id} = blob, overwrite?) do
+    with {:ok, vault} <- vault(scope, vault_id, :write),
+         :ok <- writable(scope, vault, path) do
+      if Vaults.Path.kind_for(path) == :doc do
+        with :ok <- storable(blob.size, true),
+             do: place_text(scope, vault, path, Blobs.read(blob), overwrite?)
+      else
+        place_blob(vault, path, blob, overwrite?)
       end
+    end
+  end
+
+  defp place_blob(vault, path, blob, overwrite?) do
+    attrs = %{blob_hash: blob.hash, size: blob.size}
+
+    case Vaults.get_entry_by_path(vault.id, path) do
+      %Entry{kind: :blob} = entry when overwrite? ->
+        with {:ok, entry} <- Vaults.update_entry(entry, attrs),
+             do:
+               {:ok, %{outcome: :updated, path: entry.path, kind: :attachment, bytes: blob.size}}
+
+      %Entry{kind: :blob} ->
+        {:error, :unguarded}
+
+      %Entry{} ->
+        {:error, :not_an_attachment}
+
+      nil ->
+        case Vaults.create_entry(vault.id, Map.merge(attrs, %{path: path, kind: :blob})) do
+          {:ok, entry} ->
+            {:ok, %{outcome: :created, path: entry.path, kind: :attachment, bytes: blob.size}}
+
+          {:error, {:exists, _entry}} ->
+            {:error, :exists}
+
+          {:error, %Ecto.Changeset{}} ->
+            {:error, :invalid_path}
+        end
     end
   end
 
@@ -623,7 +646,8 @@ defmodule BabelSync.Agent do
   defp changes_since(vault, seq),
     do: vault.id |> Vaults.changes_since(seq) |> Enum.reject(&hidden?(vault, &1.path))
 
-  defp reachable(vault, path),
+  @spec reachable(Vault.t(), String.t()) :: :ok | {:error, :off_limits}
+  def reachable(vault, path),
     do: if(hidden?(vault, path), do: {:error, :off_limits}, else: :ok)
 
   defp writable(scope, vault, path) do
@@ -815,9 +839,28 @@ defmodule BabelSync.Agent do
     end
   end
 
-  defp download(%Scope{user: user, grant_id: grant_id}, %Entry{} = entry, size) do
+  defp attachment_download(scope, entry, true) do
+    case entry.blob_hash && Blobs.get(entry.vault_id, entry.blob_hash) do
+      nil -> {:error, :not_found}
+      blob -> {:ok, download(scope, entry, blob.size, blob_id: blob.id)}
+    end
+  end
+
+  defp attachment_download(scope, entry, _manual),
+    do: {:ok, download(scope, entry, entry.size, [])}
+
+  defp download(%Scope{user: user, grant_id: grant_id}, %Entry{} = entry, size, snapshot) do
     BabelSync.Transfers.download_target(
-      %{user_id: user.id, grant_id: grant_id, vault_id: entry.vault_id, entry_id: entry.id},
+      Map.merge(
+        %{
+          user_id: user.id,
+          grant_id: grant_id,
+          vault_id: entry.vault_id,
+          entry_id: entry.id,
+          path: entry.path
+        },
+        Map.new(snapshot)
+      ),
       %{
         name: Elixir.Path.basename(entry.path),
         mimeType: MIME.from_path(entry.path),

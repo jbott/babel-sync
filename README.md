@@ -133,7 +133,11 @@ Agents cannot see or change the `.obsidian` folder, which holds the plugins Obsi
 
 Any file that holds text can be read, searched, edited and written by an agent, whatever its extension. Markdown, `.txt`, `.base` and `.canvas` files are notes, merged character by character with what people type; other text files such as `.csv` or `.json` are edited by an agent in the same way, passage by passage, but are stored as attachments, so a change made by a person at the same moment is not merged with the agent's. Images are shown to the agent. An agent without a shell can still move any file of up to 8 MiB: `write_file` takes its bytes as base64, and `read_file` with `encoding: "base64"` returns them.
 
-Any file, note or attachment, can also move outside the conversation. `upload_file` and `download_file` return an HTTPS link, and the agent moves the bytes with `curl` from a shell, up to the attachment size limit. A link carries only a random handle; who may use it, for which vault and file, is kept on the server, so a link in a log or transcript says nothing about the vault. Links last an hour, an upload link works once and only for the size it was made for, and access to the vault is checked again when a link is used. An upload is staged in the data directory, then stored in parts like any device's upload (a multipart upload on S3), so the server needs free disk as large as the file while it arrives. The replies also carry the links in the shape of the draft `io.modelcontextprotocol/files` extension's upload and download targets.
+On MCP revision 2026-07-28, a client can send a file with `save_file` or receive one with `download_file`. The bytes travel over HTTP. An upload appears in the vault when the client confirms the transfer, and a download contains the version offered even if someone edits the file before it arrives. Upload and download permissions are checked for each transfer. [MCP Files draft](https://github.com/modelcontextprotocol/experimental-ext-file-uploads/blob/main/specification/draft/file-uploads.md)
+
+Claude and Claude Code require a connector installed from Anthropic’s directory, an approved transfer host, and an account with file transfers enabled. With a manually added self-hosted URL or with `DISABLE_TELEMETRY=1` in Claude Code, use the shell tools below. [Claude connector requirements](https://claude.com/docs/connectors/building/files#requirements-for-file-transfers)
+
+For shell transfers, `upload_file` gives the agent a link to PUT a file with curl. Clients that omit download support get a curl link from `download_file`. Links last an hour. Each upload accepts one write of the declared size and needs free space in the server’s data directory for the file while it arrives.
 
 The agent gets the vault as a file system:
 
@@ -145,7 +149,7 @@ The agent gets the vault as a file system:
 | `file_outline`, `read_file` | Headings and properties with line numbers, then any line range; image attachments are shown as images |
 | `edit_file`, `append_file` | Replace exact passages, or add to the end of a note or of the section under a heading |
 | `write_file` | Create a note, or replace a whole one |
-| `upload_file`, `download_file` | A link to PUT or GET any file's bytes with curl, for files too large for a tool call or kept on a disk the agent can reach |
+| `save_file`, `upload_file`, `download_file` | Send a file from the client, get a shell upload link, or download a note or attachment |
 | `create_directory`, `move_file`, `delete_file` | Folders move and are deleted with their contents; deleted files go to the trash |
 | `list_trash`, `restore_file`, `file_history` | Bring back deleted files and earlier versions of a note |
 | `list_changes` | What was written or deleted since a cursor |

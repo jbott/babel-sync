@@ -61,6 +61,16 @@ defmodule BabelSync.MCP.Reply do
       @unchanged
   end
 
+  defp message(:not_text), do: "A note must contain UTF-8 text."
+
+  defp message(:inline_unsupported),
+    do: "Send the file out of band with the MCP upload capability."
+
+  defp message(:digest_mismatch), do: "The file did not match its SHA-256 digest."
+
+  defp message(:missing_upload),
+    do: "The file's bytes have not been confirmed. The file was not saved."
+
   defp message(:invalid_encoding), do: "The content is not valid base64." <> @unchanged
 
   defp message(:too_large) do

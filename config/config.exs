@@ -130,4 +130,11 @@ config :phoenix, :json_library, Jason
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
 
-config :phoenix, :filter_parameters, ["password", "token", "secret", "cookies"]
+config :phoenix, :filter_parameters, [
+  "password",
+  "token",
+  "secret",
+  "cookies",
+  "requestState",
+  "data"
+]

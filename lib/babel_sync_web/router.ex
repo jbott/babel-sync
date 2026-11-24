@@ -47,6 +47,8 @@ defmodule BabelSyncWeb.Router do
 
   scope "/", BabelSyncWeb do
     get "/health", HealthController, :show
+    get "/files/content", TransferController, :content
+    put "/files/stage", TransferController, :stage
     get "/files/:token", TransferController, :download
     put "/files/:token", TransferController, :upload
   end

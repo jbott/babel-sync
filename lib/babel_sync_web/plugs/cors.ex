@@ -13,10 +13,10 @@ defmodule BabelSyncWeb.Plugs.CORS do
 
   @headers [
     {"access-control-allow-origin", "*"},
-    {"access-control-allow-methods", "GET, POST, DELETE, OPTIONS"},
+    {"access-control-allow-methods", "GET, PUT, POST, DELETE, OPTIONS"},
     {"access-control-allow-headers",
-     "authorization, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id"},
-    {"access-control-expose-headers", "mcp-session-id, www-authenticate"},
+     "authorization, content-type, accept, mcp-session-id, mcp-protocol-version, mcp-method, mcp-name, x-babel-transfer, range, last-event-id"},
+    {"access-control-expose-headers", "mcp-session-id, www-authenticate, content-range, etag"},
     {"access-control-max-age", "600"}
   ]
 
@@ -25,7 +25,7 @@ defmodule BabelSyncWeb.Plugs.CORS do
 
   @impl true
   def call(%Plug.Conn{request_path: path} = conn, _opts) do
-    if String.starts_with?(path, @prefixes) or
+    if path in ["/files/content", "/files/stage"] or String.starts_with?(path, @prefixes) or
          Regex.match?(~r|\A/api/vaults/[0-9a-f-]{36}/connections/[0-9a-f-]{36}\z|, path),
        do: open(conn),
        else: conn

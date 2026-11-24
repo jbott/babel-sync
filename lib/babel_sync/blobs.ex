@@ -236,10 +236,15 @@ defmodule BabelSync.Blobs do
         on: e.id == v.entry_id,
         where: e.vault_id == parent_as(:blob).vault_id and v.blob_hash == parent_as(:blob).hash
 
+    staged = from u in BabelSync.Transfers.PendingUpload, where: u.blob_id == parent_as(:blob).id
+    downloads = from t in BabelSync.Transfers.Transfer, where: t.blob_id == parent_as(:blob).id
+
     unreferenced =
       from b in Blob,
         as: :blob,
-        where: b.inserted_at < ^uploaded_before and not exists(current) and not exists(historic)
+        where:
+          b.inserted_at < ^uploaded_before and not exists(current) and not exists(historic) and
+            not exists(staged) and not exists(downloads)
 
     unreferenced
     |> Repo.all()
@@ -290,7 +295,8 @@ defmodule BabelSync.Blobs do
     if Store.impl() == Store.Disk, do: Store.Disk.path(key(blob))
   end
 
-  defp claim(vault_id, hash) do
+  @spec claim(Ecto.UUID.t(), hash()) :: Blob.t() | nil
+  def claim(vault_id, hash) do
     with %Blob{} = blob <- get(vault_id, hash),
          {1, _} <-
            Repo.update_all(from(b in Blob, where: b.id == ^blob.id),

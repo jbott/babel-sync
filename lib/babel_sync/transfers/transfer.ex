@@ -16,6 +16,8 @@ defmodule BabelSync.Transfers.Transfer do
     field :vault_id, :binary_id
     field :entry_id, :binary_id
     field :path, :string
+    field :snapshot_text, :binary
+    field :blob_id, :binary_id
     field :size, :integer
     field :overwrite, :boolean, default: false
     field :expires_at, :utc_datetime_usec

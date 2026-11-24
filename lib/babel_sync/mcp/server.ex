@@ -32,10 +32,11 @@ defmodule BabelSync.MCP.Server do
   files both changes are kept; in other text files pass if_rev to be refused instead of \
   overwriting theirs. Images are shown. Binary files are written whole, as base64, with write_file.
 
-  Any file can also move outside the conversation: upload_file and download_file give an \
-  HTTP link to PUT or GET its bytes with curl, for files too large for a tool call, files \
-  that are not text, or files on a disk you can reach from a shell. Without a shell, \
-  read_file with encoding base64 returns any file's bytes, up to 8 MiB.
+  When your client can attach a file directly, use save_file. To upload from a shell, \
+  call upload_file with the vault path and byte count, then PUT the local file with curl. \
+  download_file delivers a file to clients with native downloads enabled and gives other \
+  clients a curl command. Shell transfers work with native file transfers disabled. \
+  Without a shell, read_file with encoding base64 returns any file's bytes, up to 8 MiB.
 
   Notes use Obsidian Markdown: [[wikilinks]], #tags, and YAML properties between --- lines \
   at the top.
@@ -44,10 +45,10 @@ defmodule BabelSync.MCP.Server do
   use Anubis.Server,
     name: "Babel Sync",
     version: "0.1.0",
-    capabilities: [:tools],
+    capabilities: [:tools, extensions: %{"io.modelcontextprotocol/files" => %{"upload" => %{}}}],
     instructions: @instructions
 
-  alias BabelSync.MCP.Tools
+  alias BabelSync.MCP.{Files, Tools}
 
   @impl true
   def serialize_assigns(_assigns), do: %{}
@@ -72,6 +73,19 @@ defmodule BabelSync.MCP.Server do
   component(Tools.RestoreFile)
   component(Tools.FileHistory)
   component(Tools.ListChanges)
+
+  @impl true
+  def server_tools(tools, %{context: %{protocol_version: "2026-07-28"}}),
+    do: Enum.sort_by([Files.tool() | tools], & &1.name)
+
+  def server_tools(tools, _frame), do: tools
+
+  @impl true
+  def handle_request(
+        %{"method" => "tools/call", "params" => %{"name" => "save_file"} = params},
+        %{context: %{protocol_version: "2026-07-28"}} = frame
+      ),
+      do: Files.call(params, frame)
 
   @impl true
   def init(_client_info, frame), do: {:ok, frame}

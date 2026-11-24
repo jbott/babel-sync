@@ -275,10 +275,9 @@ defmodule BabelSyncWeb.MCPTest do
     assert Sync.text(Vaults.get_entry_by_path(vault.id, "Inbox/from-disk.md").id) == "# Hi\n\n"
 
     downloaded = result(session, "download_file", %{path: "Papers/paper.pdf"})
-    [download] = downloaded["_meta"]["io.modelcontextprotocol/files"]["downloads"]
-    assert download["mimeType"] == "application/pdf"
-    assert download["size"] == byte_size(pdf)
-    assert conn |> recycle() |> get(URI.parse(download["url"]).path) |> response(200) == pdf
+    refute get_in(downloaded, ["_meta", "io.modelcontextprotocol/files"])
+    assert [%{"text" => description}] = downloaded["content"]
+    assert conn |> recycle() |> get(URI.parse(link(description)).path) |> response(200) == pdf
 
     {:ok, text} = call(session, "download_file", %{path: "Inbox/from-disk.md"})
     assert conn |> recycle() |> get(URI.parse(link(text)).path) |> response(200) == "# Hi\n\n"

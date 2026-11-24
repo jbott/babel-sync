@@ -70,43 +70,55 @@ defmodule BabelSync.MCP.Format do
   end
 
   def read(%{kind: :attachment, image: nil} = file, _numbered?) do
-    {:meta,
-     "#{file.path} is an attachment (#{file.type}, #{file.bytes} bytes) that cannot be shown as text. " <>
-       fetch(file.download) <>
-       " Without a shell, read_file with encoding base64 returns its bytes.",
-     downloads(file.download)}
+    description =
+      "#{file.path} is an attachment (#{file.type}, #{file.bytes} bytes) that cannot be shown as text."
+
+    case file.download do
+      %{headers: _} = target ->
+        with_download(description, target)
+
+      link ->
+        description <>
+          " " <>
+          fetch(link) <> " Without a shell, read_file with encoding base64 returns its bytes."
+    end
   end
 
   def read(%{kind: :attachment} = file, _numbered?) do
-    {:meta,
-     {:parts,
-      [
-        "#{file.path} · #{file.type} · #{file.bytes} bytes. " <> fetch(file.download),
-        {:image, file.image, file.type}
-      ]}, downloads(file.download)}
+    description = "#{file.path} · #{file.type} · #{file.bytes} bytes."
+
+    text =
+      if Map.has_key?(file.download, :headers),
+        do: description,
+        else: description <> " " <> fetch(file.download)
+
+    with_download({:parts, [text, {:image, file.image, file.type}]}, file.download)
   end
 
   def upload_link(link) do
     command =
       "curl -sf -X PUT -H 'Content-Type: application/octet-stream' -T <local file> '#{link.url}'"
 
-    {:meta,
-     "Upload #{link.size} bytes to #{link.path} with:\n#{command}\n" <>
-       "The link works once, until #{link.expiresAt}. The reply is JSON naming the file stored.",
-     %{"io.modelcontextprotocol/files" => %{"uploads" => [Map.drop(link, [:path, :size])]}}}
+    "Upload #{link.size} bytes to #{link.path} with:\n#{command}\n" <>
+      "The link works once, until #{link.expiresAt}. The reply is JSON naming the file stored."
   end
 
-  def download_link(link) do
-    {:meta, "#{link.path} (#{link.mimeType}, #{link.size} bytes). " <> fetch(link),
-     downloads(link)}
-  end
+  def download_link(%{headers: _headers} = link),
+    do: with_download("#{link.path} (#{link.mimeType}, #{link.size} bytes).", link)
+
+  def download_link(link),
+    do: "#{link.path} (#{link.mimeType}, #{link.size} bytes). " <> fetch(link)
 
   defp fetch(link) do
     "To save it: curl -sfo '#{link.name}' '#{link.url}' (until #{link.expiresAt})."
   end
 
-  defp downloads(link),
-    do: %{"io.modelcontextprotocol/files" => %{"downloads" => [Map.drop(link, [:path])]}}
+  defp with_download(content, %{headers: _headers} = link),
+    do:
+      {:meta, content,
+       %{"io.modelcontextprotocol/files" => %{"downloads" => [Map.delete(link, :path)]}}}
+
+  defp with_download(content, _manual), do: content
 
   def outline(outline) do
     properties =
